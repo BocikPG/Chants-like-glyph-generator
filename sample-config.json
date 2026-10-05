@@ -1,0 +1,472 @@
+{
+  "rootSeed": 20260927,
+  "outputDirectory": "./output",
+  "languages": [
+    {
+      "name": "Warrior",
+      "grid": {
+        "width": 20,
+        "height": 20
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        {
+          "name": "warrior"
+        },
+        {
+          "name": "weapon"
+        },
+        {
+          "name": "protect"
+        },
+        {
+          "name": "fortress"
+        }
+      ],
+      "subSymbolCount": {
+        "min": 1,
+        "max": 2
+      },
+      "subSymbolLength": {
+        "min": 6,
+        "max": 8
+      },
+      "connectionRules": [
+        {
+          "direction": "Orthogonal",
+          "minLength": 1,
+          "maxLength": 5,
+          "weight": 3.0
+        },
+        {
+          "direction": "Diagonal",
+          "minLength": 1,
+          "maxLength": 5,
+          "weight": 1.0
+        }
+      ],
+      "allowNodeRevisit": true,
+      "allowEdgeRevisit": true,
+      "allowClosedLoop": false,
+      "closedLoopWeight": 0.0,
+      "allowSymbolsToCross": true,
+      "guaranteedMotifs": [],
+      "subSymbolPlacement": {
+        "mode": "RandomValid",
+        "fixedOrigin": null,
+        "allowRotationOnPlace": true,
+        "maxPlacementAttempts": 20
+      },
+      "curve": {
+        "mode": "Derived",
+        "straightLineBias": {
+          "min": 80,
+          "max": 100
+        },
+        "tension": {
+          "options": [
+            {
+              "min": 0,
+              "max": 0,
+              "weight": 3
+            },
+            {
+              "min": 0.4,
+              "max": 0.5,
+              "weight": 2
+            }
+          ]
+        },
+        "explicitJitterDegrees": {
+          "min": 80,
+          "max": 100
+        },
+        "proximityGuard": {
+          "enabled": true,
+          "minEdgeLength": 2,
+          "minDistanceToOtherNodes": 1
+        }
+      },
+      "quality": {
+        "maxSimilarity": 0.7,
+        "rejectStraightLineOnly": true,
+        "maxRegenerationAttempts": 10
+      },
+      "render": {
+        "framing": "Language",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "debugShowNodes": false,
+        "debugColorComponents": false,
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.045,
+              "max": 0.045
+            },
+            "join": "Miter",
+            "cap": "Butt",
+            "miterLimit": 4.0
+          }
+        }
+      },
+      "combination": {
+        "recipes": {
+          "fortress": [
+            "warrior",
+            "protect"
+          ]
+        },
+        "allowScale": true,
+        "allowedScales": [
+          {
+            "numerator": 1,
+            "denominator": 3,
+            "weight": 1.0
+          },
+          {
+            "numerator": 1,
+            "denominator": 2,
+            "weight": 1.0
+          },
+          {
+            "numerator": 1,
+            "denominator": 1,
+            "weight": 2.0
+          },
+          {
+            "numerator": 2,
+            "denominator": 1,
+            "weight": 1.0
+          },
+          {
+            "numerator": 3,
+            "denominator": 1,
+            "weight": 0.5
+          }
+        ],
+        "allowRotate": true,
+        "rotation": {
+          "allowed": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "weight": 1.0
+        },
+        "maxRetriesPerRecipe": 50
+      }
+    },
+    {
+      "name": "Devotee",
+      "grid": {
+        "width": 20,
+        "height": 20
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        "Man/Human",
+        "You",
+        "Me",
+        "Devotee",
+        "Warrior",
+        "Preacher",
+        "Close",
+        "Open",
+        "Help",
+        "Go/Pass",
+        "Talk",
+        "Seek/Want",
+        "Find",
+        "See/Look",
+        "Love/Like",
+        "Make/Create",
+        "Abbey",
+        "Cemetery",
+        "Church",
+        "Garden",
+        "Door",
+        "Key",
+        "Instrument",
+        "Pot",
+        "Plant",
+        "Potion",
+        "Lens",
+        "Greetings",
+        "God",
+        "Death/Dead",
+        "Up/Great",
+        "Not",
+        "Music",
+        "Free"
+      ],
+      "baseGlyphs": [
+        "Action",
+        "Place",
+        "Object",
+        "you_base",
+        "me_base",
+        "devotee_base",
+        "warrior_base",
+        "talk_base",
+        "close_base",
+        "open_base",
+        "help_base",
+        "go_base",
+        "seek_base",
+        "find_base",
+        "see_base",
+        "love_base",
+        "make_base",
+        "abbey_base",
+        "death_base",
+        "door_base",
+        "key_base",
+        "pot_base",
+        "potion_base",
+        "lens_base",
+        "god_base"
+      ],
+      "combination": {
+        "recipes": {
+          "You": [
+            "Man/Human",
+            "you_base"
+          ],
+          "Me": [
+            "Man/Human",
+            "me_base"
+          ],
+          "Devotee": [
+            "Man/Human",
+            "devotee_base"
+          ],
+          "Warrior": [
+            "Man/Human",
+            "warrior_base"
+          ],
+          "Preacher": [
+            "Man/Human",
+            "talk_base"
+          ],
+          "Close": [
+            "Action",
+            "close_base"
+          ],
+          "Open": [
+            "Action",
+            "open_base"
+          ],
+          "Help": [
+            "Action",
+            "help_base"
+          ],
+          "Go/Pass": [
+            "Action",
+            "go_base"
+          ],
+          "Talk": [
+            "Action",
+            "talk_base"
+          ],
+          "Seek/Want": [
+            "Action",
+            "seek_base"
+          ],
+          "Find": [
+            "Action",
+            "find_base"
+          ],
+          "See/Look": [
+            "Action",
+            "see_base"
+          ],
+          "Love/Like": [
+            "Action",
+            "love_base"
+          ],
+          "Make/Create": [
+            "Action",
+            "make_base"
+          ],
+          "Abbey": [
+            "Place",
+            "abbey_base"
+          ],
+          "Cemetery": [
+            "Place",
+            "death_base"
+          ],
+          "Church": [
+            "Place",
+            "devotee_base"
+          ],
+          "Garden": [
+            "Place",
+            "Plant"
+          ],
+          "Door": [
+            "Object",
+            "door_base"
+          ],
+          "Key": [
+            "Object",
+            "key_base"
+          ],
+          "Instrument": [
+            "Object",
+            "Music"
+          ],
+          "Pot": [
+            "Object",
+            "pot_base"
+          ],
+          "Potion": [
+            "Object",
+            "potion_base"
+          ],
+          "Lens": [
+            "Object",
+            "lens_base"
+          ]
+        },
+        "allowScale": false,
+        "allowRotate": false,
+        "rotation": {
+          "allowed": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "weight": 1.0
+        },
+        "bias": {
+          "modes": [
+            "Shortest",
+            "Narrowest",
+            "Squarest"
+          ],
+          "includeScaleAndRotation": false
+        },
+        "maxRetriesPerRecipe": 5
+      },
+      "subSymbolCount": {
+        "min": 1,
+        "max": 2
+      },
+      "subSymbolLength": {
+        "min": 2,
+        "max": 6
+      },
+      "connectionRules": [
+        {
+          "direction": "Orthogonal",
+          "minLength": 1,
+          "maxLength": 5,
+          "weight": 3.0
+        },
+        {
+          "direction": "Diagonal",
+          "minLength": 1,
+          "maxLength": 5,
+          "weight": 1.0
+        }
+      ],
+      "allowNodeRevisit": false,
+      "allowEdgeRevisit": false,
+      "allowClosedLoop": true,
+      "closedLoopWeight": 0.7,
+      "allowSymbolsToCross": false,
+      "guaranteedMotifs": [],
+      "subSymbolPlacement": {
+        "mode": "RandomValid",
+        "fixedOrigin": null,
+        "allowRotationOnPlace": true,
+        "maxPlacementAttempts": 50
+      },
+      "subSymbolSpacing": {
+        "enabled": true,
+        "minCenterDistance": 1,
+        "minNodeDistance": 2,
+        "maxNodeDistance": 5,
+        "maxDistanceMode": "AllShapes",
+        "selfSpacing": [
+          {
+            "mode": "Existing",
+            "minDistance": 1.1
+          },
+          {
+            "mode": "AllNodes",
+            "maxDistance": 6
+          }
+        ]
+      },
+      "curve": {
+        "mode": "Derived",
+        "contextMode": "AllCurved",
+        "straightLineBias": {
+          "min": 50,
+          "max": 90
+        },
+        "tension": {
+          "options": [
+            {
+              "min": 0,
+              "max": 0,
+              "weight": 3
+            },
+            {
+              "min": 0.4,
+              "max": 0.5,
+              "weight": 1
+            }
+          ]
+        },
+        "explicitJitterDegrees": {
+          "min": 20,
+          "max": 20
+        },
+        "proximityGuard": {
+          "enabled": true,
+          "minEdgeLength": 2,
+          "minDistanceToOtherNodes": 1
+        }
+      },
+      "quality": {
+        "maxSimilarity": 0.7,
+        "rejectStraightLineOnly": true,
+        "maxRegenerationAttempts": 50
+      },
+      "render": {
+        "framing": "Language",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "debugShowNodes": false,
+        "debugColorComponents": false,
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.045,
+              "max": 0.045
+            },
+            "join": "Miter",
+            "cap": "Square",
+            "miterLimit": 4.0
+          }
+        }
+      }
+    }
+  ]
+}

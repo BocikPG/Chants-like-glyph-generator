@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Chants-like glyph generator": {
+      "commandName": "Project",
+      "commandLineArgs": "\"E:\\Work\\Wlasne\\Chants-like glyph generator\\Chants-like glyph generator\\sample-config.json\""
+    }
+  }
+}

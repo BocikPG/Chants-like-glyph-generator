@@ -1,0 +1,97 @@
+using GlyphGen.Core.Rng;
+
+namespace GlyphGen.Core.Config;
+
+public enum CurveMode
+{
+    /// <summary>Tangents inferred from neighboring node angles (smooth-spline feel).</summary>
+    Derived,
+
+    /// <summary>Each node stores its own randomized in/out tangent.</summary>
+    Explicit,
+
+    /// <summary>Mix of both, per-node.</summary>
+    Hybrid,
+}
+
+/// <summary>One weighted tension range to pick from - see TensionConfig.</summary>
+public sealed class TensionOption
+{
+    public double Min { get; set; }
+    public double Max { get; set; }
+    public double Weight { get; set; } = 1.0;
+}
+
+/// <summary>
+/// Bezier handle length as a fraction of the edge's length (capped at 0.5 downstream). Default
+/// behavior (Options empty) is a single continuous range, uniformly sampled - the same as a
+/// plain FloatRange used to be. Populating Options switches to a weighted pick among several
+/// ranges instead: this is what lets a language express an extreme/bimodal distribution like
+/// "70% dead straight (0-0), 30% strongly curved (0.4-0.5)" rather than one smooth spread
+/// across the whole range - a look a single continuous range can't produce, since it always
+/// fills in the middle values too. Not restricted to two options; any number of weighted bands
+/// works, following the same {value/range, weight} pattern as ConnectionRuleConfig and
+/// ScaleFactorConfig elsewhere in this schema.
+/// </summary>
+public sealed class TensionConfig
+{
+    /// <summary>Used only when Options is empty.</summary>
+    public FloatRange Range { get; set; } = new() { Min = 0.25, Max = 0.35 };
+
+    public List<TensionOption> Options { get; set; } = new();
+
+    public double Resolve(DeterministicRandom rng)
+    {
+        if (Options.Count == 0) return Range.Resolve(rng);
+
+        var weights = Options.Select(o => o.Weight).ToList();
+        var chosen = Options[rng.WeightedIndex(weights)];
+        return chosen.Min + rng.NextDouble() * (chosen.Max - chosen.Min);
+    }
+}
+
+/// <summary>
+/// Forces an edge straight based on geometry, independent of CurveMode/StraightLineBias - a
+/// safety net against a curve bulging into nearby ink (see CurvePlanner's remarks on this).
+/// Disabled by default since it changes how many edges end up curved vs. the language's other
+/// settings alone would produce.
+/// </summary>
+public sealed class CurveProximityGuardConfig
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Edges shorter than this (grid units) are always forced straight - a curve on a
+    /// very short edge exaggerates its bulge relative to the edge's own length, making it more
+    /// likely to swing into nearby geometry.</summary>
+    public double MinEdgeLength { get; set; } = 1.5;
+
+    /// <summary>If &gt; 0, also forces an edge straight whenever ANY other node in the same
+    /// glyph (any chain, any combination component) sits within this distance of either of the
+    /// edge's own endpoints - a broader, more expensive check than MinEdgeLength alone, since
+    /// it looks at nearby geometry beyond just the edge's own two ends. 0 disables this part.</summary>
+    public double MinDistanceToOtherNodes { get; set; } = 0.0;
+}
+
+/// <summary>
+/// Rendering-time curve behavior. Kept independent of the underlying straight-edge grid
+/// topology (which is what intersection checks always operate on) — this only affects how
+/// the final glyph is drawn, never whether a connection is valid.
+/// </summary>
+public sealed class CurveConfig
+{
+    public CurveMode Mode { get; set; } = CurveMode.Derived;
+
+    /// <summary>Soft hint: probability any given connection is forced straight regardless of
+    /// Mode. 0-100.</summary>
+    public PercentRange StraightLineBias { get; set; } = new() { Min = 0, Max = 0 };
+
+    /// <summary>Each handle draws its own value independently (see TensionConfig).</summary>
+    public TensionConfig Tension { get; set; } = new();
+
+    /// <summary>Explicit/Hybrid modes: max angle (degrees) a node's in/out tangent may deviate
+    /// from the derived tangent; drawn per node.</summary>
+    public FloatRange ExplicitJitterDegrees { get; set; } = new() { Min = 20, Max = 60 };
+
+    public CurveProximityGuardConfig ProximityGuard { get; set; } = new();
+    public CurveContextMode ContextMode { get; set; } = CurveContextMode.AllCurved;
+}
