@@ -24,5 +24,11 @@ public sealed class CombinationConfig
     public RotationConfig Rotation { get; set; } = new();
 
     public int MaxRetriesPerRecipe { get; set; } = 5;
+
+    /// <summary>If true, a composite's components may cross each other (they may always touch at
+    /// shared nodes). Default false: overlay composition is controlled stacking, with no component
+    /// crossing another, regardless of the language's AllowSymbolsToCross (which governs strokes
+    /// inside one glyph). SubSymbolSpacing still applies either way.</summary>
+    public bool AllowComponentsToCross { get; set; } = false;
     public CombinationBiasConfig Bias { get; set; } = new();
 }

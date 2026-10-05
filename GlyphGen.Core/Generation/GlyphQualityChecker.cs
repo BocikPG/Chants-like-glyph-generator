@@ -16,18 +16,27 @@ namespace GlyphGen.Core.Generation;
 /// </summary>
 public static class GlyphQualityChecker
 {
-    public static bool IsTooSimilar(Glyph candidate, IEnumerable<Glyph> alreadyAccepted, double maxSimilarity)
+    public static bool IsTooSimilar(Glyph candidate, IEnumerable<Glyph> alreadyAccepted, double maxSimilarity) =>
+        FindTooSimilar(candidate, alreadyAccepted, maxSimilarity) is not null;
+
+    /// <summary>The already-accepted glyph the candidate resembles MOST (and by how much), if
+    /// that reaches maxSimilarity - null when the candidate is distinct enough (or the check is
+    /// disabled). Lets an error name the glyph it clashed with instead of just failing.</summary>
+    public static (Glyph Other, double Similarity)? FindTooSimilar(
+        Glyph candidate, IEnumerable<Glyph> alreadyAccepted, double maxSimilarity)
     {
-        if (maxSimilarity >= 1.0) return false; // check disabled
+        if (maxSimilarity >= 1.0) return null; // check disabled
 
         var candidateShape = NormalizedShape(candidate);
+        (Glyph Other, double Similarity)? worst = null;
         foreach (var other in alreadyAccepted)
         {
-            if (JaccardSimilarity(candidateShape, NormalizedShape(other)) >= maxSimilarity)
-                return true;
+            double similarity = JaccardSimilarity(candidateShape, NormalizedShape(other));
+            if (similarity >= maxSimilarity && (worst is null || similarity > worst.Value.Similarity))
+                worst = (other, similarity);
         }
 
-        return false;
+        return worst;
     }
 
     /// <summary>True when every node of the whole glyph lies on one single straight line (or

@@ -5,20 +5,6 @@ using GlyphGen.Core.Rng;
 
 namespace GlyphGen.Core.Generation;
 
-/// <summary>Run-wide counter of how many times each glyph name has been used as a combination
-/// component - drives the "regenerate least-used dependency first" tie-break on placement
-/// failure.</summary>
-public sealed class GlyphUsageTracker
-{
-    private readonly Dictionary<string, int> _counts = new();
-
-    public int GetUsageCount(string glyphName) =>
-        _counts.TryGetValue(glyphName, out var c) ? c : 0;
-
-    public void RecordUsage(string glyphName) =>
-        _counts[glyphName] = GetUsageCount(glyphName) + 1;
-}
-
 /// <summary>
 /// Builds composite glyphs via overlay composition: translates (and, if configured,
 /// scales/rotates) already-generated component glyphs onto one grid. On a placement failure,
@@ -43,7 +29,9 @@ public interface ICombinationResolver
     /// Builds a composite glyph by placing each component of a recipe (translate/scale/rotate
     /// per config) without crossing the others. spacing is the language's SubSymbolSpacing -
     /// each placed component is treated as one shape under it. Returns null if the recipe
-    /// can't be satisfied within config.MaxRetriesPerRecipe attempts.
+    /// can't be satisfied within config.MaxRetriesPerRecipe attempts. variation 0 is the normal
+    /// search, which prefers the plain (0,0) overlay; a higher value (a quality retry) drops that
+    /// preference so the same components come out arranged differently.
     /// </summary>
     Glyph? TryCombine(
         string compositeName,
@@ -54,5 +42,6 @@ public interface ICombinationResolver
         DeterministicRandom rng,
         GlyphUsageTracker usageTracker,
         Func<string, int, Glyph> regenerateComponent,
-        SubSymbolSpacingConfig spacing);
+        SubSymbolSpacingConfig spacing,
+        int variation = 0);
 }

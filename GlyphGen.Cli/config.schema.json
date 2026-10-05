@@ -1,0 +1,1222 @@
+{
+  "type": "object",
+  "properties": {
+    "rootSeed": {
+      "type": "integer",
+      "description": "Sole source of true randomness for the entire run; everything else is derived deterministically from this via SeedTree."
+    },
+    "outputDirectory": {
+      "type": "string",
+      "default": "./output"
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/LanguageDefinition"
+      }
+    },
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL of this schema, so an editor can attach it."
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level config for one full run — deserialized directly from the JSON file.",
+  "required": [
+    "languages"
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GlyphGen config",
+  "definitions": {
+    "BrushTypefaceConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Taper",
+            "BroadNib",
+            "Ink"
+          ],
+          "default": "Taper"
+        },
+        "width": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ],
+          "description": "Maximum stroke width (Taper/Ink) or nib length (BroadNib)."
+        },
+        "tipWidth": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ]
+        },
+        "taperSharpness": {
+          "type": "number",
+          "description": ">1 = pointier, <1 = fuller.",
+          "default": 1
+        },
+        "nibAngleDegrees": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ]
+        },
+        "thinWidth": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ]
+        },
+        "pressureVariation": {
+          "type": "number",
+          "default": 0.35
+        },
+        "edgeWobble": {
+          "type": "number",
+          "default": 0.15
+        },
+        "raggedness": {
+          "type": "number",
+          "default": 0
+        },
+        "startBlobScale": {
+          "type": "number",
+          "description": ">1 adds a blob where each stroke starts.",
+          "default": 1.4
+        },
+        "join": {
+          "type": "string",
+          "enum": [
+            "Miter",
+            "Bevel",
+            "Round",
+            "Overlap"
+          ],
+          "default": "Round"
+        },
+        "miterLimit": {
+          "type": "number",
+          "default": 4
+        }
+      },
+      "additionalProperties": false
+    },
+    "CanvasConfig": {
+      "type": "object",
+      "properties": {
+        "sizePx": {
+          "type": "integer",
+          "minimum": 16,
+          "default": 512
+        },
+        "marginPx": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 32
+        }
+      },
+      "additionalProperties": false
+    },
+    "CombinationBiasConfig": {
+      "type": "object",
+      "properties": {
+        "modes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Tallest",
+              "Shortest",
+              "Widest",
+              "Narrowest",
+              "Squarest"
+            ]
+          },
+          "description": "Empty = no bias: the first legal placement found is used (original behaviour)."
+        },
+        "weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "propertyNames": {
+            "enum": [
+              "Tallest",
+              "Shortest",
+              "Widest",
+              "Narrowest",
+              "Squarest"
+            ]
+          },
+          "description": "Optional weight per listed mode (default 1 for any mode not mentioned), e.g. { \"Tallest\": 3, \"Squarest\": 1 } to care three times as much about height as about squareness. A mode's score is multiplied by its weight before the scores are added; only the ratios matter. Weights for modes that aren't in Modes are rejected, as is giving every listed mode weight 0."
+        },
+        "includeScaleAndRotation": {
+          "type": "boolean",
+          "description": "false: bias only picks among TRANSLATIONS, at the first scale/rotation that has any legal placement (the existing \"translate first, scale/rotate only as a fallback\" order is kept). true: every allowed scale/rotation is also in the running, so e.g. Tallest can pick a larger scale or a 90-degree turn - strongest effect, but it overrides the translate-first preference.",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "A preference, never a requirement: the bias only chooses between placements that already satisfy every other constraint (grid bounds, no crossing, sub-symbol spacing, allowed scales/rotations). If only one placement is legal, that one is used whatever it does to the shape. Components are placed one after another, so with three or more components the bias is applied greedily - each is placed to best serve the shape of what is already there. Several modes can be active at once; they are blended with equal weight (each is scored on a 0..1 scale relative to the grid, then the scores are added). E.g. Shortest + Narrowest asks for the smallest overall box, Tallest + Narrowest for tall and thin, Tallest + Widest for the biggest, Squarest + Shortest for a compact square. Opposites (Tallest + Shortest, Widest + Narrowest) cancel out and are rejected by validation."
+    },
+    "CombinationConfig": {
+      "type": "object",
+      "properties": {
+        "recipes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "description": "Key = composite glyph name, value = component glyph names to overlay. A glyph name may appear both as a standalone entry in the language's glyph list and as a component here."
+        },
+        "allowScale": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowedScales": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScaleFactorConfig"
+          },
+          "description": "Discrete, lattice-validated factors only — see ScaleFactorConfig for why a continuous float range isn't safe here."
+        },
+        "allowRotate": {
+          "type": "boolean",
+          "default": false
+        },
+        "rotation": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/RotationConfig"
+            }
+          ]
+        },
+        "maxRetriesPerRecipe": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5
+        },
+        "allowComponentsToCross": {
+          "type": "boolean",
+          "description": "If true, a composite's components may cross each other (they may always touch at shared nodes). Default false: overlay composition is controlled stacking, with no component crossing another, regardless of the language's AllowSymbolsToCross (which governs strokes inside one glyph). SubSymbolSpacing still applies either way.",
+          "default": false
+        },
+        "bias": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CombinationBiasConfig"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "Overlay-composition rules for combined glyphs (e.g. Anchorite-style stacking). A composite glyph's components are generated independently first, then translated (and optionally scaled/rotated) onto the composite's own grid. On placement failure, the least-used dependency (via GlyphUsageTracker) is regenerated first, escalating through the recipe's components up to MaxRetriesPerRecipe before the run fails with a named error."
+    },
+    "ConnectionRuleConfig": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": [
+            "Orthogonal",
+            "Diagonal",
+            "Both"
+          ],
+          "default": "Orthogonal"
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "One weighted connection template a chain can grow with: what direction, how far (in grid units, 1 = adjacent), and how likely it is to be picked relative to the language's other templates. A language with only one entry still works fine — it's just used 100% of the time since there's nothing to weigh it against."
+    },
+    "ContactSheetConfig": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Glyphs per row.",
+          "default": 6
+        },
+        "baseGlyphsSheet": {
+          "type": "boolean",
+          "description": "Also write a sheet of the language's base glyphs, as \"_bases/_contact-sheet.png\" (the main sheet never contains them). Only has an effect when baseGlyphs is used.",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "description": "Settings for the contact sheet(s): one PNG laying a language's glyphs out in a grid."
+    },
+    "CurveConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Derived",
+            "Explicit",
+            "Hybrid"
+          ],
+          "default": "Derived"
+        },
+        "straightLineBias": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PercentRange"
+            }
+          ],
+          "description": "Soft hint: probability any given connection is forced straight regardless of Mode. 0-100."
+        },
+        "tension": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TensionConfig"
+            }
+          ],
+          "description": "Each handle draws its own value independently (see TensionConfig)."
+        },
+        "explicitJitterDegrees": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ],
+          "description": "Explicit/Hybrid modes: max angle (degrees) a node's in/out tangent may deviate from the derived tangent; drawn per node."
+        },
+        "proximityGuard": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CurveProximityGuardConfig"
+            }
+          ]
+        },
+        "recheckProximityInCombined": {
+          "type": "boolean",
+          "description": "A component reuses its source glyph's curves inside a composite, so the proximity guard only ever judged it ALONE (and at its original size). If true, the guard is run again once the component sits in the composite - with its scaled edge lengths and the composite's other nodes - and any curved edge it would force straight is flattened. Needs ProximityGuard.Enabled. Default false.",
+          "default": false
+        },
+        "forceAllEdgesCurved": {
+          "type": "boolean",
+          "description": "Plans EVERY edge as a curve: ignores StraightLineBias and the proximity guard (both would otherwise force edges straight), so \"curved\" really means curved everywhere. Whether an edge visibly bends still depends on tension: a 0..0 tension band gives a bezier that looks straight. Must not be combined with a non-zero StraightLineBias or an enabled guard (the loader rejects that, since they would be silently overridden). Default false.",
+          "default": false
+        },
+        "contextMode": {
+          "type": "string",
+          "enum": [
+            "AllCurved",
+            "AllStraight",
+            "CurvedMiniStraightCombined",
+            "StraightMiniCurvedCombined"
+          ],
+          "default": "AllCurved"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Rendering-time curve behavior. Kept independent of the underlying straight-edge grid topology (which is what intersection checks always operate on) — this only affects how the final glyph is drawn, never whether a connection is valid."
+    },
+    "CurveProximityGuardConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "minEdgeLength": {
+          "type": "number",
+          "description": "Edges shorter than this (grid units) are always forced straight - a curve on a very short edge exaggerates its bulge relative to the edge's own length, making it more likely to swing into nearby geometry.",
+          "default": 1.5
+        },
+        "minDistanceToOtherNodes": {
+          "type": "number",
+          "description": "If > 0, also forces an edge straight whenever ANY other node in the same glyph (any chain, any combination component) sits within this distance of either of the edge's own endpoints - a broader, more expensive check than MinEdgeLength alone, since it looks at nearby geometry beyond just the edge's own two ends. 0 disables this part.",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "Forces an edge straight based on geometry, independent of CurveMode/StraightLineBias - a safety net against a curve bulging into nearby ink (see CurvePlanner's remarks on this). Disabled by default since it changes how many edges end up curved vs. the language's other settings alone would produce."
+    },
+    "FloatRange": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "number",
+          "default": 0
+        },
+        "max": {
+          "type": "number",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "A plain floating-point range (no percent semantics), resolved the same way as IntRange/PercentRange. Used for render settings expressed as canvas fractions, degrees, tension, etc."
+    },
+    "GenerativeMotifConfig": {
+      "type": "object",
+      "properties": {
+        "lengthRange": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            }
+          ]
+        },
+        "connectionRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConnectionRuleConfig"
+          }
+        },
+        "allowClosedLoop": {
+          "type": "boolean",
+          "default": false
+        },
+        "closedLoopWeight": {
+          "type": "number",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "Constrained generation, reusing the normal chain-growth engine with its own length range / connection rules / loop settings, independent of the language's regular free-form sub-symbol settings."
+    },
+    "GridConfig": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 25
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 25
+        }
+      },
+      "additionalProperties": false
+    },
+    "GuaranteedMotifConfig": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "default": ""
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Literal",
+            "Generative"
+          ],
+          "default": "Literal"
+        },
+        "literal": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/LiteralMotifConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generative": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/GenerativeMotifConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "placement": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PlacementConfig"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "One guaranteed motif for a language (e.g. Bard's \"bar\"). Exactly one of Literal/Generative should be populated, matching Type — kept as an explicit enum flag rather than relying on null-inference alone, so a config with both or neither populated is a validation error rather than a silent bug.",
+      "required": [
+        "id",
+        "type"
+      ]
+    },
+    "IntRange": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "integer",
+          "default": 0
+        },
+        "max": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "An inclusive integer range, resolved to one concrete value per generation via the deterministic per-glyph random source (so re-running the same config+seed always resolves to the same value)."
+    },
+    "LanguageDefinition": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "default": ""
+        },
+        "canvas": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CanvasConfig"
+            }
+          ]
+        },
+        "grid": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/GridConfig"
+            }
+          ],
+          "description": "The lattice this language's glyphs are drawn on. Required per language."
+        },
+        "glyphs": {
+          "type": "array",
+          "items": {
+            "description": "A glyph name, e.g. \"warrior\" (the older { \"name\": \"warrior\" } form also loads).",
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "The language's real glyphs - these end up in the output atlas/contact sheet."
+        },
+        "baseGlyphs": {
+          "type": "array",
+          "items": {
+            "description": "A glyph name, e.g. \"warrior\" (the older { \"name\": \"warrior\" } form also loads).",
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "Glyphs that exist only to be components of combination recipes. Generated (before Glyphs, so recipes can use them) and rendered, but written to a separate \"_bases\" folder and left out of the contact sheet. They go through the same quality/similarity gate as every other glyph."
+        },
+        "subSymbolCount": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            }
+          ]
+        },
+        "subSymbolLength": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            }
+          ]
+        },
+        "usageSizeBias": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/UsageSizeBiasConfig"
+            }
+          ],
+          "description": "Optional: glyphs used in more recipes roll lower sub-symbol counts/lengths."
+        },
+        "connectionRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConnectionRuleConfig"
+          }
+        },
+        "connectionWeighting": {
+          "type": "string",
+          "enum": [
+            "PerMove",
+            "PerRule"
+          ],
+          "description": "How connection-rule weights turn into move probabilities (applies to guaranteed generative motifs' rules too). See ConnectionWeighting. Default PerMove.",
+          "default": "PerMove"
+        },
+        "allowNodeRevisit": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowEdgeRevisit": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowClosedLoop": {
+          "type": "boolean",
+          "default": false
+        },
+        "closedLoopWeight": {
+          "type": "number",
+          "default": 0
+        },
+        "allowSymbolsToCross": {
+          "type": "boolean",
+          "description": "If false, the intersection checker rejects any candidate edge that crosses an already-committed edge, elsewhere in this same sub-symbol or any other sub-symbol/motif already placed in the glyph.",
+          "default": false
+        },
+        "guaranteedMotifs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GuaranteedMotifConfig"
+          }
+        },
+        "subSymbolPlacement": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PlacementConfig"
+            }
+          ],
+          "description": "Shared PlacementConfig schema, applied to regular free-form sub-symbols (guaranteed motifs carry their own placement block instead)."
+        },
+        "curve": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CurveConfig"
+            }
+          ]
+        },
+        "combination": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CombinationConfig"
+            }
+          ]
+        },
+        "quality": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualityConfig"
+            }
+          ],
+          "description": "Post-generation gates (similarity to other glyphs, straight-line rejection)."
+        },
+        "render": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/RenderConfig"
+            }
+          ],
+          "description": "Rendering (framing, colours, typeface). Pixel size/margin come from Canvas."
+        },
+        "subSymbolSpacing": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SubSymbolSpacingConfig"
+            }
+          ],
+          "description": "Minimum spacing between sub-symbols/motifs, beyond just not crossing."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "grid"
+      ]
+    },
+    "LiteralMotifConfig": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Fixed shape, always identical. Coordinates are relative to wherever Placement puts the motif's origin."
+    },
+    "PercentRange": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "number",
+          "default": 0
+        },
+        "max": {
+          "type": "number",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "A percentage hint (0-100), resolved the same way as IntRange. Used as a soft bias (e.g. StraightLineBias), not a hard constraint."
+    },
+    "PlacementConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Fixed",
+            "RandomValid",
+            "CenterAnchor"
+          ],
+          "default": "RandomValid"
+        },
+        "fixedOrigin": {
+          "oneOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required when Mode == Fixed, and an error with any other mode (it would be ignored). Written as { \"x\": 7, \"y\": 9 } or [7, 9]."
+        },
+        "allowRotationOnPlace": {
+          "type": "boolean",
+          "description": "Allows a random rotation per attempt, from Rotations (below). Only Literal motifs are affected: a generated chain is already random and ignores the rotation.",
+          "default": true
+        },
+        "rotations": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "enum": [
+                  0,
+                  90,
+                  180,
+                  270
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The angles (0/90/180/270) this placement may rotate by - meaningful only for a Literal motif's placement; the loader rejects it anywhere else. null (default) = inherit Combination.Rotation when Combination.AllowRotate is on, which is the original coupling; a list = use exactly these; an empty list = never rotate."
+        },
+        "maxPlacementAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Failure budget for \"find/fit a shape at a location\" — distinct from CombinationConfig.MaxRetriesPerRecipe, which governs \"can this recipe's components work together at all\". Keeping these separate lets failure messages say precisely which stage gave up.",
+          "default": 20
+        },
+        "startOnExistingNode": {
+          "type": "boolean",
+          "description": "RandomValid only: start the shape on a node already in the glyph (chosen uniformly) instead of a random grid point, so shapes grow out of each other. Needs no crossing permission - edges that merely meet at a node don't count as crossing - but can't be combined with SubSymbolSpacing.MinNodeDistance > 0 (a shared node is distance 0).",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "One shared schema for \"where does this shape go\" — used identically by both guaranteedMotifs[].placement and a language's subSymbolPlacement, so there's a single validator and a single resolver implementation for both cases."
+    },
+    "QualityConfig": {
+      "type": "object",
+      "properties": {
+        "maxSimilarity": {
+          "type": "number",
+          "description": "Jaccard similarity (0-1) of two glyphs' normalized shapes, at or above which they're considered too similar and one gets regenerated. 1.0 (or higher) disables the check entirely. Default 0.7 matches \"no more than 70% alike\".",
+          "default": 0.7
+        },
+        "rejectStraightLineOnly": {
+          "type": "boolean",
+          "description": "Reject a glyph whose entire geometry (across all its chains/components) reduces to a single straight line with no bends.",
+          "default": true
+        },
+        "maxRegenerationAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10
+        },
+        "compositeMaxSimilarity": {
+          "type": "number",
+          "description": "Similarity limit for COMPOSITES, checked only against other composites - never against plain or base glyphs, which a composite contains by construction. 1.0 or more (the default) = composites are not compared at all, as before. A composite at or above the limit is rebuilt with a fresh seed, up to MaxRegenerationAttempts. Composites are never subject to RejectStraightLineOnly.",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "Post-generation quality gates applied to every finished glyph in a language, checked against every glyph already accepted earlier in the same run. A glyph failing either check is regenerated (fresh seed) up to MaxRegenerationAttempts times before the run fails with a clear error naming the glyph."
+    },
+    "RectangularTypefaceConfig": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ]
+        },
+        "join": {
+          "type": "string",
+          "enum": [
+            "Miter",
+            "Bevel",
+            "Round",
+            "Overlap"
+          ],
+          "description": "Miter = sharp pointed corner (the \">\" look); Overlap = plain rectangles crossing.",
+          "default": "Miter"
+        },
+        "cap": {
+          "type": "string",
+          "enum": [
+            "Butt",
+            "Square",
+            "Round"
+          ],
+          "default": "Butt"
+        },
+        "miterLimit": {
+          "type": "number",
+          "description": "Beyond this tip-length / half-width ratio a miter falls back to a bevel.",
+          "default": 4
+        }
+      },
+      "additionalProperties": false,
+      "description": "Constant-width strokes. Independent of curve.mode: on a curved edge you simply get a constant-width band following the curve. All widths in this file's configs are fractions of the canvas size, so stroke weight looks the same at any pixel size and in any framing mode."
+    },
+    "RenderConfig": {
+      "type": "object",
+      "properties": {
+        "framing": {
+          "type": "string",
+          "enum": [
+            "Grid",
+            "Glyph",
+            "Language",
+            "GlyphCentered"
+          ],
+          "default": "Grid"
+        },
+        "foreground": {
+          "type": "string",
+          "description": "#RRGGBB or #AARRGGBB.",
+          "default": "#000000"
+        },
+        "background": {
+          "type": "string",
+          "description": "#RRGGBB or #AARRGGBB; the default is fully transparent.",
+          "default": "#00000000"
+        },
+        "typeface": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TypefaceConfig"
+            }
+          ]
+        },
+        "contactSheet": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContactSheetConfig"
+            }
+          ],
+          "description": "The overview sheet(s) the CLI writes next to the glyph images."
+        },
+        "debugShowNodes": {
+          "type": "boolean",
+          "description": "Debug option. When this or DebugColorComponents is on, the CLI writes an extra \"<glyph>.debug.png\" next to each normal image, drawn with the enabled overlays (the normal images stay clean; with both options off no debug files are written). Overlay for checking generation output: the whole lattice as faint dots with coordinates labelled every 5 cells, plus a dot on every node of the glyph - red for a free-form sub-symbol, blue for a guaranteed motif, gold where a node is used more than once (a revisit, or a node shared by shapes).",
+          "default": false
+        },
+        "debugColorComponents": {
+          "type": "boolean",
+          "description": "Debug option (see DebugShowNodes): colour each combination component differently in the extra \".debug.png\" images.",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Per-language rendering settings. Pixel size and margin still come from CanvasConfig."
+    },
+    "RotationConfig": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ]
+          }
+        },
+        "weight": {
+          "type": "number",
+          "description": "One weight shared by every non-zero angle (there are no per-angle weights): how likely a rotated placement is, relative to an unrotated one (weight 1), when the combination search falls back to trying scale/rotation combinations. 1 = rotated as likely as not, 0.5 = half as likely, 0 = never rotate. Multiplies with the scale factor's weight.",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "Allowed rotation angles for overlay composition. Only 0, 90, 180 and 270 are supported (they keep every node on the grid; GridPoint.RotateAround throws for anything else, 45 included) - the config loader rejects other angles."
+    },
+    "ScaleFactorConfig": {
+      "type": "object",
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "weight": {
+          "type": "number",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "One allowed scale factor for overlay composition, expressed as an exact fraction rather than a float — necessary because lattice-safety of shrinking depends on exact divisibility of every node's offset from the component's anchor, which a float range can't express or validate cleanly. The per-component check lives in CombinationResolver.IsLatticeSafeScale: a shrinking factor is only usable if every node's coordinates divide exactly for the specific shape being scaled, so \"nicer\" geometry (lots of even-length edges) naturally shrinks more often than oddly shaped components, without the generator having to force it. Weight orders the fallback search: heavier factors are tried earlier (it multiplies with Rotation.Weight for a rotated placement); 0 = never use this factor. With every weight equal the order is a plain uniform shuffle."
+    },
+    "SelfSpacingRule": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Existing",
+            "Adjacent",
+            "AllNodes"
+          ],
+          "default": "Existing"
+        },
+        "minDistance": {
+          "type": "number",
+          "default": 0
+        },
+        "maxDistance": {
+          "type": "number",
+          "default": 0
+        },
+        "lookback": {
+          "type": "integer",
+          "description": "Adjacent mode only: how many of the chain's most recent nodes are checked.",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "One node-to-node spacing rule applied while a single chain grows. Several rules (even of the same Mode) can be active at once; a new node must satisfy all of them. Distances are in grid units, 0 = that bound is off."
+    },
+    "SubSymbolSpacingConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "minCenterDistance": {
+          "type": "number",
+          "description": "Minimum distance between the CENTROIDS of two shapes (the average of each shape's own node positions) - a coarse \"keep this shape in its own area of the grid\" check, independent of how close any individual pair of nodes gets.",
+          "default": 0
+        },
+        "minNodeDistance": {
+          "type": "number",
+          "description": "Minimum distance between the CLOSEST pair of nodes belonging to two different shapes - a finer, local check that catches two shapes whose overall centers are far apart but which still reach out and nearly touch at one point.",
+          "default": 0
+        },
+        "maxNodeDistance": {
+          "type": "number",
+          "description": "Maximum distance between the CLOSEST pair of nodes of the candidate and an existing shape. 0 = no maximum. Which existing shapes it must hold against is controlled by MaxDistanceMode. Must be >= MinNodeDistance when both are set.",
+          "default": 0
+        },
+        "maxDistanceMode": {
+          "type": "string",
+          "enum": [
+            "NearestShape",
+            "AllShapes"
+          ],
+          "default": "NearestShape"
+        },
+        "selfSpacing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SelfSpacingRule"
+          },
+          "description": "Node-to-node rules within a single chain, all enforced together. Applies to generated chains only - not literal motifs or combination components."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Spacing enforced between a glyph's shapes, and within each chain, on top of (not instead of) the ordinary intersection check. Minimums keep things from sitting uncomfortably close together; maximums keep them clustered. Disabled by default, since these are additional constraints that can make placement noticeably harder to satisfy. Between shapes (the *Center/*Node distances): a \"shape\" is a motif or free-form sub-symbol when generating a glyph, and a whole placed component when combining glyphs per Combination.Recipes - both go through SubSymbolSpacingChecker. Checked against EVERY already-placed shape (minimums against all; the maximum per MaxDistanceMode). Within a chain: SelfSpacing rules, applied by ChainGenerator as each node is added."
+    },
+    "TensionConfig": {
+      "type": "object",
+      "properties": {
+        "range": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ],
+          "description": "Used only when Options is empty."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TensionOption"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Bezier handle length as a fraction of the edge's length (capped at 0.5 downstream). Default behavior (Options empty) is a single continuous range, uniformly sampled - the same as a plain FloatRange used to be. Populating Options switches to a weighted pick among several ranges instead: this is what lets a language express an extreme/bimodal distribution like \"70% dead straight (0-0), 30% strongly curved (0.4-0.5)\" rather than one smooth spread across the whole range - a look a single continuous range can't produce, since it always fills in the middle values too. Not restricted to two options; any number of weighted bands works, following the same {value/range, weight} pattern as ConnectionRuleConfig and ScaleFactorConfig elsewhere in this schema."
+    },
+    "TensionOption": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "number",
+          "default": 0
+        },
+        "max": {
+          "type": "number",
+          "default": 0
+        },
+        "weight": {
+          "type": "number",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "One weighted tension range to pick from - see TensionConfig."
+    },
+    "ThickEndsTypefaceConfig": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ],
+          "description": "Width along the body of the stroke."
+        },
+        "endWidth": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ],
+          "description": "Width at flared nodes."
+        },
+        "flareLength": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ],
+          "description": "Flare length as a fraction of each edge's length (capped at 0.5)."
+        },
+        "profile": {
+          "type": "string",
+          "enum": [
+            "Linear",
+            "Smooth",
+            "Sharp"
+          ],
+          "default": "Smooth"
+        },
+        "appliesTo": {
+          "type": "string",
+          "enum": [
+            "ChainEnds",
+            "EveryEdge",
+            "ChainEndsAndCorners"
+          ],
+          "default": "ChainEnds"
+        },
+        "terminal": {
+          "type": "string",
+          "enum": [
+            "Flat",
+            "Round",
+            "Ball"
+          ],
+          "default": "Flat"
+        },
+        "ballScale": {
+          "type": "number",
+          "description": "Ball diameter = EndWidth * BallScale (Terminal == Ball only).",
+          "default": 1.3
+        },
+        "join": {
+          "type": "string",
+          "enum": [
+            "Miter",
+            "Bevel",
+            "Round",
+            "Overlap"
+          ],
+          "default": "Round"
+        },
+        "miterLimit": {
+          "type": "number",
+          "default": 4
+        }
+      },
+      "additionalProperties": false
+    },
+    "TypefaceConfig": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Rectangular",
+            "ThickEnds",
+            "Brush"
+          ],
+          "default": "Rectangular"
+        },
+        "rectangular": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/RectangularTypefaceConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thickEnds": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/ThickEndsTypefaceConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "brush": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/BrushTypefaceConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "perGlyphJitter": {
+          "type": "number",
+          "description": "0 = every glyph uses the identical typeface; 0.1 = each glyph's widths vary by up to +-10%.",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "One typeface per language, resolved once from the seed (so every glyph in a language reads as the same font). Kind selects which sub-config is used; a null sub-config means defaults."
+    },
+    "UsageSizeBiasConfig": {
+      "type": "object",
+      "properties": {
+        "strength": {
+          "type": "number",
+          "description": "Extra draws added per use. 0 = off.",
+          "default": 0
+        },
+        "affectSubSymbolCount": {
+          "type": "boolean",
+          "default": true
+        },
+        "affectSubSymbolLength": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "description": "Counteracts a size skew towards heavily-used component glyphs: the more recipes a plain glyph appears in, the more likely it is to roll LOW values for its sub-symbol count and sub-symbol lengths. (Components used rarely are the ones regenerated most while composites are being fitted, and what survives that is biased towards smaller, easier-to-place shapes - so the untouched, frequently-used ones end up bigger on average.) Mechanism: each use adds Strength \"extra draws\" - the glyph rolls its count/length that many extra times (the usual range, the usual rules) and keeps the lowest result. A fractional number of extra draws is honoured probabilistically. The result is always inside the configured min..max, so this only reshapes the odds; it never overrides a range or any other constraint. \"Uses\" = how many times the glyph's name appears across Combination.Recipes. A glyph used in no recipe is unaffected, as is everything when Strength is 0 (the default), in which case generation is bit-for-bit what it was. Rough feel, for a 3-value range (e.g. 1..3) and a glyph used twice: Strength 0.5 = 1 extra draw (lowest value ~55% of the time instead of 33%), Strength 1 = 2 extra draws (~70%). Guaranteed motifs have their own length range and are not affected."
+    }
+  }
+}

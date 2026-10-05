@@ -47,22 +47,22 @@ public sealed class SelfSpacingRule
         var errors = new List<string>();
 
         if (!Enum.IsDefined(Mode))
-            errors.Add($"{nameof(Mode)} has an unknown value ({(int)Mode}).");
+            errors.Add($"{JsonNames.Of(nameof(Mode))} has an unknown value ({(int)Mode}).");
 
         if (double.IsNaN(MinDistance) || double.IsInfinity(MinDistance) || MinDistance < 0)
-            errors.Add($"{nameof(MinDistance)} must be a finite number >= 0 (got {MinDistance}).");
+            errors.Add($"{JsonNames.Of(nameof(MinDistance))} must be a finite number >= 0 (got {MinDistance}).");
         if (double.IsNaN(MaxDistance) || double.IsInfinity(MaxDistance) || MaxDistance < 0)
-            errors.Add($"{nameof(MaxDistance)} must be a finite number >= 0 (got {MaxDistance}).");
+            errors.Add($"{JsonNames.Of(nameof(MaxDistance))} must be a finite number >= 0 (got {MaxDistance}).");
 
         if (MinDistance > 0 && MaxDistance > 0 && MaxDistance < MinDistance)
         {
             errors.Add(
-                $"{nameof(MaxDistance)} ({MaxDistance}) is smaller than " +
-                $"{nameof(MinDistance)} ({MinDistance}) - no node could ever satisfy both.");
+                $"{JsonNames.Of(nameof(MaxDistance))} ({MaxDistance}) is smaller than " +
+                $"{JsonNames.Of(nameof(MinDistance))} ({MinDistance}) - no node could ever satisfy both.");
         }
 
         if (Mode == SelfSpacingMode.Adjacent && Lookback < 1)
-            errors.Add($"{nameof(Lookback)} must be >= 1 (got {Lookback}).");
+            errors.Add($"{JsonNames.Of(nameof(Lookback))} must be >= 1 (got {Lookback}).");
 
         return errors;
     }
@@ -116,26 +116,26 @@ public sealed class SubSymbolSpacingConfig
     {
         var errors = new List<string>();
 
-        CheckDistance(nameof(MinCenterDistance), MinCenterDistance);
-        CheckDistance(nameof(MinNodeDistance), MinNodeDistance);
-        CheckDistance(nameof(MaxNodeDistance), MaxNodeDistance);
+        CheckDistance(JsonNames.Of(nameof(MinCenterDistance)), MinCenterDistance);
+        CheckDistance(JsonNames.Of(nameof(MinNodeDistance)), MinNodeDistance);
+        CheckDistance(JsonNames.Of(nameof(MaxNodeDistance)), MaxNodeDistance);
 
         if (!Enum.IsDefined(MaxDistanceMode))
-            errors.Add($"{nameof(MaxDistanceMode)} has an unknown value ({(int)MaxDistanceMode}).");
+            errors.Add($"{JsonNames.Of(nameof(MaxDistanceMode))} has an unknown value ({(int)MaxDistanceMode}).");
 
         if (MaxNodeDistance > 0 && MinNodeDistance > 0 && MaxNodeDistance < MinNodeDistance)
         {
             errors.Add(
-                $"{nameof(MaxNodeDistance)} ({MaxNodeDistance}) is smaller than " +
-                $"{nameof(MinNodeDistance)} ({MinNodeDistance}) - no placement could ever satisfy both.");
+                $"{JsonNames.Of(nameof(MaxNodeDistance))} ({MaxNodeDistance}) is smaller than " +
+                $"{JsonNames.Of(nameof(MinNodeDistance))} ({MinNodeDistance}) - no placement could ever satisfy both.");
         }
 
         for (int i = 0; i < (SelfSpacing?.Count ?? 0); i++)
         {
             var rule = SelfSpacing![i];
-            if (rule is null) { errors.Add($"{nameof(SelfSpacing)}[{i}] is null."); continue; }
+            if (rule is null) { errors.Add($"{JsonNames.Of(nameof(SelfSpacing))}[{i}] is null."); continue; }
             foreach (var error in rule.Validate())
-                errors.Add($"{nameof(SelfSpacing)}[{i}]: {error}");
+                errors.Add($"{JsonNames.Of(nameof(SelfSpacing))}[{i}]: {error}");
         }
 
         return errors;

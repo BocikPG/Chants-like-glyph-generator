@@ -40,7 +40,8 @@ public sealed class CombinationResolver : ICombinationResolver
         DeterministicRandom rng,
         GlyphUsageTracker usageTracker,
         Func<string, int, Glyph> regenerateComponent,
-        SubSymbolSpacingConfig spacing)
+        SubSymbolSpacingConfig spacing,
+        int variation = 0)
     {
         var working = new Dictionary<string, Glyph>();
         foreach (var name in componentNames)
@@ -58,17 +59,16 @@ public sealed class CombinationResolver : ICombinationResolver
         {
             var attemptRng = rng.Derive($"combine-attempt-{attempt}");
 
-            // Components are never allowed to cross each other here, regardless of the
-            // language's general AllowSymbolsToCross - overlay composition is deliberate
-            // controlled stacking, not free intersection. Not exposed as its own config knob
-            // since it wasn't asked for; flag if that needs to be configurable.
-            var geometry = new GeometryContext(allowCrossing: false);
+            // Components don't cross each other unless Combination.AllowComponentsToCross says so,
+            // regardless of the language's general AllowSymbolsToCross - overlay composition is
+            // deliberate controlled stacking, not free intersection.
+            var geometry = new GeometryContext(allowCrossing: config.AllowComponentsToCross);
             var placedComponents = new List<PlacedComponent>();
             bool allPlaced = true;
 
             foreach (var name in componentNames)
             {
-                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, spacing);
+                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, spacing, variation);
                 if (placed is null)
                 {
                     allPlaced = false;
@@ -123,54 +123,82 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        SubSymbolSpacingConfig spacing)
+        SubSymbolSpacingConfig spacing,
+        int variation)
     {
         var sourceChains = GlyphGeometryUtils.GetAllChains(source).ToList();
 
         if (config.Bias is { IsActive: true })
-            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, spacing);
+            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, spacing, variation);
 
         // Phase 1: identity scale/rotation, exhaustive-but-shuffled search across every
         // position the shape could legally occupy.
-        var identity = TryAllTranslations(sourceChains, 1, 1, 0, sourceName, grid, rng.Derive("identity"), geometry, spacing);
+        var identity = TryAllTranslations(sourceChains, 1, 1, 0, sourceName, grid, rng.Derive("identity"), geometry, spacing, variation);
         if (identity is not null) return identity;
 
         if (!config.AllowScale && !config.AllowRotate) return null;
 
-        var combos = BuildAlternativeCombos(config);
-
-        ShuffleInPlace(combos, rng);
+        var combos = OrderedAlternativeCombos(config, rng);
 
         foreach (var (num, den, rot) in combos)
         {
             if (!IsLatticeSafeScale(sourceChains, num, den)) continue;
 
             var comboRng = rng.Derive($"combo-{num}-{den}-{rot}");
-            var result = TryAllTranslations(sourceChains, num, den, rot, sourceName, grid, comboRng, geometry, spacing);
+            var result = TryAllTranslations(sourceChains, num, den, rot, sourceName, grid, comboRng, geometry, spacing, variation);
             if (result is not null) return result;
         }
 
         return null;
     }
 
-    /// <summary>Every scale/rotation combination the config allows other than the identity
-    /// (1/1, 0 degrees), in a fixed order - callers shuffle it themselves.</summary>
-    private static List<(int Numerator, int Denominator, int Rotation)> BuildAlternativeCombos(CombinationConfig config)
+    /// <summary>
+    /// Every scale/rotation combination the config allows other than the identity (1/1, 0
+    /// degrees), in the order they should be tried. A combination's weight is its scale factor's
+    /// Weight times (for a non-zero angle) Rotation.Weight, so heavier combinations tend to come
+    /// first; weight 0 means never use it. When every weight is equal this is the plain uniform
+    /// shuffle it always was (so such configs keep their exact results); otherwise combinations
+    /// are drawn one at a time by weight, without replacement.
+    /// </summary>
+    private static List<(int Numerator, int Denominator, int Rotation)> OrderedAlternativeCombos(
+        CombinationConfig config, DeterministicRandom rng)
     {
         var scaleOptions = config.AllowScale && config.AllowedScales.Count > 0
-            ? config.AllowedScales.Select(s => (s.Numerator, s.Denominator)).ToList()
-            : new List<(int Numerator, int Denominator)> { (1, 1) };
+            ? config.AllowedScales.Select(s => (s.Numerator, s.Denominator, s.Weight)).ToList()
+            : new List<(int Numerator, int Denominator, double Weight)> { (1, 1, 1.0) };
         var rotationOptions = config.AllowRotate && config.Rotation.Allowed.Count > 0
-            ? config.Rotation.Allowed.ToList()
-            : new List<int> { 0 };
+            ? config.Rotation.Allowed.Select(angle => (Angle: angle, Weight: angle == 0 ? 1.0 : config.Rotation.Weight)).ToList()
+            : new List<(int Angle, double Weight)> { (0, 1.0) };
 
         var combos = new List<(int Numerator, int Denominator, int Rotation)>();
-        foreach (var (num, den) in scaleOptions)
-            foreach (var rot in rotationOptions)
-                if (!(num == 1 && den == 1 && rot == 0)) // the identity is always tried first, separately
-                    combos.Add((num, den, rot));
+        var weights = new List<double>();
+        foreach (var (num, den, scaleWeight) in scaleOptions)
+            foreach (var (rot, rotationWeight) in rotationOptions)
+            {
+                if (num == 1 && den == 1 && rot == 0) continue; // the identity is always tried first, separately
 
-        return combos;
+                double weight = scaleWeight * rotationWeight;
+                if (!(weight > 0)) continue; // weight 0 (or not a number): excluded
+                combos.Add((num, den, rot));
+                weights.Add(weight);
+            }
+
+        if (weights.Count <= 1 || weights.All(w => w == weights[0]))
+        {
+            ShuffleInPlace(combos, rng);
+            return combos;
+        }
+
+        var ordered = new List<(int Numerator, int Denominator, int Rotation)>(combos.Count);
+        while (combos.Count > 0)
+        {
+            int pick = combos.Count == 1 ? 0 : rng.WeightedIndex(weights);
+            ordered.Add(combos[pick]);
+            combos.RemoveAt(pick);
+            weights.RemoveAt(pick);
+        }
+
+        return ordered;
     }
 
     /// <summary>The one place a candidate placement is turned into a PlacedComponent: transform,
@@ -221,7 +249,8 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        SubSymbolSpacingConfig spacing)
+        SubSymbolSpacingConfig spacing,
+        int variation)
     {
         var bias = config.Bias;
         var existing = BoundsOfGroups(geometry.NodeGroups);
@@ -244,7 +273,7 @@ public sealed class CombinationResolver : ICombinationResolver
             int sMinX = shape.Min(p => p.X), sMaxX = shape.Max(p => p.X);
             int sMinY = shape.Min(p => p.Y), sMaxY = shape.Max(p => p.Y);
 
-            foreach (var t in EnumerateShuffledTranslations(shape, grid, comboRng))
+            foreach (var t in EnumerateShuffledTranslations(shape, grid, comboRng, preferIdentity: variation == 0))
             {
                 int minX = sMinX + t.X, maxX = sMaxX + t.X, minY = sMinY + t.Y, maxY = sMaxY + t.Y;
                 if (existing is { } e)
@@ -253,7 +282,7 @@ public sealed class CombinationResolver : ICombinationResolver
                     minY = Math.Min(minY, e.MinY); maxY = Math.Max(maxY, e.MaxY);
                 }
 
-                list.Add(new BiasCandidate(num, den, rot, t, BiasScore(bias.Modes, maxX - minX, maxY - minY, grid)));
+                list.Add(new BiasCandidate(num, den, rot, t, BiasScore(bias, maxX - minX, maxY - minY, grid)));
             }
 
             return list;
@@ -274,9 +303,8 @@ public sealed class CombinationResolver : ICombinationResolver
         var identity = CollectFor(1, 1, 0, rng.Derive("identity"));
 
         var alternatives = config.AllowScale || config.AllowRotate
-            ? BuildAlternativeCombos(config)
+            ? OrderedAlternativeCombos(config, rng)
             : new List<(int Numerator, int Denominator, int Rotation)>();
-        ShuffleInPlace(alternatives, rng);
 
         if (bias.IncludeScaleAndRotation)
         {
@@ -307,16 +335,16 @@ public sealed class CombinationResolver : ICombinationResolver
 
     /// <summary>Lower is better. Each active mode contributes a term on a 0..1 scale (extents
     /// are divided by the grid's extent, squareness is already a ratio) and the terms are
-    /// summed, so several modes blend with equal weight.</summary>
-    private static double BiasScore(IReadOnlyList<CombinationBiasMode> modes, int width, int height, LatticeGrid grid)
+    /// summed (each multiplied by its configured weight, 1 by default).</summary>
+    private static double BiasScore(CombinationBiasConfig bias, int width, int height, LatticeGrid grid)
     {
         double w = (double)width / Math.Max(1, grid.Width - 1);
         double h = (double)height / Math.Max(1, grid.Height - 1);
 
         double score = 0.0;
-        foreach (var mode in modes)
+        foreach (var mode in bias.Modes)
         {
-            score += mode switch
+            score += bias.WeightOf(mode) * mode switch
             {
                 CombinationBiasMode.Tallest => -h,
                 CombinationBiasMode.Shortest => h,
@@ -360,7 +388,8 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        SubSymbolSpacingConfig spacing)
+        SubSymbolSpacingConfig spacing,
+        int variation)
     {
         var origin = new GridPoint(0, 0);
 
@@ -372,7 +401,7 @@ public sealed class CombinationResolver : ICombinationResolver
 
         var preTranslated = sourceChains.SelectMany(c => c.Nodes).Select(ScaleRotate).ToList();
 
-        foreach (var translation in EnumerateShuffledTranslations(preTranslated, grid, rng))
+        foreach (var translation in EnumerateShuffledTranslations(preTranslated, grid, rng, preferIdentity: variation == 0))
         {
             var placed = TryBuildPlacement(
                 sourceChains, numerator, denominator, rotationDegrees, translation, sourceName, grid, geometry, spacing);
@@ -384,9 +413,10 @@ public sealed class CombinationResolver : ICombinationResolver
 
     /// <summary>Every translation offset that keeps a shape (already scaled/rotated, but not
     /// yet translated) fully within grid bounds, in shuffled order, with the (0,0) identity
-    /// offset always moved to the front when it's a valid option.</summary>
+    /// offset moved to the front when it's a valid option - unless preferIdentity is false (a
+    /// quality retry of a composite, which needs a different arrangement than the first try).</summary>
     private static IEnumerable<GridPoint> EnumerateShuffledTranslations(
-        List<GridPoint> shapeAtOrigin, LatticeGrid grid, DeterministicRandom rng)
+        List<GridPoint> shapeAtOrigin, LatticeGrid grid, DeterministicRandom rng, bool preferIdentity)
     {
         if (shapeAtOrigin.Count == 0)
         {
@@ -409,7 +439,7 @@ public sealed class CombinationResolver : ICombinationResolver
 
         ShuffleInPlace(offsets, rng);
 
-        int identityIndex = offsets.IndexOf(new GridPoint(0, 0));
+        int identityIndex = preferIdentity ? offsets.IndexOf(new GridPoint(0, 0)) : -1;
         if (identityIndex > 0)
         {
             (offsets[0], offsets[identityIndex]) = (offsets[identityIndex], offsets[0]);

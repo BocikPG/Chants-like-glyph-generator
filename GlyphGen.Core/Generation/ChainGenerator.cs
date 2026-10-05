@@ -99,6 +99,7 @@ public sealed class ChainGenerator : IChainGenerator
         {
             var directions = DirectionsFor(rule.Direction);
             int minLength = Math.Max(1, rule.MinLength);
+            int firstCandidate = candidates.Count;
 
             for (int length = minLength; length <= rule.MaxLength; length++)
             {
@@ -113,14 +114,19 @@ public sealed class ChainGenerator : IChainGenerator
 
                     candidates.Add(target);
 
-                    // NOTE: each concrete direction/length combination inherits the parent
-                    // rule's raw weight rather than splitting it across combinations — a rule
-                    // with a wide length range or Both-direction set therefore ends up with
-                    // more total probability mass than a narrow one of equal Weight. This is
-                    // an intentional simplicity trade-off; revisit if a rule's Weight needs to
-                    // stay independent of how many concrete moves it expands into.
+                    // Under PerMove (the default) each concrete direction/length combination
+                    // inherits the parent rule's raw weight, so a rule with a wide length range
+                    // or Both-direction set ends up with more total probability mass than a
+                    // narrow one of equal Weight. PerRule evens that out below.
                     weights.Add(rule.Weight);
                 }
+            }
+
+            if (request.ConnectionWeighting == ConnectionWeighting.PerRule)
+            {
+                int moves = candidates.Count - firstCandidate;
+                for (int i = firstCandidate; i < candidates.Count; i++)
+                    weights[i] = rule.Weight / moves;
             }
         }
     }

@@ -93,5 +93,23 @@ public sealed class CurveConfig
     public FloatRange ExplicitJitterDegrees { get; set; } = new() { Min = 20, Max = 60 };
 
     public CurveProximityGuardConfig ProximityGuard { get; set; } = new();
+
+    /// <summary>
+    /// A component reuses its source glyph's curves inside a composite, so the proximity guard
+    /// only ever judged it ALONE (and at its original size). If true, the guard is run again once
+    /// the component sits in the composite - with its scaled edge lengths and the composite's
+    /// other nodes - and any curved edge it would force straight is flattened. Needs
+    /// ProximityGuard.Enabled. Default false.
+    /// </summary>
+    public bool RecheckProximityInCombined { get; set; } = false;
+
+    /// <summary>
+    /// Plans EVERY edge as a curve: ignores StraightLineBias and the proximity guard (both would
+    /// otherwise force edges straight), so "curved" really means curved everywhere. Whether an
+    /// edge visibly bends still depends on tension: a 0..0 tension band gives a bezier that looks
+    /// straight. Must not be combined with a non-zero StraightLineBias or an enabled guard
+    /// (the loader rejects that, since they would be silently overridden). Default false.
+    /// </summary>
+    public bool ForceAllEdgesCurved { get; set; } = false;
     public CurveContextMode ContextMode { get; set; } = CurveContextMode.AllCurved;
 }

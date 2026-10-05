@@ -1,4 +1,5 @@
 {
+  "$schema": "./config.schema.json",
   "rootSeed": 20260927,
   "outputDirectory": "./output",
   "languages": [
@@ -173,6 +174,7 @@
         "sizePx": 512,
         "marginPx": 32
       },
+
       "glyphs": [
         "Man/Human",
         "You",
@@ -341,15 +343,6 @@
         },
         "allowScale": false,
         "allowRotate": false,
-        "rotation": {
-          "allowed": [
-            0,
-            90,
-            180,
-            270
-          ],
-          "weight": 1.0
-        },
         "bias": {
           "modes": [
             "Shortest",
@@ -358,59 +351,68 @@
           ],
           "includeScaleAndRotation": false
         },
-        "maxRetriesPerRecipe": 5
+        "maxRetriesPerRecipe": 50
       },
+
       "subSymbolCount": {
         "min": 1,
-        "max": 2
+        "max": 3
       },
       "subSymbolLength": {
         "min": 2,
-        "max": 6
+        "max": 4
       },
       "connectionRules": [
         {
           "direction": "Orthogonal",
-          "minLength": 1,
+          "minLength": 2,
           "maxLength": 5,
           "weight": 3.0
         },
         {
           "direction": "Diagonal",
-          "minLength": 1,
+          "minLength": 2,
           "maxLength": 5,
           "weight": 1.0
         }
       ],
-      "allowNodeRevisit": false,
+      "allowNodeRevisit": true,
       "allowEdgeRevisit": false,
-      "allowClosedLoop": true,
-      "closedLoopWeight": 0.7,
       "allowSymbolsToCross": false,
+
+      "allowClosedLoop": true,
+      "closedLoopWeight": 0.6,
+
       "guaranteedMotifs": [],
+
       "subSymbolPlacement": {
         "mode": "RandomValid",
         "fixedOrigin": null,
-        "allowRotationOnPlace": true,
-        "maxPlacementAttempts": 50
+        "allowRotationOnPlace": false,
+        "maxPlacementAttempts": 50,
+        "startOnExistingNode": true
       },
+
       "subSymbolSpacing": {
         "enabled": true,
         "minCenterDistance": 1,
-        "minNodeDistance": 2,
-        "maxNodeDistance": 5,
-        "maxDistanceMode": "AllShapes",
-        "selfSpacing": [
-          {
-            "mode": "Existing",
-            "minDistance": 1.1
-          },
-          {
-            "mode": "AllNodes",
-            "maxDistance": 6
-          }
-        ]
+        "minNodeDistance": 0,
+        "maxNodeDistance": 6,
+        "maxDistanceMode": "AllShapes"
       },
+
+      "usageSizeBias": {
+        "strength": 0.7,
+        "affectSubSymbolCount": true,
+        "affectSubSymbolLength": false
+      },
+
+      "quality": {
+        "maxSimilarity": 0.7,
+        "rejectStraightLineOnly": true,
+        "maxRegenerationAttempts": 50
+      },
+
       "curve": {
         "mode": "Derived",
         "contextMode": "AllCurved",
@@ -423,7 +425,7 @@
             {
               "min": 0,
               "max": 0,
-              "weight": 3
+              "weight": 2
             },
             {
               "min": 0.4,
@@ -442,17 +444,13 @@
           "minDistanceToOtherNodes": 1
         }
       },
-      "quality": {
-        "maxSimilarity": 0.7,
-        "rejectStraightLineOnly": true,
-        "maxRegenerationAttempts": 50
-      },
+      
       "render": {
-        "framing": "Language",
+        "framing": "GlyphCentered",
         "foreground": "#FFFFFFFF",
         "background": "#00000000",
-        "debugShowNodes": false,
-        "debugColorComponents": false,
+        "debugShowNodes": true,
+        "debugColorComponents": true,
         "typeface": {
           "kind": "Rectangular",
           "perGlyphJitter": 0.0,

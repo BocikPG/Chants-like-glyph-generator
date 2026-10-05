@@ -32,6 +32,18 @@ public sealed class CombinationBiasConfig
 
     public bool IsActive => Modes is { Count: > 0 };
 
+    /// <summary>
+    /// Optional weight per listed mode (default 1 for any mode not mentioned), e.g.
+    /// { "Tallest": 3, "Squarest": 1 } to care three times as much about height as about
+    /// squareness. A mode's score is multiplied by its weight before the scores are added; only
+    /// the ratios matter. Weights for modes that aren't in Modes are rejected, as is giving
+    /// every listed mode weight 0.
+    /// </summary>
+    public Dictionary<CombinationBiasMode, double> Weights { get; set; } = new();
+
+    public double WeightOf(CombinationBiasMode mode) =>
+        Weights is not null && Weights.TryGetValue(mode, out var weight) ? weight : 1.0;
+
     /// <summary>false: bias only picks among TRANSLATIONS, at the first scale/rotation that has
     /// any legal placement (the existing "translate first, scale/rotate only as a fallback"
     /// order is kept). true: every allowed scale/rotation is also in the running, so e.g.
@@ -47,13 +59,24 @@ public sealed class CombinationBiasConfig
         foreach (var mode in modes)
         {
             if (!Enum.IsDefined(mode))
-                errors.Add($"{nameof(Modes)} contains an unknown value ({(int)mode}).");
+                errors.Add($"{JsonNames.Of(nameof(Modes))} contains an unknown value ({(int)mode}).");
         }
 
         if (modes.Contains(CombinationBiasMode.Tallest) && modes.Contains(CombinationBiasMode.Shortest))
-            errors.Add($"{nameof(Modes)} lists both Tallest and Shortest - they cancel each other out.");
+            errors.Add($"{JsonNames.Of(nameof(Modes))} lists both Tallest and Shortest - they cancel each other out.");
         if (modes.Contains(CombinationBiasMode.Widest) && modes.Contains(CombinationBiasMode.Narrowest))
-            errors.Add($"{nameof(Modes)} lists both Widest and Narrowest - they cancel each other out.");
+            errors.Add($"{JsonNames.Of(nameof(Modes))} lists both Widest and Narrowest - they cancel each other out.");
+
+        foreach (var (mode, weight) in Weights ?? new Dictionary<CombinationBiasMode, double>())
+        {
+            if (!modes.Contains(mode))
+                errors.Add($"{JsonNames.Of(nameof(Weights))} has an entry for {mode}, which is not in Modes, so it would be ignored.");
+            if (!double.IsFinite(weight) || weight < 0)
+                errors.Add($"{JsonNames.Of(nameof(Weights))}[{mode}] must be a finite number >= 0 (got {weight}).");
+        }
+
+        if (modes.Count > 0 && modes.All(m => WeightOf(m) == 0))
+            errors.Add($"Every listed mode has weight 0, so the bias would do nothing.");
 
         return errors;
     }

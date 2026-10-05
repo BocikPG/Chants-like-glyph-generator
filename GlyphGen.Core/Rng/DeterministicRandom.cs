@@ -52,8 +52,9 @@ public sealed class DeterministicRandom
 
     /// <summary>
     /// Weighted random index into a list of weights. Weights don't need to sum to 1 or to
-    /// any particular total — normalized internally. Used for connectionRules, allowedScales,
-    /// rotation.allowed, etc.
+    /// any particular total — normalized internally. Used for connection rules, tension options
+    /// and the order scale/rotation combinations are tried in (each combination weighted by its
+    /// scale factor and rotation weight - not per angle). A total of zero or less returns index 0.
     /// </summary>
     public int WeightedIndex(IReadOnlyList<double> weights)
     {

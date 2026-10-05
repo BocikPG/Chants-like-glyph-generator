@@ -92,16 +92,28 @@ public sealed class GlyphCurvePlanner
         if (hasBase) planned.Layers.Add(Legacy().Layers[0]);
         int offset = hasBase ? 1 : 0;
 
+        // CurveConfig.RecheckProximityInCombined: re-run the proximity guard on each reused
+        // component, now that it has its final size and neighbours.
+        bool recheck = _curve.RecheckProximityInCombined && _curve.ProximityGuard.Enabled && !_curve.ForceAllEdgesCurved;
+        List<Vec2>? compositePoints = null;
+        List<Vec2>? RecheckPoints()
+        {
+            if (!recheck) return null;
+            return compositePoints ??= _curve.ProximityGuard.MinDistanceToOtherNodes > 0
+                ? GlyphGeometryUtils.GetAllNodes(glyph).Select(p => new Vec2(p.X, p.Y)).Distinct().ToList()
+                : new List<Vec2>();
+        }
+
         for (int i = 0; i < glyph.Components.Count; i++)
         {
-            var layer = TryReuseSourcePlan(glyph.Components[i]) ?? Legacy().Layers[offset + i];
+            var layer = TryReuseSourcePlan(glyph.Components[i], RecheckPoints()) ?? Legacy().Layers[offset + i];
             planned.Layers.Add(layer);
         }
 
         return planned;
     }
 
-    private PlannedLayer? TryReuseSourcePlan(PlacedComponent component)
+    private PlannedLayer? TryReuseSourcePlan(PlacedComponent component, List<Vec2>? recheckPoints)
     {
         if (!_glyphs.TryGetValue(component.SourceGlyphName, out var source)) return null;
         if (_inProgress.Contains(source.Name)) return null; // would be a cycle
@@ -114,7 +126,28 @@ public sealed class GlyphCurvePlanner
             foreach (var chain in sourceLayer.Chains)
                 layer.Chains.Add(MapChain(chain, map));
 
+        if (recheckPoints is not null) FlattenGuardedEdges(layer, recheckPoints);
+
         return layer;
+    }
+
+    /// <summary>The proximity guard, applied to an already-mapped component layer (a fresh copy,
+    /// so the source glyph's cached plan is untouched): curved edges the guard would force
+    /// straight at their new size and position become lines.</summary>
+    private void FlattenGuardedEdges(PlannedLayer layer, List<Vec2> allPoints)
+    {
+        var guard = _curve.ProximityGuard;
+        foreach (var chain in layer.Chains)
+        {
+            for (int i = 0; i < chain.Edges.Count; i++)
+            {
+                var e = chain.Edges[i];
+                if (e.IsLine) continue;
+
+                if (CurvePlanner.IsForcedStraight(e.P0, e.P3, (e.P3 - e.P0).Length, guard, allPoints))
+                    chain.Edges[i] = new PlannedEdge { P0 = e.P0, C1 = e.P0, C2 = e.P3, P3 = e.P3, IsLine = true };
+            }
+        }
     }
 
     /// <summary>The component's transform as a plain affine map on grid coordinates. Built by

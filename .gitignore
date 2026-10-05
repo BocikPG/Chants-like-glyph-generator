@@ -496,3 +496,6 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+/output
+/output-advanced

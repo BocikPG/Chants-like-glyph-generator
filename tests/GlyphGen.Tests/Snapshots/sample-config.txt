@@ -1,0 +1,48 @@
+language Devotee
+  glyph you_base
+    chain: (13,7) (13,6) (13,1) (10,1) (10,4) (10,7) (8,7) (4,3)
+  glyph me_base
+    chain: (10,4) (14,8) (14,10) (12,10) (12,9)
+    chain: (4,12) (5,11) (5,14) (0,9) (0,11) (2,13)
+  glyph devotee_base
+    chain: (14,7) (9,7) (9,6) (13,2) (13,6) (10,6) (11,5)
+  glyph man
+    chain: (10,2) (10,1)
+    chain: (6,4) (6,5) (6,6) (6,11)
+  glyph you
+    component man scale 1/1 rotate 0 at (0,0)
+      chain: (10,2) (10,1)
+      chain: (6,4) (6,5) (6,6) (6,11)
+    component you_base scale 1/1 rotate 0 at (-3,7)
+      chain: (10,14) (10,13) (10,8) (7,8) (7,11) (7,14) (5,14) (1,10)
+  glyph me
+    component man scale 1/1 rotate 0 at (0,0)
+      chain: (10,2) (10,1)
+      chain: (6,4) (6,5) (6,6) (6,11)
+    component me_base scale 1/1 rotate 0 at (0,0)
+      chain: (10,4) (14,8) (14,10) (12,10) (12,9)
+      chain: (4,12) (5,11) (5,14) (0,9) (0,11) (2,13)
+  glyph devotee
+    component man scale 1/1 rotate 0 at (0,0)
+      chain: (10,2) (10,1)
+      chain: (6,4) (6,5) (6,6) (6,11)
+    component devotee_base scale 1/1 rotate 0 at (0,0)
+      chain: (14,7) (9,7) (9,6) (13,2) (13,6) (10,6) (11,5)
+language Warrior
+  glyph warrior
+    chain: (6,11) (6,13) (5,13) (0,13) (0,12) (3,12) (3,11) (3,12)
+    chain: (9,12) (14,12) (14,8) (14,6) (13,6) (11,6) (10,5) (10,10)
+  glyph weapon
+    chain: (3,10) (3,9) (3,8) (0,8) (3,11) (7,11) (7,10)
+    chain: (9,13) (9,10) (10,10) (11,10) (11,13) (9,13) (9,14) (5,14)
+    chain: (5,11) (5,8) (6,8) (6,4) (6,1) (11,1) (13,1)
+  glyph protect
+    chain: (8,3) (12,3) (12,8) (12,3) (12,2) (13,3) (12,2) (14,2)
+    chain: (10,6) (13,6) (13,9) (13,10) (9,10) (5,14) (5,9)
+  glyph fortress
+    component warrior scale 1/1 rotate 0 at (0,0)
+      chain: (6,11) (6,13) (5,13) (0,13) (0,12) (3,12) (3,11) (3,12)
+      chain: (9,12) (14,12) (14,8) (14,6) (13,6) (11,6) (10,5) (10,10)
+    component protect scale 1/1 rotate 0 at (-5,-2)
+      chain: (3,1) (7,1) (7,6) (7,1) (7,0) (8,1) (7,0) (9,0)
+      chain: (5,4) (8,4) (8,7) (8,8) (4,8) (0,12) (0,7)

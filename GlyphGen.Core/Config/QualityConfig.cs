@@ -18,4 +18,13 @@ public sealed class QualityConfig
     public bool RejectStraightLineOnly { get; set; } = true;
 
     public int MaxRegenerationAttempts { get; set; } = 10;
+
+    /// <summary>
+    /// Similarity limit for COMPOSITES, checked only against other composites - never against
+    /// plain or base glyphs, which a composite contains by construction. 1.0 or more (the
+    /// default) = composites are not compared at all, as before. A composite at or above the
+    /// limit is rebuilt with a fresh seed, up to MaxRegenerationAttempts. Composites are never
+    /// subject to RejectStraightLineOnly.
+    /// </summary>
+    public double CompositeMaxSimilarity { get; set; } = 1.0;
 }

@@ -99,7 +99,7 @@ public static class CurvePlanner
             bool rolledStraight = rng.NextBool(straightProbability);
             bool forcedStraight = IsForcedStraight(pa, pb, len, curve.ProximityGuard, allPoints);
 
-            if (rolledStraight || forcedStraight)
+            if ((rolledStraight || forcedStraight) && !curve.ForceAllEdgesCurved)
             {
                 result.Edges.Add(new PlannedEdge { P0 = pa, P3 = pb, C1 = pa, C2 = pb, IsLine = true });
                 continue;
@@ -115,7 +115,7 @@ public static class CurvePlanner
 
     /// <summary>CurveConfig.ProximityGuard: forces an edge straight when its own length is
     /// short, or (opt-in) when some other node in the glyph sits close to either endpoint.</summary>
-    private static bool IsForcedStraight(
+    internal static bool IsForcedStraight(
         Vec2 pa, Vec2 pb, double edgeLen, CurveProximityGuardConfig guard, List<Vec2> allPoints)
     {
         if (!guard.Enabled) return false;

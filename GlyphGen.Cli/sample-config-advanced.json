@@ -1,0 +1,121 @@
+{
+  "$schema": "./config.schema.json",
+  "rootSeed": 7,
+  "outputDirectory": "./output-advanced",
+  "languages": [
+    {
+      "name": "Scribe",
+      "grid": { "width": 15, "height": 15 },
+      "canvas": { "sizePx": 512, "marginPx": 32 },
+
+      "baseGlyphs": [ "ring_base", "tick_base" ],
+      "glyphs": [ "sun", "moon", "star", "eclipse", "comet" ],
+
+      "subSymbolCount": { "min": 1, "max": 2 },
+      "subSymbolLength": { "min": 4, "max": 6 },
+      "connectionRules": [
+        { "direction": "Orthogonal", "minLength": 1, "maxLength": 4, "weight": 3.0 },
+        { "direction": "Diagonal",   "minLength": 1, "maxLength": 2, "weight": 1.0 }
+      ],
+      "connectionWeighting": "PerRule",
+      "allowNodeRevisit": false,
+      "allowEdgeRevisit": false,
+      "allowClosedLoop": true,
+      "closedLoopWeight": 0.3,
+      "allowSymbolsToCross": true,
+
+      "guaranteedMotifs": [
+        {
+          "id": "bar",
+          "type": "Literal",
+          "literal": { "nodes": [ [0, 0], [2, 0], [2, 2] ] },
+          "placement": { "mode": "RandomValid", "allowRotationOnPlace": true, "rotations": [ 0, 90, 180, 270 ], "maxPlacementAttempts": 40 }
+        }
+      ],
+
+      "subSymbolPlacement": {
+        "mode": "RandomValid",
+        "startOnExistingNode": true,
+        "maxPlacementAttempts": 40
+      },
+
+      "subSymbolSpacing": {
+        "enabled": true,
+        "minCenterDistance": 0.5,
+        "maxNodeDistance": 6,
+        "maxDistanceMode": "NearestShape",
+        "selfSpacing": [
+          { "mode": "Adjacent", "minDistance": 1, "lookback": 2 },
+          { "mode": "AllNodes", "maxDistance": 9 }
+        ]
+      },
+
+      "usageSizeBias": { "strength": 0.5, "affectSubSymbolCount": true, "affectSubSymbolLength": true },
+
+      "quality": {
+        "maxSimilarity": 0.8,
+        "rejectStraightLineOnly": true,
+        "maxRegenerationAttempts": 20,
+        "compositeMaxSimilarity": 0.95
+      },
+
+      "combination": {
+        "recipes": {
+          "eclipse": [ "sun", "ring_base" ],
+          "comet": [ "star", "tick_base" ]
+        },
+        "allowScale": true,
+        "allowedScales": [
+          { "numerator": 1, "denominator": 1, "weight": 3.0 },
+          { "numerator": 2, "denominator": 1, "weight": 1.0 }
+        ],
+        "allowRotate": true,
+        "rotation": { "allowed": [ 0, 90, 180, 270 ], "weight": 0.5 },
+        "maxRetriesPerRecipe": 8,
+        "allowComponentsToCross": true,
+        "bias": {
+          "modes": [ "Squarest", "Shortest" ],
+          "weights": { "Squarest": 2 },
+          "includeScaleAndRotation": false
+        }
+      },
+
+      "curve": {
+        "mode": "Hybrid",
+        "contextMode": "AllCurved",
+        "straightLineBias": { "min": 30, "max": 60 },
+        "tension": {
+          "options": [
+            { "min": 0,   "max": 0,   "weight": 2 },
+            { "min": 0.3, "max": 0.45, "weight": 3 }
+          ]
+        },
+        "explicitJitterDegrees": { "min": 15, "max": 35 },
+        "proximityGuard": { "enabled": true, "minEdgeLength": 1.5, "minDistanceToOtherNodes": 1 },
+        "recheckProximityInCombined": true
+      },
+
+      "render": {
+        "framing": "Language",
+        "foreground": "#FFF1E6D0",
+        "background": "#FF1B1A17",
+        "debugShowNodes": true,
+        "debugColorComponents": true,
+        "contactSheet": { "columns": 4, "baseGlyphsSheet": true },
+        "typeface": {
+          "kind": "ThickEnds",
+          "perGlyphJitter": 0.05,
+          "thickEnds": {
+            "width": { "min": 0.03, "max": 0.03 },
+            "endWidth": { "min": 0.055, "max": 0.055 },
+            "flareLength": { "min": 0.25, "max": 0.25 },
+            "profile": "Smooth",
+            "appliesTo": "ChainEndsAndCorners",
+            "terminal": "Round",
+            "join": "Round"
+          }
+        }
+      }
+    }
+  ]
+}

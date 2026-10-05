@@ -9,7 +9,9 @@ namespace GlyphGen.Core.Generation;
 /// or delegates to ICombinationResolver when the glyph name appears as a recipe key in the
 /// language's CombinationConfig. generated is the run's shared, mutable glyph registry - a
 /// composite generation may write back into it when a dependency gets regenerated (see
-/// ICombinationResolver), so every other recipe referencing that name stays in sync.</summary>
+/// ICombinationResolver), so every other recipe referencing that name stays in sync. variation is
+/// 0 for a normal build; a quality retry of a composite passes its attempt number so the rebuilt
+/// composite is arranged differently (plain glyphs ignore it - their retries change by seed).</summary>
 public interface IGlyphGenerator
 {
     Glyph GenerateGlyph(
@@ -18,7 +20,8 @@ public interface IGlyphGenerator
         LatticeGrid grid,
         ulong glyphSeed,
         Dictionary<string, Glyph> generated,
-        GlyphUsageTracker usageTracker);
+        GlyphUsageTracker usageTracker,
+        int variation = 0);
 }
 
 /// <summary>Generates every glyph for one language, in dependency-safe order (components

@@ -12,8 +12,29 @@ public sealed class RenderConfig
 
     public TypefaceConfig Typeface { get; set; } = new();
 
-    /// <summary>Draw a dot on every grid node (useful for checking generation output).</summary>
+    /// <summary>The overview sheet(s) the CLI writes next to the glyph images.</summary>
+    public ContactSheetConfig ContactSheet { get; set; } = new();
+
+    /// <summary>Debug option. When this or DebugColorComponents is on, the CLI writes an extra
+    /// "&lt;glyph&gt;.debug.png" next to each normal image, drawn with the enabled overlays (the
+    /// normal images stay clean; with both options off no debug files are written).
+    /// Overlay for checking generation output: the whole lattice as faint dots with
+    /// coordinates labelled every 5 cells, plus a dot on every node of the glyph - red for a
+    /// free-form sub-symbol, blue for a guaranteed motif, gold where a node is used more than
+    /// once (a revisit, or a node shared by shapes).</summary>
     public bool DebugShowNodes { get; set; } = false;
-    /// <summary>Colour each combination component differently.</summary>
+    /// <summary>Debug option (see DebugShowNodes): colour each combination component differently in
+    /// the extra ".debug.png" images.</summary>
     public bool DebugColorComponents { get; set; } = false;
+}
+
+/// <summary>Settings for the contact sheet(s): one PNG laying a language's glyphs out in a grid.</summary>
+public sealed class ContactSheetConfig
+{
+    /// <summary>Glyphs per row.</summary>
+    public int Columns { get; set; } = 6;
+
+    /// <summary>Also write a sheet of the language's base glyphs, as "_bases/_contact-sheet.png"
+    /// (the main sheet never contains them). Only has an effect when baseGlyphs is used.</summary>
+    public bool BaseGlyphsSheet { get; set; } = true;
 }

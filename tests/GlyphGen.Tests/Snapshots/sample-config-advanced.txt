@@ -1,0 +1,35 @@
+language Scribe
+  glyph ring_base
+    chain [bar]: (7,3) (9,3) (9,5)
+    chain: (9,5) (7,3) (5,5) (5,4) (5,2)
+  glyph tick_base
+    chain [bar]: (14,7) (14,9) (12,9)
+    chain: (14,9) (12,7) (12,4) (12,1) (13,1)
+    chain: (14,7) (13,7) (12,7) (10,9) (8,7)
+  glyph sun
+    chain [bar]: (11,8) (13,8) (13,10)
+    chain (closed): (13,8) (13,9) (9,9)
+    chain: (13,8) (13,7) (10,7) (10,10) (10,13)
+  glyph moon
+    chain [bar]: (6,9) (8,9) (8,11)
+    chain: (8,9) (6,9) (6,5) (5,5) (4,6)
+    chain: (5,5) (2,5) (1,5) (0,4) (0,2) (1,3)
+  glyph star
+    chain [bar]: (8,8) (8,6) (10,6)
+    chain: (8,6) (10,4) (11,4) (12,3)
+  glyph eclipse
+    component sun scale 1/1 rotate 0 at (0,0)
+      chain [bar]: (11,8) (13,8) (13,10)
+      chain (closed): (13,8) (13,9) (9,9)
+      chain: (13,8) (13,7) (10,7) (10,10) (10,13)
+    component ring_base scale 1/1 rotate 0 at (2,6)
+      chain [bar]: (9,9) (11,9) (11,11)
+      chain: (11,11) (9,9) (7,11) (7,10) (7,8)
+  glyph comet
+    component star scale 1/1 rotate 0 at (0,0)
+      chain [bar]: (8,8) (8,6) (10,6)
+      chain: (8,6) (10,4) (11,4) (12,3)
+    component tick_base scale 1/1 rotate 0 at (-4,2)
+      chain [bar]: (10,9) (10,11) (8,11)
+      chain: (10,11) (8,9) (8,6) (8,3) (9,3)
+      chain: (10,9) (9,9) (8,9) (6,11) (4,9)

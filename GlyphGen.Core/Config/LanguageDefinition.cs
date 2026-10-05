@@ -42,6 +42,10 @@ public sealed class LanguageDefinition
 
     public List<ConnectionRuleConfig> ConnectionRules { get; set; } = new();
 
+    /// <summary>How connection-rule weights turn into move probabilities (applies to guaranteed
+    /// generative motifs' rules too). See ConnectionWeighting. Default PerMove.</summary>
+    public ConnectionWeighting ConnectionWeighting { get; set; } = ConnectionWeighting.PerMove;
+
     public bool AllowNodeRevisit { get; set; } = false;
     public bool AllowEdgeRevisit { get; set; } = false;
     public bool AllowClosedLoop { get; set; } = false;

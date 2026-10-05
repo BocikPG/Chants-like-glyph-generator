@@ -17,6 +17,40 @@ public sealed class GlyphGenerationException : Exception
 }
 
 /// <summary>
+/// Why the placement attempts for ONE shape failed, so the error can say what to change. Only the
+/// shape factory can tell "the chain couldn't be built" and "a spacing rule rejected it" apart;
+/// everything else that failed an attempt (left the grid, crossed existing strokes) is what's
+/// left over, since every attempt of a failed placement failed for some reason.
+/// </summary>
+public sealed class PlacementDiagnostics
+{
+    public int Attempts { get; set; }
+    public int ChainFailures { get; set; }
+    public int SpacingRejections { get; set; }
+    public int Collisions => Math.Max(0, Attempts - ChainFailures - SpacingRejections);
+
+    public string Describe()
+    {
+        if (Attempts <= 0) return "";
+
+        string summary =
+            $"Of {Attempts} attempt(s): {ChainFailures} ran out of valid moves before reaching the target length, " +
+            $"{SpacingRejections} broke a subSymbolSpacing rule, {Collisions} left the grid or crossed existing strokes.";
+
+        string hint =
+            ChainFailures >= SpacingRejections && ChainFailures >= Collisions && ChainFailures > 0
+                ? "The chain keeps running out of moves: try a shorter subSymbolLength, more or longer connectionRules, allowNodeRevisit, or a larger grid."
+            : SpacingRejections >= Collisions && SpacingRejections > 0
+                ? "Spacing is rejecting most candidates: relax subSymbolSpacing (minCenterDistance, minNodeDistance, selfSpacing) or raise maxPlacementAttempts."
+            : Collisions > 0
+                ? "Strokes are colliding or leaving the grid: allow crossing, use a larger grid, fewer sub-symbols, or raise maxPlacementAttempts."
+            : "";
+
+        return hint.Length == 0 ? summary : summary + " " + hint;
+    }
+}
+
+/// <summary>
 /// Default IGlyphGenerator. For a composite glyph (its name is a key in the language's
 /// Combination.Recipes), generation is delegated to ICombinationResolver. Otherwise: guaranteed
 /// motifs generate first (most-constrained-first ordering), then free-form sub-symbols, all
@@ -51,8 +85,9 @@ public sealed class GlyphGenerator : IGlyphGenerator
         LatticeGrid grid,
         ulong glyphSeed,
         Dictionary<string, Glyph> generated,
-        GlyphUsageTracker usageTracker)
-        => GenerateGlyphCore(language, glyphDef, grid, glyphSeed, generated, usageTracker, new HashSet<string>());
+        GlyphUsageTracker usageTracker,
+        int variation = 0)
+        => GenerateGlyphCore(language, glyphDef, grid, glyphSeed, generated, usageTracker, new HashSet<string>(), variation);
 
     private Glyph GenerateGlyphCore(
         LanguageDefinition language,
@@ -61,7 +96,8 @@ public sealed class GlyphGenerator : IGlyphGenerator
         ulong glyphSeed,
         Dictionary<string, Glyph> generated,
         GlyphUsageTracker usageTracker,
-        HashSet<string> inProgress)
+        HashSet<string> inProgress,
+        int variation)
     {
         if (language.Combination.Recipes.TryGetValue(glyphDef.Name, out var componentNames))
         {
@@ -76,7 +112,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
             try
             {
                 return GenerateComposite(
-                    language, glyphDef, grid, glyphSeed, generated, usageTracker, componentNames, inProgress);
+                    language, glyphDef, grid, glyphSeed, generated, usageTracker, componentNames, inProgress, variation);
             }
             finally
             {
@@ -96,10 +132,11 @@ public sealed class GlyphGenerator : IGlyphGenerator
 
         foreach (var motif in language.GuaranteedMotifs)
         {
-            var chain = GenerateMotif(language, motif, grid, rng, geometry)
+            var diagnostics = new PlacementDiagnostics();
+            var chain = GenerateMotif(language, motif, grid, rng, geometry, diagnostics)
                 ?? throw new GlyphGenerationException(
                     $"[{language.Name}] Guaranteed motif '{motif.Id}' for glyph '{glyphDef.Name}' " +
-                    "could not be placed within its configured attempt budget.");
+                    $"could not be placed within its configured attempt budget. {diagnostics.Describe()}");
 
             geometry.Commit(chain);
             glyph.Chains.Add(chain);
@@ -115,10 +152,11 @@ public sealed class GlyphGenerator : IGlyphGenerator
         int subSymbolCount = ResolveLowBiased(language.SubSymbolCount, rng, countDraws);
         for (int i = 0; i < subSymbolCount; i++)
         {
-            var chain = GenerateFreeFormSubSymbol(language, grid, rng, geometry, i, lengthDraws)
+            var diagnostics = new PlacementDiagnostics();
+            var chain = GenerateFreeFormSubSymbol(language, grid, rng, geometry, i, lengthDraws, diagnostics)
                 ?? throw new GlyphGenerationException(
                     $"[{language.Name}] Sub-symbol {i + 1}/{subSymbolCount} for glyph " +
-                    $"'{glyphDef.Name}' could not be placed within its configured attempt budget.");
+                    $"'{glyphDef.Name}' could not be placed within its configured attempt budget. {diagnostics.Describe()}");
 
             geometry.Commit(chain);
             glyph.Chains.Add(chain);
@@ -135,7 +173,8 @@ public sealed class GlyphGenerator : IGlyphGenerator
         Dictionary<string, Glyph> generated,
         GlyphUsageTracker usageTracker,
         List<string> componentNames,
-        HashSet<string> inProgress)
+        HashSet<string> inProgress,
+        int variation)
     {
         var rng = new DeterministicRandom(glyphSeed);
 
@@ -150,7 +189,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
             var componentDef = language.Glyphs.FirstOrDefault(g => g.Name == name)
                 ?? new GlyphDefinition { Name = name };
             ulong seed = SplitMix64.DeriveSeed(glyphSeed, $"regen-{name}-{attemptIndex}");
-            return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress);
+            return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0);
         }
 
         var composite = _combinationResolver.TryCombine(
@@ -162,7 +201,8 @@ public sealed class GlyphGenerator : IGlyphGenerator
             rng,
             usageTracker,
             RegenerateComponent,
-            language.SubSymbolSpacing);
+            language.SubSymbolSpacing,
+            variation);
 
         if (composite is null)
         {
@@ -182,7 +222,8 @@ public sealed class GlyphGenerator : IGlyphGenerator
         GuaranteedMotifConfig motif,
         LatticeGrid grid,
         DeterministicRandom glyphRng,
-        GeometryContext geometry)
+        GeometryContext geometry,
+        PlacementDiagnostics diagnostics)
     {
         var motifRng = glyphRng.Derive($"motif-{motif.Id}");
         bool shapeVaries = motif.Type == MotifType.Generative;
@@ -197,21 +238,25 @@ public sealed class GlyphGenerator : IGlyphGenerator
                 _ => throw new NotSupportedException($"Unknown motif type: {motif.Type}"),
             };
 
-            if (chain is null) return null;
+            if (chain is null) { diagnostics.ChainFailures++; return null; }
 
             // Checked after the shape is complete (a centroid needs every node), same as for
             // free-form sub-symbols below - a failure here is just another reason this attempt
             // didn't work, handled by the same retry loop as a collision would be.
             if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.Nodes, geometry.NodeGroups, language.SubSymbolSpacing))
+            {
+                diagnostics.SpacingRejections++;
                 return null;
+            }
 
             return chain;
         }
 
-        var rotationOptions = language.Combination.AllowRotate ? language.Combination.Rotation : null;
+        var rotationOptions = RotationOptionsFor(language, motif.Placement);
 
         var result = _placementResolver.TryResolve(
             motif.Placement, grid, motifRng, geometry, shapeVaries, rotationOptions, ShapeFactory);
+        diagnostics.Attempts = result.AttemptsUsed;
 
         return result.Success ? result.PlacedShape : null;
     }
@@ -234,6 +279,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
             AllowEdgeRevisit = language.AllowEdgeRevisit,
             AllowClosedLoop = generative.AllowClosedLoop,
             ClosedLoopWeight = generative.ClosedLoopWeight,
+            ConnectionWeighting = language.ConnectionWeighting,
             SelfSpacingRules = language.SubSymbolSpacing.ActiveSelfSpacing,
         };
 
@@ -285,7 +331,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
 
     private SubSymbolChain? GenerateFreeFormSubSymbol(
         LanguageDefinition language, LatticeGrid grid, DeterministicRandom glyphRng, GeometryContext geometry,
-        int subSymbolIndex, double lengthExtraDraws)
+        int subSymbolIndex, double lengthExtraDraws, PlacementDiagnostics diagnostics)
     {
         // The index is essential here, not cosmetic: DeterministicRandom.Derive is a pure
         // function of the parent's CURRENT state plus this label, and nothing else draws from
@@ -293,7 +339,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
         // for every sub-symbol in the glyph, producing identical placement and shape for all
         // of them whenever subSymbolCount > 1.
         var placementRng = glyphRng.Derive($"subsymbol-{subSymbolIndex}-placement");
-        var rotationOptions = language.Combination.AllowRotate ? language.Combination.Rotation : null;
+        var rotationOptions = RotationOptionsFor(language, language.SubSymbolPlacement);
 
         SubSymbolChain? ShapeFactory(GridPoint origin, int rotation, DeterministicRandom attemptRng)
         {
@@ -306,16 +352,20 @@ public sealed class GlyphGenerator : IGlyphGenerator
                 AllowEdgeRevisit = language.AllowEdgeRevisit,
                 AllowClosedLoop = language.AllowClosedLoop,
                 ClosedLoopWeight = language.ClosedLoopWeight,
+                ConnectionWeighting = language.ConnectionWeighting,
                 SelfSpacingRules = language.SubSymbolSpacing.ActiveSelfSpacing,
             };
 
             var chain = _chainGenerator.TryGenerateChain(grid, request, attemptRng, geometry);
-            if (chain is null) return null;
+            if (chain is null) { diagnostics.ChainFailures++; return null; }
 
             // Checked once the chain is complete (a centroid needs every node) - a failure here
             // is just another reason this attempt didn't work, same retry path as a collision.
             if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.Nodes, geometry.NodeGroups, language.SubSymbolSpacing))
+            {
+                diagnostics.SpacingRejections++;
                 return null;
+            }
 
             return chain;
         }
@@ -323,7 +373,22 @@ public sealed class GlyphGenerator : IGlyphGenerator
         var result = _placementResolver.TryResolve(
             language.SubSymbolPlacement, grid, placementRng, geometry,
             shapeVariesPerAttempt: true, rotationOptions, ShapeFactory);
+        diagnostics.Attempts = result.AttemptsUsed;
 
         return result.Success ? result.PlacedShape : null;
+    }
+
+    /// <summary>
+    /// The rotations a placement may use. A placement's own Rotations list wins (empty = never
+    /// rotate); without one it inherits Combination.Rotation, as before, when Combination.AllowRotate
+    /// is on. Only Literal motifs actually use the result - a generated chain is already random, so
+    /// it ignores the rotation it is handed.
+    /// </summary>
+    private static RotationConfig? RotationOptionsFor(LanguageDefinition language, PlacementConfig placement)
+    {
+        if (placement.Rotations is not null)
+            return placement.Rotations.Count == 0 ? null : new RotationConfig { Allowed = placement.Rotations };
+
+        return language.Combination.AllowRotate ? language.Combination.Rotation : null;
     }
 }

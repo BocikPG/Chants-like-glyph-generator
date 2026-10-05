@@ -34,7 +34,7 @@ public sealed class UsageSizeBiasConfig
     {
         var errors = new List<string>();
         if (double.IsNaN(Strength) || double.IsInfinity(Strength) || Strength < 0)
-            errors.Add($"{nameof(Strength)} must be a finite number >= 0 (got {Strength}).");
+            errors.Add($"{JsonNames.Of(nameof(Strength))} must be a finite number >= 0 (got {Strength}).");
         return errors;
     }
 }

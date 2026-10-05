@@ -7,9 +7,27 @@ using GlyphGen.Core.Config;
 using GlyphGen.Core.Generation;
 using GlyphGen.Rendering;
 
+// GlyphGen.Cli --schema [file]: write the JSON Schema for the config (to a file, or stdout).
+if (args.Length >= 1 && args[0] == "--schema")
+{
+    string schema = ConfigSchemaGenerator.Generate();
+    if (args.Length >= 2)
+    {
+        File.WriteAllText(args[1], schema);
+        Console.WriteLine($"Wrote {args[1]}");
+    }
+    else
+    {
+        Console.WriteLine(schema);
+    }
+    return;
+}
+
 if (args.Length < 1)
 {
     Console.WriteLine("Usage: GlyphGen.Cli <path-to-config.json>");
+    Console.WriteLine("       GlyphGen.Cli --schema [config.schema.json]");
+    Environment.ExitCode = 1;
     return;
 }
 
@@ -18,9 +36,23 @@ try
 {
     config = RootConfigLoader.LoadFromFile(args[0]);
 }
+catch (ConfigValidationException ex)
+{
+    // Already reads "Invalid config:" followed by one problem per line.
+    Console.WriteLine(ex.Message);
+    Environment.ExitCode = 1;
+    return;
+}
+catch (System.Text.Json.JsonException ex)
+{
+    Console.WriteLine($"Could not read the config as JSON: {ex.Message}");
+    Environment.ExitCode = 1;
+    return;
+}
 catch (Exception ex)
 {
-    Console.WriteLine($"Failed to parse config: {ex.Message}");
+    Console.WriteLine($"Could not load config '{args[0]}': {ex.Message}");
+    Environment.ExitCode = 1;
     return;
 }
 
@@ -39,6 +71,7 @@ try
 catch (GlyphGenerationException ex)
 {
     Console.WriteLine($"Generation failed: {ex.Message}");
+    Environment.ExitCode = 1;
     return;
 }
 
@@ -68,7 +101,27 @@ foreach (var language in config.Languages)
     var basesDir = Path.Combine(languageDir, "_bases");
     if (baseNames.Count > 0) Directory.CreateDirectory(basesDir);
 
+    // The normal images are always clean. The debug options (render.debugShowNodes /
+    // debugColorComponents) add a second set, "<glyph>.debug.png", drawn with the enabled overlays;
+    // with both off no debug files are written. RenderConfig is a plain mutable class, so toggling
+    // in place and restoring afterward is simplest here.
+    bool wantNodes = language.Render.DebugShowNodes;
+    bool wantColors = language.Render.DebugColorComponents;
+
+    language.Render.DebugShowNodes = false;
+    language.Render.DebugColorComponents = false;
     var rendered = renderer.Render(language, glyphs, config.RootSeed);
+
+    IReadOnlyList<RenderedGlyph>? debugRendered = null;
+    if (wantNodes || wantColors)
+    {
+        language.Render.DebugShowNodes = wantNodes;
+        language.Render.DebugColorComponents = wantColors;
+        debugRendered = renderer.Render(language, glyphs, config.RootSeed);
+    }
+
+    language.Render.DebugShowNodes = wantNodes;
+    language.Render.DebugColorComponents = wantColors;
 
     foreach (var r in rendered)
     {
@@ -77,35 +130,34 @@ foreach (var language in config.Languages)
         Console.WriteLine($"Wrote {path}");
     }
 
-    byte[] sheet = ContactSheet.Create(
-        rendered.Where(r => !baseNames.Contains(r.GlyphName)).ToList(), columns: 6, language.Render.Background);
-    if (sheet.Length > 0)
+    var sheetSettings = language.Render.ContactSheet;
+    WriteContactSheet(languageDir, rendered.Where(r => !baseNames.Contains(r.GlyphName)).ToList(),
+        sheetSettings.Columns, language.Render.Background);
+    if (sheetSettings.BaseGlyphsSheet && baseNames.Count > 0)
     {
-        string sheetPath = Path.Combine(languageDir, "_contact-sheet.png");
-        File.WriteAllBytes(sheetPath, sheet);
-        Console.WriteLine($"Wrote {sheetPath}");
+        WriteContactSheet(basesDir, rendered.Where(r => baseNames.Contains(r.GlyphName)).ToList(),
+            sheetSettings.Columns, language.Render.Background);
     }
 
-    // Debug pass: node dots + one colour per combination component, regardless of what the
-    // config's render.debugShowNodes/debugColorComponents say - always available for
-    // debugging without having to edit the config back and forth. RenderConfig is a plain
-    // mutable class, so toggling in place and restoring afterward is simplest here.
-    bool origNodes = language.Render.DebugShowNodes;
-    bool origColors = language.Render.DebugColorComponents;
-    language.Render.DebugShowNodes = true;
-    language.Render.DebugColorComponents = true;
-
-    var debugRendered = renderer.Render(language, glyphs, config.RootSeed);
-
-    language.Render.DebugShowNodes = origNodes;
-    language.Render.DebugColorComponents = origColors;
-
-    foreach (var r in debugRendered)
+    if (debugRendered is not null)
     {
-        string path = Path.Combine(baseNames.Contains(r.GlyphName) ? basesDir : languageDir, SanitizeFileName(r.GlyphName) + ".debug.png");
-        File.WriteAllBytes(path, r.Png);
-        Console.WriteLine($"Wrote {path}");
+        foreach (var r in debugRendered)
+        {
+            string path = Path.Combine(baseNames.Contains(r.GlyphName) ? basesDir : languageDir, SanitizeFileName(r.GlyphName) + ".debug.png");
+            File.WriteAllBytes(path, r.Png);
+            Console.WriteLine($"Wrote {path}");
+        }
     }
+}
+
+static void WriteContactSheet(string directory, IReadOnlyList<RenderedGlyph> items, int columns, string background)
+{
+    byte[] sheet = ContactSheet.Create(items, columns, background);
+    if (sheet.Length == 0) return;
+
+    string sheetPath = Path.Combine(directory, "_contact-sheet.png");
+    File.WriteAllBytes(sheetPath, sheet);
+    Console.WriteLine($"Wrote {sheetPath}");
 }
 
 static string SanitizeFileName(string name)

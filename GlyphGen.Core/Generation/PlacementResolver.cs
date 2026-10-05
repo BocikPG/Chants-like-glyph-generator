@@ -13,6 +13,10 @@ namespace GlyphGen.Core.Generation;
 /// whose factory (IChainGenerator) already validated collisions incrementally while growing -
 /// it's what actually matters for a Literal shape's factory, which hasn't validated anything
 /// on its own, so keeping one uniform check here avoids two divergent code paths.
+///
+/// PlacementConfig.StartOnExistingNode (RandomValid mode only): instead of a random grid point,
+/// the origin is drawn from the nodes already in the glyph, so a new shape grows out of an
+/// existing one. The very first shape, with nothing to attach to, is placed normally.
 /// </summary>
 public sealed class PlacementResolver : IPlacementResolver
 {
@@ -31,6 +35,13 @@ public sealed class PlacementResolver : IPlacementResolver
                 "PlacementConfig.Mode is Fixed but FixedOrigin was not set.");
         }
 
+        // Nodes already in the glyph (commit order, no duplicates) - only gathered when asked for.
+        List<GridPoint>? anchorNodes = null;
+        // Works with crossing off too: GridEdge.Intersects treats edges that merely meet at a
+        // shared node as not crossing, so a shape growing out of an existing node is legal.
+        if (config.Mode == PlacementMode.RandomValid && config.StartOnExistingNode)
+            anchorNodes = CollectExistingNodes(existingGeometry);
+
         bool positionVaries = config.Mode == PlacementMode.RandomValid;
         bool rotationVaries = config.AllowRotationOnPlace
             && rotationOptions is not null
@@ -46,7 +57,7 @@ public sealed class PlacementResolver : IPlacementResolver
             // attempt happened to consume.
             var attemptRng = rng.Derive($"placement-attempt-{attempt}");
 
-            var origin = ResolveOrigin(config, grid, attemptRng);
+            var origin = ResolveOrigin(config, grid, attemptRng, anchorNodes);
             int rotation = ResolveRotation(config, rotationOptions, attemptRng);
 
             var shape = shapeFactory(origin, rotation, attemptRng);
@@ -71,14 +82,29 @@ public sealed class PlacementResolver : IPlacementResolver
         };
     }
 
-    private static GridPoint ResolveOrigin(PlacementConfig config, LatticeGrid grid, DeterministicRandom rng) =>
+    private static List<GridPoint> CollectExistingNodes(IIntersectionContext existingGeometry)
+    {
+        var seen = new HashSet<GridPoint>();
+        var nodes = new List<GridPoint>();
+        foreach (var edge in existingGeometry.ExistingEdges)
+        {
+            if (seen.Add(edge.From)) nodes.Add(edge.From);
+            if (seen.Add(edge.To)) nodes.Add(edge.To);
+        }
+        return nodes;
+    }
+
+    private static GridPoint ResolveOrigin(
+        PlacementConfig config, LatticeGrid grid, DeterministicRandom rng, IReadOnlyList<GridPoint>? anchorNodes) =>
         config.Mode switch
         {
             PlacementMode.Fixed => config.FixedOrigin!.Value,
             PlacementMode.CenterAnchor => new GridPoint(grid.Width / 2, grid.Height / 2),
-            PlacementMode.RandomValid => new GridPoint(
-                rng.NextInt(0, grid.Width),
-                rng.NextInt(0, grid.Height)),
+            PlacementMode.RandomValid => anchorNodes is { Count: > 0 }
+                ? anchorNodes[rng.NextInt(0, anchorNodes.Count)]
+                : new GridPoint(
+                    rng.NextInt(0, grid.Width),
+                    rng.NextInt(0, grid.Height)),
             _ => throw new NotSupportedException($"Unknown placement mode: {config.Mode}"),
         };
 
