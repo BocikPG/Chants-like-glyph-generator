@@ -61,15 +61,7 @@ internal static class ConfigValidator
 
         ValidateGlyphsAndRecipes(l, c);
 
-        // Free-form sub-symbols
-        IntRange(c, "subSymbolCount", l.SubSymbolCount, 0);
-        IntRange(c, "subSymbolLength", l.SubSymbolLength, 2, "a stroke needs at least 2 nodes");
-        ValidateRules(c, "connectionRules", l.ConnectionRules, required: l.SubSymbolCount.Max > 0);
-        Enum(c, "connectionWeighting", l.ConnectionWeighting);
-        Number(c, "closedLoopWeight", l.ClosedLoopWeight, 0, double.MaxValue);
-
-        ValidateMotifs(l, c);
-        ValidatePlacement(l, c, "subSymbolPlacement", l.SubSymbolPlacement, rotationApplies: false);
+        ValidateShapes(l, c);
 
         ValidateCurve(l.Curve, c);
         ValidateCombinationSettings(l.Combination, c);
@@ -83,9 +75,7 @@ internal static class ConfigValidator
 
         ValidateRender(l.Render, c);
 
-        foreach (var error in l.SubSymbolSpacing.Validate()) c.Add("subSymbolSpacing", error);
         foreach (var error in l.UsageSizeBias.Validate()) c.Add("usageSizeBias", error);
-        foreach (var error in l.Combination.Bias.Validate()) c.Add("combination.bias", error);
     }
 
     // ---- glyph lists and recipes -------------------------------------------------------------
@@ -122,8 +112,9 @@ internal static class ConfigValidator
 
         var recipes = l.Combination.Recipes;
 
-        foreach (var (key, components) in recipes)
+        foreach (var (key, recipe) in recipes)
         {
+            var components = recipe.Components;
             string where = $"combination.recipes['{key}']";
 
             int keyIndex = -1;
@@ -134,6 +125,9 @@ internal static class ConfigValidator
 
             if (components.Count == 0)
                 c.Add(where, "has no components.");
+
+            if (recipe.Arrangement is not null)
+                ValidateArrangement(c, where + ".arrangement", recipe.Arrangement, forShape: false);
 
             foreach (var component in components)
             {
@@ -165,6 +159,8 @@ internal static class ConfigValidator
     {
         if (combination.MaxRetriesPerRecipe < 1)
             c.Add("combination.maxRetriesPerRecipe", $"must be at least 1 (got {combination.MaxRetriesPerRecipe}).");
+
+        ValidateArrangement(c, "combination.arrangement", combination.Arrangement, forShape: false);
 
         for (int i = 0; i < combination.AllowedScales.Count; i++)
         {
@@ -209,81 +205,107 @@ internal static class ConfigValidator
         if (total <= 0) c.Add(path, "every rule has weight 0, so none could ever be chosen.");
     }
 
-    private static void ValidateMotifs(LanguageDefinition l, Ctx c)
+    private static void ValidateShapes(LanguageDefinition l, Ctx c)
     {
+        var composites = new HashSet<string>(l.Combination.Recipes.Keys, StringComparer.Ordinal);
+        bool needsShapes = l.BaseGlyphs.Any() || l.Glyphs.Any(g => !composites.Contains(g.Name));
+        if (l.Shapes.Count == 0 && needsShapes)
+            c.Add("shapes", "needs at least one shape - without one every plain glyph would be empty.");
+
         var ids = new HashSet<string>(StringComparer.Ordinal);
+        var labels = new HashSet<string>(StringComparer.Ordinal);
 
-        for (int i = 0; i < l.GuaranteedMotifs.Count; i++)
+        for (int i = 0; i < l.Shapes.Count; i++)
         {
-            var motif = l.GuaranteedMotifs[i];
-            string where = string.IsNullOrWhiteSpace(motif.Id) ? $"guaranteedMotifs[{i}]" : $"guaranteedMotifs['{motif.Id}']";
+            var shape = l.Shapes[i];
+            string where = string.IsNullOrWhiteSpace(shape.Id) ? $"shapes[{i}]" : $"shapes['{shape.Id}']";
 
-            if (string.IsNullOrWhiteSpace(motif.Id))
+            if (string.IsNullOrWhiteSpace(shape.Id))
                 c.Add(where, "id must not be empty.");
-            else if (!ids.Add(motif.Id))
-                c.Add(where, "id is used by more than one motif (the id also seeds the motif, so two would come out identical).");
+            else if (!ids.Add(shape.Id))
+                c.Add(where, "id is used by more than one shape (the id also seeds the shape, so two would come out identical).");
 
-            Enum(c, where + ".type", motif.Type);
+            if (shape.SeedLabel is not null && !labels.Add(shape.SeedLabel))
+                c.Add(where + ".seedLabel", $"'{shape.SeedLabel}' is used by more than one shape.");
 
-            switch (motif.Type)
+            Enum(c, where + ".kind", shape.Kind);
+
+            if (shape.Count is not null)
+                IntRange(c, where + ".count", shape.Count, 0);
+
+            switch (shape.Kind)
             {
-                case MotifType.Literal:
-                    if (motif.Generative is not null)
-                        c.Add(where, "type is Literal but a 'generative' block is also present - fill in only the one matching the type.");
-                    if (motif.Literal is null)
-                        c.Add(where, "type is Literal but there is no 'literal' block.");
+                case ShapeKind.Literal:
+                    if (shape.Nodes is null)
+                        c.Add(where, "kind is Literal but there is no 'nodes' list.");
                     else
-                        ValidateLiteral(c, where + ".literal", motif.Literal);
+                        ValidateLiteral(c, where, shape.Nodes);
                     break;
 
-                case MotifType.Generative:
-                    if (motif.Literal is not null)
-                        c.Add(where, "type is Generative but a 'literal' block is also present - fill in only the one matching the type.");
-                    if (motif.Generative is null)
-                        c.Add(where, "type is Generative but there is no 'generative' block.");
-                    else
+                case ShapeKind.Generative:
+                    if (shape.Nodes is not null)
+                        c.Add(where, "kind is Generative but 'nodes' is set - nodes only apply to Literal shapes.");
+
+                    string chain = where + ".chain";
+                    IntRange(c, chain + ".length", shape.Chain.Length, 2, "a stroke needs at least 2 nodes");
+                    ValidateRules(c, chain + ".connectionRules", shape.Chain.ConnectionRules, required: shape.Count is null || shape.Count.Max > 0);
+                    Enum(c, chain + ".connectionWeighting", shape.Chain.ConnectionWeighting);
+                    Number(c, chain + ".closedLoopWeight", shape.Chain.ClosedLoopWeight, 0, double.MaxValue);
+                    for (int r = 0; r < shape.Chain.SelfSpacing.Count; r++)
                     {
-                        string g = where + ".generative";
-                        IntRange(c, g + ".lengthRange", motif.Generative.LengthRange, 2, "a stroke needs at least 2 nodes");
-                        ValidateRules(c, g + ".connectionRules", motif.Generative.ConnectionRules, required: true);
-                        Number(c, g + ".closedLoopWeight", motif.Generative.ClosedLoopWeight, 0, double.MaxValue);
+                        var rule = shape.Chain.SelfSpacing[r];
+                        if (rule is null) { c.Add(chain + $".selfSpacing[{r}]", "must not be null."); continue; }
+                        foreach (var error in rule.Validate()) c.Add(chain + $".selfSpacing[{r}]", error);
                     }
                     break;
             }
 
-            ValidatePlacement(l, c, where + ".placement", motif.Placement, rotationApplies: motif.Type == MotifType.Literal);
+            ValidatePlacement(l, c, where + ".placement", shape.Placement, rotationApplies: shape.Kind == ShapeKind.Literal, shape.Arrangement);
+            ValidateArrangement(c, where + ".arrangement", shape.Arrangement, forShape: true);
         }
     }
 
-    private static void ValidateLiteral(Ctx c, string path, LiteralMotifConfig literal)
+    private static void ValidateArrangement(Ctx c, string path, ArrangementRules a, bool forShape)
     {
-        if (literal.Nodes.Count < 2)
-            c.Add(path + ".nodes", $"needs at least 2 points to form a stroke (got {literal.Nodes.Count}).");
+        foreach (var error in a.Spacing.Validate()) c.Add(path + ".spacing", error);
+        foreach (var error in a.Bias.Validate()) c.Add(path + ".bias", error);
 
-        for (int i = 0; i < literal.Nodes.Count; i++)
+        if (a.Candidates < 1)
+            c.Add(path + ".candidates", $"must be at least 1 (got {a.Candidates}).");
+
+        if (forShape && a.Bias.IncludeScaleAndRotation)
+            c.Add(path + ".bias.includeScaleAndRotation", "only applies to combination components; a shape's candidates are never scaled or rotated.");
+    }
+
+    private static void ValidateLiteral(Ctx c, string path, List<int[]> nodes)
+    {
+        if (nodes.Count < 2)
+            c.Add(path + ".nodes", $"needs at least 2 points to form a stroke (got {nodes.Count}).");
+
+        for (int i = 0; i < nodes.Count; i++)
         {
-            var node = literal.Nodes[i];
+            var node = nodes[i];
             if (node is null || node.Length != 2)
             {
                 c.Add(path + ".nodes", $"item {i + 1} must be an [x, y] pair.");
                 continue;
             }
 
-            if (i > 0 && literal.Nodes[i - 1] is { Length: 2 } previous && previous[0] == node[0] && previous[1] == node[1])
+            if (i > 0 && nodes[i - 1] is { Length: 2 } previous && previous[0] == node[0] && previous[1] == node[1])
                 c.Add(path + ".nodes", $"items {i} and {i + 1} are the same point, which would make a zero-length edge.");
         }
     }
 
     // ---- placement ---------------------------------------------------------------------------
 
-    private static void ValidatePlacement(LanguageDefinition l, Ctx c, string path, PlacementConfig p, bool rotationApplies)
+    private static void ValidatePlacement(LanguageDefinition l, Ctx c, string path, PlacementConfig p, bool rotationApplies, ArrangementRules arrangement)
     {
         Enum(c, path + ".mode", p.Mode);
 
         if (p.Rotations is not null)
         {
             if (!rotationApplies)
-                c.Add(path + ".rotations", "only affects Literal motifs - a generated shape ignores rotation, so this would do nothing here.");
+                c.Add(path + ".rotations", "only affects Literal shapes - a generated shape ignores rotation, so this would do nothing here.");
             else if (!p.AllowRotationOnPlace)
                 c.Add(path + ".rotations", "is set but allowRotationOnPlace is false, so it would be ignored.");
 
@@ -316,8 +338,8 @@ internal static class ConfigValidator
                 c.Add(path + ".startOnExistingNode", $"only applies when mode is RandomValid (is {p.Mode}).");
 
             // A shape starting on an existing node shares that node, i.e. is at distance 0 from it.
-            if (l.SubSymbolSpacing is { Enabled: true, MinNodeDistance: > 0 })
-                c.Add(path + ".startOnExistingNode", "can never satisfy subSymbolSpacing.minNodeDistance > 0 (a shared node is at distance 0).");
+            if (arrangement.Spacing is { Enabled: true, MinNodeDistance: > 0 })
+                c.Add(path + ".startOnExistingNode", "can never satisfy arrangement.spacing.minNodeDistance > 0 (a shared node is at distance 0).");
         }
     }
 

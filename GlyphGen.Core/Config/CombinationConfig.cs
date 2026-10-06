@@ -1,3 +1,5 @@
+using System;
+
 namespace GlyphGen.Core.Config;
 
 /// <summary>
@@ -11,8 +13,9 @@ public sealed class CombinationConfig
 {
     /// <summary>Key = composite glyph name, value = component glyph names to overlay. A glyph
     /// name may appear both as a standalone entry in the language's glyph list and as a
-    /// component here.</summary>
-    public Dictionary<string, List<string>> Recipes { get; set; } = new();
+    /// component here. Each value is a list of component names, or an object with
+    /// "components" and an optional per-recipe "arrangement".</summary>
+    public Dictionary<string, RecipeConfig> Recipes { get; set; } = new();
 
     public bool AllowScale { get; set; } = false;
 
@@ -25,10 +28,10 @@ public sealed class CombinationConfig
 
     public int MaxRetriesPerRecipe { get; set; } = 5;
 
-    /// <summary>If true, a composite's components may cross each other (they may always touch at
-    /// shared nodes). Default false: overlay composition is controlled stacking, with no component
-    /// crossing another, regardless of the language's AllowSymbolsToCross (which governs strokes
-    /// inside one glyph). SubSymbolSpacing still applies either way.</summary>
-    public bool AllowComponentsToCross { get; set; } = false;
-    public CombinationBiasConfig Bias { get; set; } = new();
+    /// <summary>How a composite's components relate to each other: crossing (default: none -
+    /// overlay composition is controlled stacking, they may only touch at shared nodes), spacing
+    /// and bias. A recipe can override parts of it with its own "arrangement". Each placed
+    /// component counts as one shape. Components search every translation exhaustively, so
+    /// arrangement.candidates does not apply here.</summary>
+    public ArrangementRules Arrangement { get; set; } = new();
 }

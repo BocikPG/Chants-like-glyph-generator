@@ -12,7 +12,14 @@ namespace GlyphGen.Core.Generation;
 public interface IIntersectionContext
 {
     IEnumerable<GridEdge> ExistingEdges { get; }
+
+    /// <summary>Whether the shape currently being placed allows its edges to cross others'.</summary>
     bool AllowCrossing { get; }
+
+    /// <summary>The existing edges the shape being placed must NOT cross. Everything when it
+    /// does not allow crossing; otherwise only the edges of shapes that themselves forbid being
+    /// crossed - a crossing needs both shapes' permission.</summary>
+    IEnumerable<GridEdge> BlockingEdges { get; }
 }
 
 /// <summary>

@@ -1,49 +1,65 @@
 {
-  "rootSeed": 20260927,
+  "rootSeed": 20260928,
   "outputDirectory": "./output",
   "languages": [
     {
       "name": "Warrior",
-      "grid": { "width": 15, "height": 15 },
+      "grid": {
+        "width": 15,
+        "height": 15
+      },
       "canvas": {
         "sizePx": 512,
         "marginPx": 32
       },
-      "glyphs": [ "warrior", "weapon", "protect", "fortress" ],
-      "subSymbolCount": {
-        "min": 1,
-        "max": 3
-      },
-      "subSymbolLength": {
-        "min": 6,
-        "max": 8
-      },
-      "connectionRules": [
+      "glyphs": [
+        "warrior",
+        "weapon",
+        "protect",
+        "fortress"
+      ],
+      "shapes": [
         {
-          "direction": "Orthogonal",
-          "minLength": 1,
-          "maxLength": 5,
-          "weight": 3.0
-        },
-        {
-          "direction": "Diagonal",
-          "minLength": 1,
-          "maxLength": 5,
-          "weight": 1.0
+          "id": "strokes",
+          "count": {
+            "min": 1,
+            "max": 3
+          },
+          "chain": {
+            "length": {
+              "min": 6,
+              "max": 8
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 3.0
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 1.0
+              }
+            ],
+            "allowClosedLoop": false,
+            "closedLoopWeight": 0.0,
+            "allowNodeRevisit": true,
+            "allowEdgeRevisit": true
+          },
+          "placement": {
+            "mode": "RandomValid",
+            "fixedOrigin": null,
+            "allowRotationOnPlace": true,
+            "maxPlacementAttempts": 20
+          },
+          "arrangement": {
+            "allowCrossing": true
+          }
         }
       ],
-      "allowNodeRevisit": true,
-      "allowEdgeRevisit": true,
-      "allowClosedLoop": false,
-      "closedLoopWeight": 0.0,
-      "allowSymbolsToCross": true,
-      "guaranteedMotifs": [],
-      "subSymbolPlacement": {
-        "mode": "RandomValid",
-        "fixedOrigin": null,
-        "allowRotationOnPlace": true,
-        "maxPlacementAttempts": 20
-      },
       "curve": {
         "mode": "Derived",
         "straightLineBias": {
@@ -101,7 +117,10 @@
       },
       "combination": {
         "recipes": {
-          "fortress": [ "warrior", "protect" ]
+          "fortress": [
+            "warrior",
+            "protect"
+          ]
         },
         "allowScale": true,
         "allowedScales": [
@@ -133,7 +152,12 @@
         ],
         "allowRotate": true,
         "rotation": {
-          "allowed": [ 0, 90, 180, 270 ],
+          "allowed": [
+            0,
+            90,
+            180,
+            270
+          ],
           "weight": 1.0
         },
         "maxRetriesPerRecipe": 5
@@ -141,61 +165,106 @@
     },
     {
       "name": "Devotee",
-      "grid": { "width": 15, "height": 15 },
+      "grid": {
+        "width": 15,
+        "height": 15
+      },
       "canvas": {
         "sizePx": 512,
         "marginPx": 32
       },
-      "baseGlyphs": [ "you_base", "me_base", "devotee_base" ],
-      "glyphs": [ "man", "you", "me", "devotee" ],
+      "baseGlyphs": [
+        "you_base",
+        "me_base",
+        "devotee_base"
+      ],
+      "glyphs": [
+        "man",
+        "you",
+        "me",
+        "devotee"
+      ],
       "combination": {
         "recipes": {
-          "you": [ "man", "you_base" ],
-          "me": [ "man", "me_base" ],
-          "devotee": [ "man", "devotee_base" ]
+          "you": [
+            "man",
+            "you_base"
+          ],
+          "me": [
+            "man",
+            "me_base"
+          ],
+          "devotee": [
+            "man",
+            "devotee_base"
+          ]
         },
         "allowScale": false,
         "allowRotate": false,
         "rotation": {
-          "allowed": [ 0, 90, 180, 270 ],
+          "allowed": [
+            0,
+            90,
+            180,
+            270
+          ],
           "weight": 1.0
         },
-        "maxRetriesPerRecipe": 5
+        "maxRetriesPerRecipe": 5,
+        "arrangement": {
+          "spacing": {
+            "enabled": true,
+            "minCenterDistance": 1,
+            "minNodeDistance": 0.1
+          }
+        }
       },
-      "subSymbolCount": {
-        "min": 1,
-        "max": 5
-      },
-      "subSymbolLength": {
-        "min": 2,
-        "max": 8
-      },
-      "connectionRules": [
+      "shapes": [
         {
-          "direction": "Orthogonal",
-          "minLength": 1,
-          "maxLength": 5,
-          "weight": 3.0
-        },
-        {
-          "direction": "Diagonal",
-          "minLength": 1,
-          "maxLength": 5,
-          "weight": 1.0
+          "id": "strokes",
+          "count": {
+            "min": 1,
+            "max": 5
+          },
+          "chain": {
+            "length": {
+              "min": 2,
+              "max": 8
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 3.0
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 1.0
+              }
+            ],
+            "allowClosedLoop": false,
+            "closedLoopWeight": 0.7,
+            "allowNodeRevisit": false,
+            "allowEdgeRevisit": false
+          },
+          "placement": {
+            "mode": "RandomValid",
+            "fixedOrigin": null,
+            "allowRotationOnPlace": true,
+            "maxPlacementAttempts": 20
+          },
+          "arrangement": {
+            "spacing": {
+              "enabled": true,
+              "minCenterDistance": 1,
+              "minNodeDistance": 0.1
+            }
+          }
         }
       ],
-      "allowNodeRevisit": false,
-      "allowEdgeRevisit": false,
-      "allowClosedLoop": false,
-      "closedLoopWeight": 0.7,
-      "allowSymbolsToCross": false,
-      "guaranteedMotifs": [],
-      "subSymbolPlacement": {
-        "mode": "RandomValid",
-        "fixedOrigin": null,
-        "allowRotationOnPlace": true,
-        "maxPlacementAttempts": 20
-      },
       "curve": {
         "mode": "Derived",
         "straightLineBias": {
@@ -231,11 +300,6 @@
         "rejectStraightLineOnly": true,
         "maxRegenerationAttempts": 10
       },
-      "subSymbolSpacing": {
-        "enabled": true,
-        "minCenterDistance": 1,
-        "minNodeDistance": 0.1
-      },
       "render": {
         "framing": "Language",
         "foreground": "#FFFFFFFF",
@@ -257,5 +321,6 @@
         }
       }
     }
-  ]
+  ],
+  "$schema": "./config.schema.json"
 }

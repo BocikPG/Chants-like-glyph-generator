@@ -499,3 +499,5 @@ nunit-*.xml
 
 /output
 /output-advanced
+
+/.vscode

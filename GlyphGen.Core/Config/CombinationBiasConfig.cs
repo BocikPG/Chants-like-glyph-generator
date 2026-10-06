@@ -1,3 +1,5 @@
+using GlyphGen.Core.Grid;
+
 namespace GlyphGen.Core.Config;
 
 /// <summary>One thing a composite glyph can be nudged towards when components are combined.
@@ -44,7 +46,7 @@ public sealed class CombinationBiasConfig
     public double WeightOf(CombinationBiasMode mode) =>
         Weights is not null && Weights.TryGetValue(mode, out var weight) ? weight : 1.0;
 
-    /// <summary>false: bias only picks among TRANSLATIONS, at the first scale/rotation that has
+    /// <summary>Combination only (a shape's candidates are not scaled or rotated). false: bias only picks among TRANSLATIONS, at the first scale/rotation that has
     /// any legal placement (the existing "translate first, scale/rotate only as a fallback"
     /// order is kept). true: every allowed scale/rotation is also in the running, so e.g.
     /// Tallest can pick a larger scale or a 90-degree turn - strongest effect, but it overrides

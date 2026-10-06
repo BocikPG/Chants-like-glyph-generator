@@ -19,14 +19,38 @@ internal static class ConfigStructureChecker
     /// <summary>Properties whose C# type is nullable, so an explicit null is meaningful.</summary>
     internal static readonly HashSet<(Type Owner, string Property)> MayBeNull = new()
     {
-        (typeof(GuaranteedMotifConfig), nameof(GuaranteedMotifConfig.Literal)),
-        (typeof(GuaranteedMotifConfig), nameof(GuaranteedMotifConfig.Generative)),
+        (typeof(ShapeDefinition), nameof(ShapeDefinition.Count)),
+        (typeof(ShapeDefinition), nameof(ShapeDefinition.Nodes)),
+        (typeof(ShapeDefinition), nameof(ShapeDefinition.SeedLabel)),
+        (typeof(RecipeConfig), nameof(RecipeConfig.Arrangement)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.Rectangular)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.ThickEnds)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.Brush)),
         (typeof(PlacementConfig), nameof(PlacementConfig.FixedOrigin)),
         (typeof(PlacementConfig), nameof(PlacementConfig.Rotations)),
     };
+
+    /// <summary>Options from the version before shapes/arrangement: each maps to where it lives now,
+    /// so an old config gets a pointer instead of a bare "unknown property".</summary>
+    private static readonly Dictionary<(Type Owner, string Property), string> LegacyKeys = new()
+    {
+        [(typeof(LanguageDefinition), "subsymbolcount")] = "is now 'count' on a shape in 'shapes'.",
+        [(typeof(LanguageDefinition), "subsymbollength")] = "is now 'chain.length' on a shape in 'shapes'.",
+        [(typeof(LanguageDefinition), "connectionrules")] = "is now 'chain.connectionRules' on each generative shape.",
+        [(typeof(LanguageDefinition), "connectionweighting")] = "is now 'chain.connectionWeighting' on each generative shape.",
+        [(typeof(LanguageDefinition), "allownoderevisit")] = "is now 'chain.allowNodeRevisit' on each generative shape.",
+        [(typeof(LanguageDefinition), "allowedgerevisit")] = "is now 'chain.allowEdgeRevisit' on each generative shape.",
+        [(typeof(LanguageDefinition), "allowclosedloop")] = "is now 'chain.allowClosedLoop' on each generative shape.",
+        [(typeof(LanguageDefinition), "closedloopweight")] = "is now 'chain.closedLoopWeight' on each generative shape.",
+        [(typeof(LanguageDefinition), "allowsymbolstocross")] = "is now 'arrangement.allowCrossing' on each shape.",
+        [(typeof(LanguageDefinition), "guaranteedmotifs")] = "is now part of 'shapes': a guaranteed motif is a shape without a 'count'.",
+        [(typeof(LanguageDefinition), "subsymbolplacement")] = "is now 'placement' on each shape.",
+        [(typeof(LanguageDefinition), "subsymbolspacing")] = "is now 'arrangement.spacing' on each shape (its selfSpacing is 'chain.selfSpacing').",
+        [(typeof(CombinationConfig), "allowcomponentstocross")] = "is now 'combination.arrangement.allowCrossing'.",
+        [(typeof(CombinationConfig), "bias")] = "is now 'combination.arrangement.bias'.",
+    };
+
+    private const string LegacyPrefix = "Old option ";
 
     public static void Check(string json, List<string> errors)
     {
@@ -41,6 +65,9 @@ internal static class ConfigStructureChecker
 
         CheckGridPlacement(root, errors);
         WalkObject(root, typeof(RootConfig), "", errors);
+
+        if (errors.Any(e => e.StartsWith(LegacyPrefix, StringComparison.Ordinal)))
+            errors.Add("This config uses the pre-shapes layout. Convert it with: GlyphGen.Cli --migrate old.json new.json");
     }
 
     private static void CheckGridPlacement(JsonElement root, List<string> errors)
@@ -118,6 +145,13 @@ internal static class ConfigStructureChecker
 
         foreach (var property in element.EnumerateObject())
         {
+            if (LegacyKeys.TryGetValue((type, property.Name.ToLowerInvariant()), out var moved))
+            {
+                string at = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
+                errors.Add($"{LegacyPrefix}'{at}' {moved}");
+                continue;
+            }
+
             if (!bindable.TryGetValue(property.Name, out var info))
             {
                 // The old top-level "grid" already has its own, more helpful message.

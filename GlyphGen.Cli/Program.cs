@@ -23,10 +23,42 @@ if (args.Length >= 1 && args[0] == "--schema")
     return;
 }
 
+// GlyphGen.Cli --migrate old.json [new.json]: convert a pre-shapes config to the current layout
+// (same glyphs for the same seed). Writes to new.json, or to stdout when no output file is given.
+if (args.Length >= 2 && args[0] == "--migrate")
+{
+    try
+    {
+        string? migrated = ConfigMigrator.Migrate(File.ReadAllText(args[1]));
+        if (migrated is null)
+        {
+            Console.Error.WriteLine("Nothing to migrate: the config already uses the shapes layout.");
+            return;
+        }
+
+        if (args.Length >= 3)
+        {
+            File.WriteAllText(args[2], migrated);
+            Console.WriteLine($"Wrote {args[2]}");
+        }
+        else
+        {
+            Console.WriteLine(migrated);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Could not migrate '{args[1]}': {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
 if (args.Length < 1)
 {
     Console.WriteLine("Usage: GlyphGen.Cli <path-to-config.json>");
     Console.WriteLine("       GlyphGen.Cli --schema [config.schema.json]");
+    Console.WriteLine("       GlyphGen.Cli --migrate old.json [new.json]");
     Environment.ExitCode = 1;
     return;
 }

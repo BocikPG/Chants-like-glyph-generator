@@ -27,8 +27,8 @@ public interface ICombinationResolver
 {
     /// <summary>
     /// Builds a composite glyph by placing each component of a recipe (translate/scale/rotate
-    /// per config) without crossing the others. spacing is the language's SubSymbolSpacing -
-    /// each placed component is treated as one shape under it. Returns null if the recipe
+    /// per config) without crossing the others. arrangement governs how each placed component
+    /// relates to the others (crossing, spacing, bias). Returns null if the recipe
     /// can't be satisfied within config.MaxRetriesPerRecipe attempts. variation 0 is the normal
     /// search, which prefers the plain (0,0) overlay; a higher value (a quality retry) drops that
     /// preference so the same components come out arranged differently.
@@ -42,6 +42,6 @@ public interface ICombinationResolver
         DeterministicRandom rng,
         GlyphUsageTracker usageTracker,
         Func<string, int, Glyph> regenerateComponent,
-        SubSymbolSpacingConfig spacing,
+        ArrangementRules arrangement,
         int variation = 0);
 }

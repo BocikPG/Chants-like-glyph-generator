@@ -69,19 +69,19 @@ public sealed class SelfSpacingRule
 }
 
 /// <summary>
-/// Spacing enforced between a glyph's shapes, and within each chain, on top of (not instead of)
-/// the ordinary intersection check. Minimums keep things from sitting uncomfortably close
+/// Spacing enforced between a shape and the shapes already placed, on top of (not instead of)
+/// the ordinary intersection check. Part of a shape's (or a combination's) arrangement rules;
+/// the spacing within one chain is ChainRules.SelfSpacing. Minimums keep things from sitting uncomfortably close
 /// together; maximums keep them clustered. Disabled by default, since these are additional
 /// constraints that can make placement noticeably harder to satisfy.
 ///
-/// Between shapes (the *Center/*Node distances): a "shape" is a motif or free-form sub-symbol
-/// when generating a glyph, and a whole placed component when combining glyphs per
-/// Combination.Recipes - both go through SubSymbolSpacingChecker. Checked against EVERY
-/// already-placed shape (minimums against all; the maximum per MaxDistanceMode).
-///
-/// Within a chain: SelfSpacing rules, applied by ChainGenerator as each node is added.
+/// A "shape" is one placed instance of a shapes entry when generating a glyph, and a whole placed
+/// component when combining glyphs per Combination.Recipes - both go through
+/// SubSymbolSpacingChecker. The rules of the shape BEING PLACED are checked against EVERY
+/// already-placed shape (minimums against all; the maximum per MaxDistanceMode), so the result
+/// depends on placement order.
 /// </summary>
-public sealed class SubSymbolSpacingConfig
+public sealed class SpacingConfig
 {
     public bool Enabled { get; set; } = false;
 
@@ -102,14 +102,6 @@ public sealed class SubSymbolSpacingConfig
 
     public ProximityMode MaxDistanceMode { get; set; } = ProximityMode.NearestShape;
 
-    /// <summary>Node-to-node rules within a single chain, all enforced together. Applies to
-    /// generated chains only - not literal motifs or combination components.</summary>
-    public List<SelfSpacingRule> SelfSpacing { get; set; } = new();
-
-    /// <summary>SelfSpacing as the generator should apply it: none when spacing is disabled.</summary>
-    public IReadOnlyList<SelfSpacingRule> ActiveSelfSpacing =>
-        Enabled ? SelfSpacing : Array.Empty<SelfSpacingRule>();
-
     /// <summary>Returns a human-readable message per problem found (empty = valid). Checked
     /// even when Enabled is false, so a typo isn't silently waiting for the day it's switched on.</summary>
     public IReadOnlyList<string> Validate()
@@ -128,14 +120,6 @@ public sealed class SubSymbolSpacingConfig
             errors.Add(
                 $"{JsonNames.Of(nameof(MaxNodeDistance))} ({MaxNodeDistance}) is smaller than " +
                 $"{JsonNames.Of(nameof(MinNodeDistance))} ({MinNodeDistance}) - no placement could ever satisfy both.");
-        }
-
-        for (int i = 0; i < (SelfSpacing?.Count ?? 0); i++)
-        {
-            var rule = SelfSpacing![i];
-            if (rule is null) { errors.Add($"{JsonNames.Of(nameof(SelfSpacing))}[{i}] is null."); continue; }
-            foreach (var error in rule.Validate())
-                errors.Add($"{JsonNames.Of(nameof(SelfSpacing))}[{i}]: {error}");
         }
 
         return errors;

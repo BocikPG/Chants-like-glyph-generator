@@ -19,8 +19,8 @@ namespace GlyphGen.Core.Generation;
 /// (itself shuffled), each with its own full exhaustive translation search. Only once every
 /// combination is exhausted does this fall back to regenerating a dependency.
 ///
-/// Each placed component counts as ONE shape for SubSymbolSpacingConfig: a candidate placement
-/// must satisfy the language's spacing rules (via SubSymbolSpacingChecker, the same code the
+/// Each placed component counts as ONE shape for arrangement spacing: a candidate placement
+/// must satisfy the arrangement's spacing rules (via SubSymbolSpacingChecker, the same code the
 /// glyph generator uses for sub-symbols) against every component already placed in this
 /// composite, on top of the no-crossing check.
 ///
@@ -40,7 +40,7 @@ public sealed class CombinationResolver : ICombinationResolver
         DeterministicRandom rng,
         GlyphUsageTracker usageTracker,
         Func<string, int, Glyph> regenerateComponent,
-        SubSymbolSpacingConfig spacing,
+        ArrangementRules arrangement,
         int variation = 0)
     {
         var working = new Dictionary<string, Glyph>();
@@ -59,23 +59,23 @@ public sealed class CombinationResolver : ICombinationResolver
         {
             var attemptRng = rng.Derive($"combine-attempt-{attempt}");
 
-            // Components don't cross each other unless Combination.AllowComponentsToCross says so,
-            // regardless of the language's general AllowSymbolsToCross - overlay composition is
-            // deliberate controlled stacking, not free intersection.
-            var geometry = new GeometryContext(allowCrossing: config.AllowComponentsToCross);
+            // Components don't cross each other unless the arrangement says so - overlay
+            // composition is deliberate controlled stacking, not free intersection. (A crossing
+            // needs BOTH components to allow it; here they all share this arrangement.)
+            var geometry = new GeometryContext(allowCrossing: arrangement.AllowCrossing);
             var placedComponents = new List<PlacedComponent>();
             bool allPlaced = true;
 
             foreach (var name in componentNames)
             {
-                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, spacing, variation);
+                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, arrangement, variation);
                 if (placed is null)
                 {
                     allPlaced = false;
                     break;
                 }
 
-                geometry.CommitAsOneShape(placed.TransformedChains);
+                geometry.CommitAsOneShape(placed.TransformedChains, arrangement.AllowCrossing);
                 placedComponents.Add(placed);
             }
 
@@ -101,10 +101,10 @@ public sealed class CombinationResolver : ICombinationResolver
             working[toRegenerate] = regenerated;
             generated[toRegenerate] = regenerated;
 
-            foreach (var (otherName, otherComponents) in config.Recipes)
+            foreach (var (otherName, otherRecipe) in config.Recipes)
             {
                 if (otherName == compositeName) continue; // this recipe's own loop handles itself
-                if (!otherComponents.Contains(toRegenerate)) continue;
+                if (!otherRecipe.Components.Contains(toRegenerate)) continue;
                 if (!generated.ContainsKey(otherName)) continue; // not built yet - will pick up
                                                                    // the new canonical version
                                                                    // naturally when its turn comes
@@ -123,17 +123,17 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        SubSymbolSpacingConfig spacing,
+        ArrangementRules arrangement,
         int variation)
     {
         var sourceChains = GlyphGeometryUtils.GetAllChains(source).ToList();
 
-        if (config.Bias is { IsActive: true })
-            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, spacing, variation);
+        if (arrangement.Bias is { IsActive: true })
+            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, arrangement, variation);
 
         // Phase 1: identity scale/rotation, exhaustive-but-shuffled search across every
         // position the shape could legally occupy.
-        var identity = TryAllTranslations(sourceChains, 1, 1, 0, sourceName, grid, rng.Derive("identity"), geometry, spacing, variation);
+        var identity = TryAllTranslations(sourceChains, 1, 1, 0, sourceName, grid, rng.Derive("identity"), geometry, arrangement, variation);
         if (identity is not null) return identity;
 
         if (!config.AllowScale && !config.AllowRotate) return null;
@@ -145,7 +145,7 @@ public sealed class CombinationResolver : ICombinationResolver
             if (!IsLatticeSafeScale(sourceChains, num, den)) continue;
 
             var comboRng = rng.Derive($"combo-{num}-{den}-{rot}");
-            var result = TryAllTranslations(sourceChains, num, den, rot, sourceName, grid, comboRng, geometry, spacing, variation);
+            var result = TryAllTranslations(sourceChains, num, den, rot, sourceName, grid, comboRng, geometry, arrangement, variation);
             if (result is not null) return result;
         }
 
@@ -212,13 +212,13 @@ public sealed class CombinationResolver : ICombinationResolver
         string sourceName,
         LatticeGrid grid,
         GeometryContext geometry,
-        SubSymbolSpacingConfig spacing)
+        ArrangementRules arrangement)
     {
         var transformedChains = TransformChains(sourceChains, numerator, denominator, rotationDegrees, translation);
 
         if (!AllNodesInBounds(transformedChains, grid)) return null; // safety net; range math should already guarantee this
         if (!FitsGeometry(transformedChains, geometry)) return null;
-        if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, spacing)) return null;
+        if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, arrangement.Spacing)) return null;
 
         var placed = new PlacedComponent
         {
@@ -249,11 +249,11 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        SubSymbolSpacingConfig spacing,
+        ArrangementRules arrangement,
         int variation)
     {
-        var bias = config.Bias;
-        var existing = BoundsOfGroups(geometry.NodeGroups);
+        var bias = arrangement.Bias;
+        var existing = BiasScoring.BoundsOfGroups(geometry.NodeGroups);
 
         List<BiasCandidate> CollectFor(int num, int den, int rot, DeterministicRandom comboRng)
         {
@@ -282,7 +282,7 @@ public sealed class CombinationResolver : ICombinationResolver
                     minY = Math.Min(minY, e.MinY); maxY = Math.Max(maxY, e.MaxY);
                 }
 
-                list.Add(new BiasCandidate(num, den, rot, t, BiasScore(bias, maxX - minX, maxY - minY, grid)));
+                list.Add(new BiasCandidate(num, den, rot, t, BiasScoring.Score(bias, maxX - minX, maxY - minY, grid)));
             }
 
             return list;
@@ -294,7 +294,7 @@ public sealed class CombinationResolver : ICombinationResolver
             foreach (var c in candidates.OrderBy(c => c.Score))
             {
                 var placed = TryBuildPlacement(
-                    sourceChains, c.Numerator, c.Denominator, c.Rotation, c.Translation, sourceName, grid, geometry, spacing);
+                    sourceChains, c.Numerator, c.Denominator, c.Rotation, c.Translation, sourceName, grid, geometry, arrangement);
                 if (placed is not null) return placed;
             }
             return null;
@@ -333,50 +333,6 @@ public sealed class CombinationResolver : ICombinationResolver
         return null;
     }
 
-    /// <summary>Lower is better. Each active mode contributes a term on a 0..1 scale (extents
-    /// are divided by the grid's extent, squareness is already a ratio) and the terms are
-    /// summed (each multiplied by its configured weight, 1 by default).</summary>
-    private static double BiasScore(CombinationBiasConfig bias, int width, int height, LatticeGrid grid)
-    {
-        double w = (double)width / Math.Max(1, grid.Width - 1);
-        double h = (double)height / Math.Max(1, grid.Height - 1);
-
-        double score = 0.0;
-        foreach (var mode in bias.Modes)
-        {
-            score += bias.WeightOf(mode) * mode switch
-            {
-                CombinationBiasMode.Tallest => -h,
-                CombinationBiasMode.Shortest => h,
-                CombinationBiasMode.Widest => -w,
-                CombinationBiasMode.Narrowest => w,
-                CombinationBiasMode.Squarest => Math.Max(width, height) > 0
-                    ? 1.0 - (double)Math.Min(width, height) / Math.Max(width, height)
-                    : 0.0,
-                _ => 0.0,
-            };
-        }
-
-        return score;
-    }
-
-    private static (int MinX, int MaxX, int MinY, int MaxY)? BoundsOfGroups(
-        IReadOnlyList<IReadOnlyList<GridPoint>> groups)
-    {
-        bool any = false;
-        int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
-
-        foreach (var group in groups)
-            foreach (var p in group)
-            {
-                any = true;
-                minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X);
-                minY = Math.Min(minY, p.Y); maxY = Math.Max(maxY, p.Y);
-            }
-
-        return any ? (minX, maxX, minY, maxY) : null;
-    }
-
     /// <summary>Exhaustive-but-shuffled search across every valid translation for one fixed
     /// scale/rotation - not a bounded random sample.</summary>
     private static PlacedComponent? TryAllTranslations(
@@ -388,7 +344,7 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        SubSymbolSpacingConfig spacing,
+        ArrangementRules arrangement,
         int variation)
     {
         var origin = new GridPoint(0, 0);
@@ -404,7 +360,7 @@ public sealed class CombinationResolver : ICombinationResolver
         foreach (var translation in EnumerateShuffledTranslations(preTranslated, grid, rng, preferIdentity: variation == 0))
         {
             var placed = TryBuildPlacement(
-                sourceChains, numerator, denominator, rotationDegrees, translation, sourceName, grid, geometry, spacing);
+                sourceChains, numerator, denominator, rotationDegrees, translation, sourceName, grid, geometry, arrangement);
             if (placed is not null) return placed;
         }
 
@@ -509,11 +465,9 @@ public sealed class CombinationResolver : ICombinationResolver
 
     private static bool FitsGeometry(List<SubSymbolChain> chains, GeometryContext geometry)
     {
-        if (geometry.AllowCrossing) return true;
-
         foreach (var chain in chains)
             foreach (var edge in chain.Edges)
-                foreach (var existing in geometry.ExistingEdges)
+                foreach (var existing in geometry.BlockingEdges)
                     if (edge.Intersects(existing)) return false;
 
         return true;

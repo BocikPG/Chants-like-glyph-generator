@@ -46,11 +46,41 @@ public static class RootConfigLoader
         ConfigStructureChecker.Check(json, structural);
         if (structural.Count > 0) throw Invalid(structural);
 
+        ResolveRecipeArrangements(config);
+
         var errors = new List<string>();
         ConfigValidator.Validate(config, errors);
         if (errors.Count > 0) throw Invalid(errors);
 
         return config;
+    }
+
+    /// <summary>A recipe's own arrangement replaces, key by key (allowCrossing, spacing, bias,
+    /// candidates), what combination.arrangement says; keys it does not mention are inherited.
+    /// Done on the JSON so "not written" can be told apart from "written as the default".</summary>
+    private static void ResolveRecipeArrangements(RootConfig config)
+    {
+        foreach (var language in config.Languages)
+        {
+            var combination = language.Combination;
+            var baseNode = JsonSerializer.SerializeToNode(combination.Arrangement, GlyphGenJsonOptions.Default)!.AsObject();
+
+            foreach (var recipe in combination.Recipes.Values)
+            {
+                if (recipe.ArrangementJson is not { } raw) continue;
+
+                var merged = (System.Text.Json.Nodes.JsonObject)baseNode.DeepClone();
+                foreach (var property in raw.EnumerateObject())
+                {
+                    string key = char.ToLowerInvariant(property.Name[0]) + property.Name.Substring(1);
+                    foreach (var existing in merged.Select(kv => kv.Key).ToList())
+                        if (string.Equals(existing, key, StringComparison.OrdinalIgnoreCase)) merged.Remove(existing);
+                    merged[key] = System.Text.Json.Nodes.JsonNode.Parse(property.Value.GetRawText());
+                }
+
+                recipe.EffectiveArrangement = merged.Deserialize<ArrangementRules>(GlyphGenJsonOptions.Default);
+            }
+        }
     }
 
     public static RootConfig LoadFromFile(string path) => Load(File.ReadAllText(path));

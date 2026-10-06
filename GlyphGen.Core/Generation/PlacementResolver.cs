@@ -132,11 +132,9 @@ public sealed class PlacementResolver : IPlacementResolver
             if (!grid.Contains(node)) return false;
         }
 
-        if (existingGeometry.AllowCrossing) return true;
-
         foreach (var edge in shape.Edges)
         {
-            foreach (var existing in existingGeometry.ExistingEdges)
+            foreach (var existing in existingGeometry.BlockingEdges)
             {
                 if (edge.Intersects(existing)) return false;
             }

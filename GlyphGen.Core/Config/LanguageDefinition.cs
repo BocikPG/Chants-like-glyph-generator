@@ -34,33 +34,14 @@ public sealed class LanguageDefinition
     /// every other glyph.</summary>
     public List<GlyphDefinition> BaseGlyphs { get; set; } = new();
 
-    public IntRange SubSymbolCount { get; set; } = new() { Min = 1, Max = 1 };
-    public IntRange SubSymbolLength { get; set; } = new() { Min = 3, Max = 6 };
-
-    /// <summary>Optional: glyphs used in more recipes roll lower sub-symbol counts/lengths.</summary>
+    /// <summary>Glyphs used in more recipes roll lower counts/lengths, for shapes that have a
+    /// count (guaranteed shapes are unaffected).</summary>
     public UsageSizeBiasConfig UsageSizeBias { get; set; } = new();
 
-    public List<ConnectionRuleConfig> ConnectionRules { get; set; } = new();
-
-    /// <summary>How connection-rule weights turn into move probabilities (applies to guaranteed
-    /// generative motifs' rules too). See ConnectionWeighting. Default PerMove.</summary>
-    public ConnectionWeighting ConnectionWeighting { get; set; } = ConnectionWeighting.PerMove;
-
-    public bool AllowNodeRevisit { get; set; } = false;
-    public bool AllowEdgeRevisit { get; set; } = false;
-    public bool AllowClosedLoop { get; set; } = false;
-    public double ClosedLoopWeight { get; set; } = 0.0;
-
-    /// <summary>If false, the intersection checker rejects any candidate edge that crosses an
-    /// already-committed edge, elsewhere in this same sub-symbol or any other sub-symbol/motif
-    /// already placed in the glyph.</summary>
-    public bool AllowSymbolsToCross { get; set; } = false;
-
-    public List<GuaranteedMotifConfig> GuaranteedMotifs { get; set; } = new();
-
-    /// <summary>Shared PlacementConfig schema, applied to regular free-form sub-symbols
-    /// (guaranteed motifs carry their own placement block instead).</summary>
-    public PlacementConfig SubSymbolPlacement { get; set; } = new();
+    /// <summary>What every plain (non-composite) glyph is built from, placed in list order: each
+    /// entry carries its own chain rules, placement and arrangement. A guaranteed motif is an
+    /// entry without a count; free-form strokes are entries with one.</summary>
+    public List<ShapeDefinition> Shapes { get; set; } = new();
 
     public CurveConfig Curve { get; set; } = new();
     public CombinationConfig Combination { get; set; } = new();
@@ -70,9 +51,6 @@ public sealed class LanguageDefinition
 
     /// <summary>Rendering (framing, colours, typeface). Pixel size/margin come from Canvas.</summary>
     public RenderConfig Render { get; set; } = new();
-
-    /// <summary>Minimum spacing between sub-symbols/motifs, beyond just not crossing.</summary>
-    public SubSymbolSpacingConfig SubSymbolSpacing { get; set; } = new();
 }
 
 public sealed class GridConfig

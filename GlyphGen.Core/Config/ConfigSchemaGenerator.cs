@@ -55,6 +55,7 @@ public static class ConfigSchemaGenerator
         ["CanvasConfig.SizePx"] = 16,
         ["CanvasConfig.MarginPx"] = 0,
         ["PlacementConfig.MaxPlacementAttempts"] = 1,
+        ["ArrangementRules.Candidates"] = 1,
         ["QualityConfig.MaxRegenerationAttempts"] = 1,
         ["CombinationConfig.MaxRetriesPerRecipe"] = 1,
         ["ConnectionRuleConfig.MinLength"] = 1,
@@ -69,7 +70,7 @@ public static class ConfigSchemaGenerator
     {
         [typeof(RootConfig)] = new[] { "languages" },
         [typeof(LanguageDefinition)] = new[] { "name", "grid" },
-        [typeof(GuaranteedMotifConfig)] = new[] { "id", "type" },
+        [typeof(ShapeDefinition)] = new[] { "id" },
     };
 
     private static Dictionary<string, string> LoadDocumentation(string? path)
@@ -284,7 +285,9 @@ public static class ConfigSchemaGenerator
                 var map = new JsonObject
                 {
                     ["type"] = "object",
-                    ["additionalProperties"] = SchemaFor(valueType, false, null),
+                    ["additionalProperties"] = owner is { Name: nameof(CombinationConfig.Recipes) }
+                        ? new JsonObject()
+                        : SchemaFor(valueType, false, null),
                 };
 
                 if (keyType.IsEnum)
@@ -295,14 +298,30 @@ public static class ConfigSchemaGenerator
                     };
                 }
 
-                // A recipe needs at least one component.
+                // A recipe is a list of components (at least one), or { components, arrangement }.
                 if (owner is { Name: nameof(CombinationConfig.Recipes) })
                 {
-                    map["additionalProperties"] = new JsonObject
+                    var components = new JsonObject
                     {
                         ["type"] = "array",
                         ["items"] = new JsonObject { ["type"] = "string", ["minLength"] = 1 },
                         ["minItems"] = 1,
+                    };
+                    map["additionalProperties"] = new JsonObject
+                    {
+                        ["oneOf"] = new JsonArray(
+                            components,
+                            new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["components"] = components.DeepClone(),
+                                    ["arrangement"] = Reference(typeof(ArrangementRules)),
+                                },
+                                ["required"] = new JsonArray("components"),
+                                ["additionalProperties"] = false,
+                            }),
                     };
                 }
 
@@ -311,8 +330,8 @@ public static class ConfigSchemaGenerator
 
             if (TryGetItemType(type, out var itemType))
             {
-                // Literal motif nodes are [x, y] pairs.
-                if (owner is { Name: nameof(LiteralMotifConfig.Nodes) } && owner.DeclaringType == typeof(LiteralMotifConfig))
+                // Literal shape nodes are [x, y] pairs.
+                if (owner is { Name: nameof(ShapeDefinition.Nodes) } && owner.DeclaringType == typeof(ShapeDefinition))
                 {
                     return new JsonObject
                     {

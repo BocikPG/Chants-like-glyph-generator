@@ -28,6 +28,40 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GlyphGen config",
   "definitions": {
+    "ArrangementRules": {
+      "type": "object",
+      "properties": {
+        "allowCrossing": {
+          "type": "boolean",
+          "description": "If true, this shape's edges may cross edges already placed. A crossing is only allowed when BOTH shapes allow it: the shape being placed AND the shape that owns the edge it would cross. So a shape with allowCrossing false can never be crossed, even by a shape that is itself allowed to cross. Edges that merely meet at a shared node never count as crossing.",
+          "default": false
+        },
+        "spacing": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpacingConfig"
+            }
+          ],
+          "description": "Distances to keep from the shapes already placed (centroid and closest-node minimums/maximums). The rules of the shape being placed are checked against everything already there, so the outcome depends on placement order."
+        },
+        "bias": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CombinationBiasConfig"
+            }
+          ],
+          "description": "Preference among placements that already satisfy every hard rule (grid bounds, crossing, spacing). Never relaxes a rule. Empty modes = no bias."
+        },
+        "candidates": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Shapes only: how many valid candidates to generate when a bias is active; the one whose glyph bounding box scores best is kept (\"best of N\"). Ignored without a bias, and by combination components (they search every placement exhaustively).",
+          "default": 3
+        }
+      },
+      "additionalProperties": false,
+      "description": "How a shape relates to the shapes already placed in the glyph: whether it may cross them, how far from them it must (or must not) sit, and which of several legal placements is preferred. Used by every entry in a language's shapes list and by the combination block (for the components of a composite)."
+    },
     "BrushTypefaceConfig": {
       "type": "object",
       "properties": {
@@ -124,6 +158,64 @@
       },
       "additionalProperties": false
     },
+    "ChainRules": {
+      "type": "object",
+      "properties": {
+        "length": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            }
+          ],
+          "description": "How many nodes the chain should have (including the start node)."
+        },
+        "connectionRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConnectionRuleConfig"
+          },
+          "description": "Weighted connection rules driving the chain's growth at each step. At least one is required, otherwise no chain can grow."
+        },
+        "connectionWeighting": {
+          "type": "string",
+          "enum": [
+            "PerMove",
+            "PerRule"
+          ],
+          "description": "How connection-rule weights turn into move probabilities. See ConnectionWeighting.",
+          "default": "PerMove"
+        },
+        "allowNodeRevisit": {
+          "type": "boolean",
+          "description": "Whether the chain may revisit nodes already in it.",
+          "default": false
+        },
+        "allowEdgeRevisit": {
+          "type": "boolean",
+          "description": "Whether the chain may revisit edges already in it.",
+          "default": false
+        },
+        "allowClosedLoop": {
+          "type": "boolean",
+          "description": "Whether the chain may close into a loop back to its start node.",
+          "default": false
+        },
+        "closedLoopWeight": {
+          "type": "number",
+          "description": "Weight of the loop-closing move, relative to the connection rules' weights.",
+          "default": 0
+        },
+        "selfSpacing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SelfSpacingRule"
+          },
+          "description": "Node-to-node spacing rules inside this chain, all enforced together as each node is added, on top of the ordinary intersection check. Empty = none."
+        }
+      },
+      "additionalProperties": false,
+      "description": "How ONE stroke (chain) grows: its length, the weighted connection rules, how those weights become probabilities, whether it may revisit nodes/edges or close into a loop, and the spacing between its own nodes. Used by every Generative shape - there is no language-wide copy, so two shapes can follow different rules (long strokes and short ticks, say) and nothing is inherited silently. Ignored for Literal shapes."
+    },
     "CombinationBiasConfig": {
       "type": "object",
       "properties": {
@@ -159,7 +251,7 @@
         },
         "includeScaleAndRotation": {
           "type": "boolean",
-          "description": "false: bias only picks among TRANSLATIONS, at the first scale/rotation that has any legal placement (the existing \"translate first, scale/rotate only as a fallback\" order is kept). true: every allowed scale/rotation is also in the running, so e.g. Tallest can pick a larger scale or a 90-degree turn - strongest effect, but it overrides the translate-first preference.",
+          "description": "Combination only (a shape's candidates are not scaled or rotated). false: bias only picks among TRANSLATIONS, at the first scale/rotation that has any legal placement (the existing \"translate first, scale/rotate only as a fallback\" order is kept). true: every allowed scale/rotation is also in the running, so e.g. Tallest can pick a larger scale or a 90-degree turn - strongest effect, but it overrides the translate-first preference.",
           "default": false
         }
       },
@@ -172,14 +264,38 @@
         "recipes": {
           "type": "object",
           "additionalProperties": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "minItems": 1
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "components": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "arrangement": {
+                    "$ref": "#/definitions/ArrangementRules"
+                  }
+                },
+                "required": [
+                  "components"
+                ],
+                "additionalProperties": false
+              }
+            ]
           },
-          "description": "Key = composite glyph name, value = component glyph names to overlay. A glyph name may appear both as a standalone entry in the language's glyph list and as a component here."
+          "description": "Key = composite glyph name, value = component glyph names to overlay. A glyph name may appear both as a standalone entry in the language's glyph list and as a component here. Each value is a list of component names, or an object with \"components\" and an optional per-recipe \"arrangement\"."
         },
         "allowScale": {
           "type": "boolean",
@@ -208,17 +324,13 @@
           "minimum": 1,
           "default": 5
         },
-        "allowComponentsToCross": {
-          "type": "boolean",
-          "description": "If true, a composite's components may cross each other (they may always touch at shared nodes). Default false: overlay composition is controlled stacking, with no component crossing another, regardless of the language's AllowSymbolsToCross (which governs strokes inside one glyph). SubSymbolSpacing still applies either way.",
-          "default": false
-        },
-        "bias": {
+        "arrangement": {
           "allOf": [
             {
-              "$ref": "#/definitions/CombinationBiasConfig"
+              "$ref": "#/definitions/ArrangementRules"
             }
-          ]
+          ],
+          "description": "How a composite's components relate to each other: crossing (default: none - overlay composition is controlled stacking, they may only touch at shared nodes), spacing and bias. A recipe can override parts of it with its own \"arrangement\". Each placed component counts as one shape. Components search every translation exhaustively, so arrangement.candidates does not apply here."
         }
       },
       "additionalProperties": false,
@@ -376,34 +488,6 @@
       "additionalProperties": false,
       "description": "A plain floating-point range (no percent semantics), resolved the same way as IntRange/PercentRange. Used for render settings expressed as canvas fractions, degrees, tension, etc."
     },
-    "GenerativeMotifConfig": {
-      "type": "object",
-      "properties": {
-        "lengthRange": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/IntRange"
-            }
-          ]
-        },
-        "connectionRules": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ConnectionRuleConfig"
-          }
-        },
-        "allowClosedLoop": {
-          "type": "boolean",
-          "default": false
-        },
-        "closedLoopWeight": {
-          "type": "number",
-          "default": 0
-        }
-      },
-      "additionalProperties": false,
-      "description": "Constrained generation, reusing the normal chain-growth engine with its own length range / connection rules / loop settings, independent of the language's regular free-form sub-symbol settings."
-    },
     "GridConfig": {
       "type": "object",
       "properties": {
@@ -419,56 +503,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "GuaranteedMotifConfig": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "default": ""
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "Literal",
-            "Generative"
-          ],
-          "default": "Literal"
-        },
-        "literal": {
-          "oneOf": [
-            {
-              "$ref": "#/definitions/LiteralMotifConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "generative": {
-          "oneOf": [
-            {
-              "$ref": "#/definitions/GenerativeMotifConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "placement": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PlacementConfig"
-            }
-          ]
-        }
-      },
-      "additionalProperties": false,
-      "description": "One guaranteed motif for a language (e.g. Bard's \"bar\"). Exactly one of Literal/Generative should be populated, matching Type — kept as an explicit enum flag rather than relying on null-inference alone, so a config with both or neither populated is a validation error rather than a silent bug.",
-      "required": [
-        "id",
-        "type"
-      ]
     },
     "IntRange": {
       "type": "object",
@@ -559,77 +593,20 @@
           },
           "description": "Glyphs that exist only to be components of combination recipes. Generated (before Glyphs, so recipes can use them) and rendered, but written to a separate \"_bases\" folder and left out of the contact sheet. They go through the same quality/similarity gate as every other glyph."
         },
-        "subSymbolCount": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/IntRange"
-            }
-          ]
-        },
-        "subSymbolLength": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/IntRange"
-            }
-          ]
-        },
         "usageSizeBias": {
           "allOf": [
             {
               "$ref": "#/definitions/UsageSizeBiasConfig"
             }
           ],
-          "description": "Optional: glyphs used in more recipes roll lower sub-symbol counts/lengths."
+          "description": "Glyphs used in more recipes roll lower counts/lengths, for shapes that have a count (guaranteed shapes are unaffected)."
         },
-        "connectionRules": {
+        "shapes": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/ConnectionRuleConfig"
-          }
-        },
-        "connectionWeighting": {
-          "type": "string",
-          "enum": [
-            "PerMove",
-            "PerRule"
-          ],
-          "description": "How connection-rule weights turn into move probabilities (applies to guaranteed generative motifs' rules too). See ConnectionWeighting. Default PerMove.",
-          "default": "PerMove"
-        },
-        "allowNodeRevisit": {
-          "type": "boolean",
-          "default": false
-        },
-        "allowEdgeRevisit": {
-          "type": "boolean",
-          "default": false
-        },
-        "allowClosedLoop": {
-          "type": "boolean",
-          "default": false
-        },
-        "closedLoopWeight": {
-          "type": "number",
-          "default": 0
-        },
-        "allowSymbolsToCross": {
-          "type": "boolean",
-          "description": "If false, the intersection checker rejects any candidate edge that crosses an already-committed edge, elsewhere in this same sub-symbol or any other sub-symbol/motif already placed in the glyph.",
-          "default": false
-        },
-        "guaranteedMotifs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/GuaranteedMotifConfig"
-          }
-        },
-        "subSymbolPlacement": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PlacementConfig"
-            }
-          ],
-          "description": "Shared PlacementConfig schema, applied to regular free-form sub-symbols (guaranteed motifs carry their own placement block instead)."
+            "$ref": "#/definitions/ShapeDefinition"
+          },
+          "description": "What every plain (non-composite) glyph is built from, placed in list order: each entry carries its own chain rules, placement and arrangement. A guaranteed motif is an entry without a count; free-form strokes are entries with one."
         },
         "curve": {
           "allOf": [
@@ -660,14 +637,6 @@
             }
           ],
           "description": "Rendering (framing, colours, typeface). Pixel size/margin come from Canvas."
-        },
-        "subSymbolSpacing": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/SubSymbolSpacingConfig"
-            }
-          ],
-          "description": "Minimum spacing between sub-symbols/motifs, beyond just not crossing."
         }
       },
       "additionalProperties": false,
@@ -675,25 +644,6 @@
         "name",
         "grid"
       ]
-    },
-    "LiteralMotifConfig": {
-      "type": "object",
-      "properties": {
-        "nodes": {
-          "type": "array",
-          "minItems": 2,
-          "items": {
-            "type": "array",
-            "items": {
-              "type": "integer"
-            },
-            "minItems": 2,
-            "maxItems": 2
-          }
-        }
-      },
-      "additionalProperties": false,
-      "description": "Fixed shape, always identical. Coordinates are relative to wherever Placement puts the motif's origin."
     },
     "PercentRange": {
       "type": "object",
@@ -990,7 +940,96 @@
       "additionalProperties": false,
       "description": "One node-to-node spacing rule applied while a single chain grows. Several rules (even of the same Mode) can be active at once; a new node must satisfy all of them. Distances are in grid units, 0 = that bound is off."
     },
-    "SubSymbolSpacingConfig": {
+    "ShapeDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within the language. Names the shape in error messages and seeds its random streams, so renaming it changes the glyphs.",
+          "default": ""
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Literal",
+            "Generative"
+          ],
+          "default": "Generative"
+        },
+        "count": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How many instances per glyph, rolled once per glyph. Omit for exactly one guaranteed instance (no roll)."
+        },
+        "chain": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ChainRules"
+            }
+          ],
+          "description": "Chain rules - Generative shapes only."
+        },
+        "nodes": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "[x, y] points relative to the placement origin - Literal shapes only."
+        },
+        "placement": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PlacementConfig"
+            }
+          ],
+          "description": "Where the shape goes and how it is rotated."
+        },
+        "arrangement": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ArrangementRules"
+            }
+          ],
+          "description": "How the shape relates to the shapes already placed."
+        },
+        "seedLabel": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Advanced: prefix of this shape's random streams, which defaults to \"shape-\" plus the id. Only needed to make a migrated config reproduce its old glyphs exactly (the migration tool sets it); leave it out otherwise."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One entry in a language's shapes list: a kind of stroke every plain glyph is built from. The list is processed in order, each entry placed against everything before it. Omit count for a guaranteed shape (exactly one, always present); give a count range for free-form strokes (rolled per glyph, and the only kind affected by usageSizeBias).",
+      "required": [
+        "id"
+      ]
+    },
+    "SpacingConfig": {
       "type": "object",
       "properties": {
         "enabled": {
@@ -1019,17 +1058,10 @@
             "AllShapes"
           ],
           "default": "NearestShape"
-        },
-        "selfSpacing": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/SelfSpacingRule"
-          },
-          "description": "Node-to-node rules within a single chain, all enforced together. Applies to generated chains only - not literal motifs or combination components."
         }
       },
       "additionalProperties": false,
-      "description": "Spacing enforced between a glyph's shapes, and within each chain, on top of (not instead of) the ordinary intersection check. Minimums keep things from sitting uncomfortably close together; maximums keep them clustered. Disabled by default, since these are additional constraints that can make placement noticeably harder to satisfy. Between shapes (the *Center/*Node distances): a \"shape\" is a motif or free-form sub-symbol when generating a glyph, and a whole placed component when combining glyphs per Combination.Recipes - both go through SubSymbolSpacingChecker. Checked against EVERY already-placed shape (minimums against all; the maximum per MaxDistanceMode). Within a chain: SelfSpacing rules, applied by ChainGenerator as each node is added."
+      "description": "Spacing enforced between a shape and the shapes already placed, on top of (not instead of) the ordinary intersection check. Part of a shape's (or a combination's) arrangement rules; the spacing within one chain is ChainRules.SelfSpacing. Minimums keep things from sitting uncomfortably close together; maximums keep them clustered. Disabled by default, since these are additional constraints that can make placement noticeably harder to satisfy. A \"shape\" is one placed instance of a shapes entry when generating a glyph, and a whole placed component when combining glyphs per Combination.Recipes - both go through SubSymbolSpacingChecker. The rules of the shape BEING PLACED are checked against EVERY already-placed shape (minimums against all; the maximum per MaxDistanceMode), so the result depends on placement order."
     },
     "TensionConfig": {
       "type": "object",

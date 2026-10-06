@@ -30,6 +30,14 @@ public sealed class ChainGenerator : IChainGenerator
     private static readonly (int Dx, int Dy)[] BothDirections =
         OrthogonalDirections.Concat(DiagonalDirections).ToArray();
 
+    /// <summary>Default IChainGenerator implementation. At every step, every geometrically valid concrete
+    /// move is enumerated across all of the language's weighted ConnectionRules (plus an optional
+    /// loop-closing move back to the start), and one is picked via weighted random selection. If no
+    /// valid move exists from the current tail, the chain simply ends early — there is no
+    /// backtracking past already-committed nodes, since a chain is a linear self-avoiding walk, not
+    /// a tree. The caller is responsible for retrying the whole chain with the next deterministic
+    /// attempt seed if the result comes back too short.
+    /// </summary>
     public SubSymbolChain? TryGenerateChain(
         LatticeGrid grid,
         ChainGenerationRequest request,
@@ -199,8 +207,8 @@ public sealed class ChainGenerator : IChainGenerator
 
     /// <summary>
     /// Validates a candidate edge against this chain's own prior edges (self-avoiding, modulo
-    /// AllowEdgeRevisit for exact retraces) and, unless crossing is allowed, against every
-    /// already-placed edge elsewhere in the glyph. Node-revisit is checked separately by the
+    /// AllowEdgeRevisit for exact retraces) and, against every
+    /// already-placed edge elsewhere in the glyph that the shape being placed may not cross. Node-revisit is checked separately by the
     /// caller before this runs, since the closing-loop move deliberately targets a node
     /// already in the chain (its own start) and must bypass that check.
     /// </summary>
@@ -224,12 +232,9 @@ public sealed class ChainGenerator : IChainGenerator
             if (candidateEdge.Intersects(existing)) return false;
         }
 
-        if (!existingGeometry.AllowCrossing)
+        foreach (var existing in existingGeometry.BlockingEdges)
         {
-            foreach (var existing in existingGeometry.ExistingEdges)
-            {
-                if (candidateEdge.Intersects(existing)) return false;
-            }
+            if (candidateEdge.Intersects(existing)) return false;
         }
 
         return true;

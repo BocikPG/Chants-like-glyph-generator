@@ -27,40 +27,49 @@
           "name": "fortress"
         }
       ],
-      "subSymbolCount": {
-        "min": 1,
-        "max": 2
-      },
-      "subSymbolLength": {
-        "min": 6,
-        "max": 8
-      },
-      "connectionRules": [
+      "shapes": [
         {
-          "direction": "Orthogonal",
-          "minLength": 1,
-          "maxLength": 5,
-          "weight": 3.0
-        },
-        {
-          "direction": "Diagonal",
-          "minLength": 1,
-          "maxLength": 5,
-          "weight": 1.0
+          "id": "strokes",
+          "seedLabel": "subsymbol",
+          "count": {
+            "min": 1,
+            "max": 2
+          },
+          "chain": {
+            "length": {
+              "min": 6,
+              "max": 8
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 3.0
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 1.0
+              }
+            ],
+            "allowClosedLoop": false,
+            "closedLoopWeight": 0.0,
+            "allowNodeRevisit": true,
+            "allowEdgeRevisit": true
+          },
+          "placement": {
+            "mode": "RandomValid",
+            "fixedOrigin": null,
+            "allowRotationOnPlace": true,
+            "maxPlacementAttempts": 20
+          },
+          "arrangement": {
+            "allowCrossing": true
+          }
         }
       ],
-      "allowNodeRevisit": true,
-      "allowEdgeRevisit": true,
-      "allowClosedLoop": false,
-      "closedLoopWeight": 0.0,
-      "allowSymbolsToCross": true,
-      "guaranteedMotifs": [],
-      "subSymbolPlacement": {
-        "mode": "RandomValid",
-        "fixedOrigin": null,
-        "allowRotationOnPlace": true,
-        "maxPlacementAttempts": 20
-      },
       "curve": {
         "mode": "Derived",
         "straightLineBias": {
@@ -343,64 +352,75 @@
         },
         "allowScale": false,
         "allowRotate": false,
-        "bias": {
-          "modes": [
-            "Shortest",
-            "Narrowest",
-            "Squarest"
-          ],
-          "includeScaleAndRotation": false
-        },
-        "maxRetriesPerRecipe": 50
+        "maxRetriesPerRecipe": 50,
+        "arrangement": {
+          "spacing": {
+            "enabled": true,
+            "minCenterDistance": 1,
+            "minNodeDistance": 3.1,
+            "maxNodeDistance": 4,
+            "maxDistanceMode": "AllShapes"
+          },
+          "bias": {
+            "modes": [
+              "Shortest",
+              "Narrowest",
+              "Squarest"
+            ],
+            "includeScaleAndRotation": false
+          }
+        }
       },
-
-      "subSymbolCount": {
-        "min": 1,
-        "max": 3
-      },
-      "subSymbolLength": {
-        "min": 2,
-        "max": 4
-      },
-      "connectionRules": [
+      "shapes": [
         {
-          "direction": "Orthogonal",
-          "minLength": 2,
-          "maxLength": 5,
-          "weight": 3.0
-        },
-        {
-          "direction": "Diagonal",
-          "minLength": 2,
-          "maxLength": 5,
-          "weight": 1.0
+          "id": "strokes",
+          "seedLabel": "subsymbol",
+          "count": {
+            "min": 1,
+            "max": 3
+          },
+          "chain": {
+            "length": {
+              "min": 2,
+              "max": 4
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 2,
+                "maxLength": 5,
+                "weight": 3.0
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 2,
+                "maxLength": 5,
+                "weight": 1.0
+              }
+            ],
+            "allowClosedLoop": true,
+            "closedLoopWeight": 0.6,
+            "allowNodeRevisit": true,
+            "allowEdgeRevisit": false
+          },
+          "placement": {
+            "mode": "RandomValid",
+            "fixedOrigin": null,
+            "allowRotationOnPlace": false,
+            "maxPlacementAttempts": 50,
+            "startOnExistingNode": true
+          },
+          "arrangement": {
+            "spacing": {
+              "enabled": true,
+              "minCenterDistance": 1,
+              "minNodeDistance": 0,
+              "maxNodeDistance": 6,
+              "maxDistanceMode": "AllShapes"
+            }
+          }
         }
       ],
-      "allowNodeRevisit": true,
-      "allowEdgeRevisit": false,
-      "allowSymbolsToCross": false,
-
-      "allowClosedLoop": true,
-      "closedLoopWeight": 0.6,
-
-      "guaranteedMotifs": [],
-
-      "subSymbolPlacement": {
-        "mode": "RandomValid",
-        "fixedOrigin": null,
-        "allowRotationOnPlace": false,
-        "maxPlacementAttempts": 50,
-        "startOnExistingNode": true
-      },
-
-      "subSymbolSpacing": {
-        "enabled": true,
-        "minCenterDistance": 1,
-        "minNodeDistance": 0,
-        "maxNodeDistance": 6,
-        "maxDistanceMode": "AllShapes"
-      },
-
       "usageSizeBias": {
         "strength": 0.7,
         "affectSubSymbolCount": true,

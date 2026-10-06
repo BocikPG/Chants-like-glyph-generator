@@ -6,7 +6,7 @@ namespace GlyphGen.Core.Generation;
 
 /// <summary>
 /// Checks a candidate shape's spacing against every already-placed shape, per
-/// SubSymbolSpacingConfig. The single place this logic lives: GlyphGenerator uses it for
+/// SpacingConfig. The single place this logic lives: GlyphGenerator uses it for
 /// motifs and free-form sub-symbols, CombinationResolver for whole placed components.
 ///
 /// Called AFTER a candidate is fully built - the checks need the complete node set (a centroid
@@ -20,7 +20,7 @@ public static class SubSymbolSpacingChecker
     public static bool SatisfiesSpacingAsOneShape(
         IEnumerable<SubSymbolChain> candidateChains,
         IReadOnlyList<IReadOnlyList<GridPoint>> existingGroups,
-        SubSymbolSpacingConfig config)
+        SpacingConfig config)
     {
         if (!config.Enabled) return true;
         return SatisfiesSpacing(candidateChains.SelectMany(c => c.Nodes).ToList(), existingGroups, config);
@@ -29,7 +29,7 @@ public static class SubSymbolSpacingChecker
     public static bool SatisfiesSpacing(
         IReadOnlyList<GridPoint> candidateNodes,
         IReadOnlyList<IReadOnlyList<GridPoint>> existingGroups,
-        SubSymbolSpacingConfig config)
+        SpacingConfig config)
     {
         if (!config.Enabled) return true;
         if (candidateNodes.Count == 0) return true;
