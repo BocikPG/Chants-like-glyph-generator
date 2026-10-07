@@ -17,9 +17,11 @@ public sealed class BrushTypeface : ITypeface
     private readonly double _tipHalf;
     private readonly double _thinHalf;
     private readonly double _nibRadians;
+    private readonly JoinsConfig _joins;
 
-    public BrushTypeface(BrushTypefaceConfig cfg, double widthPx, double tipWidthPx, double thinWidthPx, double nibAngleDegrees)
+    public BrushTypeface(BrushTypefaceConfig cfg, double widthPx, double tipWidthPx, double thinWidthPx, double nibAngleDegrees, JoinsConfig joins)
     {
+        _joins = joins;
         _cfg = cfg;
         _halfWidth = Math.Max(0, widthPx) / 2;
         _tipHalf = Math.Max(0, tipWidthPx) / 2;
@@ -46,18 +48,9 @@ public sealed class BrushTypeface : ITypeface
                 h *= 1.0 + Math.Max(0, _cfg.EdgeWobble) + Math.Max(0, _cfg.Raggedness) * 0.5;
                 h = Math.Max(h, _halfWidth * Math.Max(1.0, _cfg.StartBlobScale));
             }
-            return h * StrokeOutlineBuilder.JoinExtentFactor(_cfg.Join, _cfg.MiterLimit);
+            return h * JoinResolver.ExtentFactor(_joins);
         }
     }
-
-    public double TipHalfWidthPx => _cfg.Mode switch
-    {
-        BrushMode.Taper => _tipHalf,
-        BrushMode.BroadNib => _thinHalf,
-        _ => _halfWidth, // Ink: rough estimate, ignoring pressure variation - close enough to mask the seam
-    };
-    public JoinStyle Join => _cfg.Join;
-    public double MiterLimit => _cfg.MiterLimit;
 
     public void AppendOutline(StrokePath path, StrokeContext context, List<Vec2[]> polygons)
     {
@@ -104,7 +97,7 @@ public sealed class BrushTypeface : ITypeface
         }
 
         var cap = tipH > 0.5 ? CapStyle.Round : CapStyle.Butt;
-        StrokeOutlineBuilder.Build(path, start, end, _cfg.Join, _cfg.MiterLimit, cap, output);
+        StrokeOutlineBuilder.Build(path, start, end, _joins, cap, output, ctx.JoinSink, ctx.StrokeId);
     }
 
     private void AppendBroadNib(StrokePath path, StrokeContext ctx, List<Vec2[]> output)
@@ -128,7 +121,7 @@ public sealed class BrushTypeface : ITypeface
             end[i] = w;
         }
 
-        StrokeOutlineBuilder.Build(path, start, end, _cfg.Join, _cfg.MiterLimit, CapStyle.Butt, output);
+        StrokeOutlineBuilder.Build(path, start, end, _joins, CapStyle.Butt, output, ctx.JoinSink, ctx.StrokeId);
     }
 
     private void AppendInk(StrokePath path, StrokeContext ctx, List<Vec2[]> output)
@@ -171,9 +164,9 @@ public sealed class BrushTypeface : ITypeface
             end[i] = samples[i + 1];
         }
 
-        StrokeOutlineBuilder.Build(path, start, end, _cfg.Join, _cfg.MiterLimit, CapStyle.Round, output);
+        StrokeOutlineBuilder.Build(path, start, end, _joins, CapStyle.Round, output, ctx.JoinSink, ctx.StrokeId);
 
         if (_cfg.StartBlobScale > 1.0 && !path.Closed)
-            StrokeOutlineBuilder.AddDisc(pts[0], half * _cfg.StartBlobScale, output);
+            StrokeOutlineBuilder.AddTipDisc(ctx.JoinSink, pts[0], half * _cfg.StartBlobScale, output);
     }
 }

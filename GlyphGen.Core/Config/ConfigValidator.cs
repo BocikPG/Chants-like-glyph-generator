@@ -393,6 +393,8 @@ internal static class ConfigValidator
         if (!HexColor.IsMatch(render.Background))
             c.Add("render.background", $"'{render.Background}' is not a hex colour (#RRGGBB or #AARRGGBB).");
 
+        ValidateJoins(c, "render.joins", render.Joins);
+
         var t = render.Typeface;
         Enum(c, "render.typeface.kind", t.Kind);
         Number(c, "render.typeface.perGlyphJitter", t.PerGlyphJitter, 0, 0.9);
@@ -401,9 +403,7 @@ internal static class ConfigValidator
         {
             const string p = "render.typeface.rectangular";
             Width(c, p + ".width", r.Width);
-            Enum(c, p + ".join", r.Join);
             Enum(c, p + ".cap", r.Cap);
-            MiterLimit(c, p + ".miterLimit", r.MiterLimit);
         }
 
         if (t.ThickEnds is { } e)
@@ -416,8 +416,6 @@ internal static class ConfigValidator
             Enum(c, p + ".appliesTo", e.AppliesTo);
             Enum(c, p + ".terminal", e.Terminal);
             if (!double.IsFinite(e.BallScale) || e.BallScale <= 0) c.Add(p + ".ballScale", $"must be above 0 (got {e.BallScale}).");
-            Enum(c, p + ".join", e.Join);
-            MiterLimit(c, p + ".miterLimit", e.MiterLimit);
         }
 
         if (t.Brush is { } b)
@@ -433,9 +431,44 @@ internal static class ConfigValidator
             Number(c, p + ".edgeWobble", b.EdgeWobble, 0, double.MaxValue);
             Number(c, p + ".raggedness", b.Raggedness, 0, double.MaxValue);
             Number(c, p + ".startBlobScale", b.StartBlobScale, 0, double.MaxValue);
-            Enum(c, p + ".join", b.Join);
-            MiterLimit(c, p + ".miterLimit", b.MiterLimit);
         }
+    }
+
+    private static void ValidateJoins(Ctx c, string path, JoinsConfig joins)
+    {
+        ValidateJoinContext(c, path + ".corner", joins.Corner);
+        ValidateJoinContext(c, path + ".junction", joins.Junction);
+
+        var junction = joins.Junction;
+        Number(c, path + ".junction.straightenDegrees", junction.StraightenDegrees, 0, 90);
+        Number(c, path + ".junction.straightenLength", junction.StraightenLength, 0, double.MaxValue);
+    }
+
+    private static void ValidateJoinContext(Ctx c, string path, JoinContextConfig context)
+    {
+        ValidateJoinSide(c, path + ".outer", context.Outer);
+        ValidateJoinSide(c, path + ".inner", context.Inner);
+
+        for (int i = 0; i < context.ByAngle.Count; i++)
+        {
+            var rule = context.ByAngle[i];
+            string where = $"{path}.byAngle[{i}]";
+            if (rule is null) { c.Add(where, "must not be null."); continue; }
+
+            FloatRange(c, where + ".angle", rule.Angle.Min, rule.Angle.Max, 0, 180);
+            if (rule.Outer is null && rule.Inner is null)
+                c.Add(where, "sets neither 'outer' nor 'inner', so it would do nothing.");
+            if (rule.Outer is not null) ValidateJoinSide(c, where + ".outer", rule.Outer);
+            if (rule.Inner is not null) ValidateJoinSide(c, where + ".inner", rule.Inner);
+        }
+    }
+
+    private static void ValidateJoinSide(Ctx c, string path, JoinSideConfig side)
+    {
+        Enum(c, path + ".style", side.Style);
+        MiterLimit(c, path + ".miterLimit", side.MiterLimit);
+        if (!double.IsFinite(side.Size) || side.Size < 0)
+            c.Add(path + ".size", $"must be a finite number >= 0 (got {side.Size}).");
     }
 
     // ---- small helpers -----------------------------------------------------------------------

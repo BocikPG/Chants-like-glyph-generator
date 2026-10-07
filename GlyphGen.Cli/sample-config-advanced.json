@@ -258,8 +258,44 @@
             },
             "profile": "Smooth",
             "appliesTo": "ChainEndsAndCorners",
-            "terminal": "Round",
-            "join": "Round"
+            "terminal": "Round"
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Round"
+            },
+            "inner": {
+              "style": "Round",
+              "size": 0.4
+            }
+          },
+          "junction": {
+            "outer": {
+              "style": "Round"
+            },
+            "inner": {
+              "style": "Round",
+              "size": 0.5
+            },
+            "byAngle": [
+              {
+                "angle": {
+                  "min": 0,
+                  "max": 60
+                },
+                "outer": {
+                  "style": "Bevel"
+                },
+                "inner": {
+                  "style": "Overlap"
+                }
+              }
+            ],
+            "trimCaps": true,
+            "straightenDegrees": 20,
+            "straightenLength": 4
           }
         }
       }

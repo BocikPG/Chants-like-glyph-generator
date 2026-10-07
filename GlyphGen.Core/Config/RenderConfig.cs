@@ -12,6 +12,9 @@ public sealed class RenderConfig
 
     public TypefaceConfig Typeface { get; set; } = new();
 
+    /// <summary>How strokes are joined where they bend and where they meet, for every typeface.</summary>
+    public JoinsConfig Joins { get; set; } = new();
+
     /// <summary>The overview sheet(s) the CLI writes next to the glyph images.</summary>
     public ContactSheetConfig ContactSheet { get; set; } = new();
 

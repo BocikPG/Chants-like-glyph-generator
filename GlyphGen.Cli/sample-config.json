@@ -109,9 +109,25 @@
               "min": 0.045,
               "max": 0.045
             },
-            "join": "Miter",
-            "cap": "Butt",
-            "miterLimit": 4.0
+            "cap": "Butt"
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Miter",
+              "miterLimit": 4
+            }
+          },
+          "junction": {
+            "outer": {
+              "style": "Miter",
+              "miterLimit": 4
+            },
+            "inner": {
+              "style": "Round",
+              "size": 0.5
+            }
           }
         }
       },
@@ -314,9 +330,25 @@
               "min": 0.045,
               "max": 0.045
             },
-            "join": "Miter",
-            "cap": "Square",
-            "miterLimit": 4.0
+            "cap": "Square"
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Miter",
+              "miterLimit": 4
+            }
+          },
+          "junction": {
+            "outer": {
+              "style": "Miter",
+              "miterLimit": 4
+            },
+            "inner": {
+              "style": "Round",
+              "size": 0.5
+            }
           }
         }
       }

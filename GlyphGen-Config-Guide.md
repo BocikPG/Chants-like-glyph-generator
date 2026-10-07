@@ -514,10 +514,12 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
     "perGlyphJitter": 0.0,
     "rectangular": {
       "width": { "min": 0.045, "max": 0.045 },
-      "join": "Miter",
-      "cap": "Butt",
-      "miterLimit": 4.0
+      "cap": "Butt"
     }
+  },
+  "joins": {
+    "corner":   { "outer": { "style": "Miter", "miterLimit": 4 }, "inner": { "style": "Overlap" } },
+    "junction": { "outer": { "style": "Round" }, "inner": { "style": "Round", "size": 0.5 } }
   }
 }
 ```
@@ -538,20 +540,59 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
 - A minimum extent of one grid unit is used when scaling, so a lone straight line isn't blown up without limit.
 - Stroke widths are fixed in pixels (canvas fraction x canvas size), so framing never changes stroke weight: a zoomed-in crop has the same thickness as a full-grid view.
 
-### Joins and caps
+### Joins
 
-Ink is built from many small convex pieces (one quad per segment, plus a wedge or fan per join and cap) filled together, so overlaps and crossings come out solid.
+Block: `render.joins`, shared by every typeface. Ink is built from many small convex pieces (one quad per segment, plus a wedge or fan per join and cap) filled together, so overlaps and crossings come out solid.
 
-| `join` | Look |
-|---|---|
-| `Miter` | Sharp pointed corner. Falls back to a bevel when the tip would be longer than `miterLimit` x half-width. |
-| `Bevel` | Corner cut flat. |
-| `Round` | Rounded corner (a full reversal also gets a round cap). |
-| `Overlap` | No join at all: plain rectangles crossing, notch and all. |
+```json
+"joins": {
+  "corner":   { "outer": { "style": "Miter", "miterLimit": 4 }, "inner": { "style": "Overlap" } },
+  "junction": {
+    "outer": { "style": "Round" },
+    "inner": { "style": "Round", "size": 0.5 },
+    "byAngle": [
+      { "angle": { "min": 0, "max": 60 }, "outer": { "style": "Bevel" }, "inner": { "style": "Overlap" } }
+    ]
+  }
+}
+```
 
-Caps (`Rectangular` only; the other typefaces choose their own end shapes): `Butt` ends flat at the node, `Square` extends half a width past it, `Round` ends in a half disc.
+**Where joins happen.** At every grid node, the strokes leaving it are sorted by direction, and each gap between neighbouring strokes gets a join:
 
-Joins are normally only computed between two segments of the same chain. Where two **different** open chains end on the same node (sub-symbols or components sharing a node), the renderer builds a real join between them with the typeface's own `join` and `miterLimit`, so a Miter typeface still gets the sharp ">" there.
+- a gap **over 180 degrees** is the convex outside of a bend: the **outer** join adds a point, bevel or arc;
+- a gap **under 180 degrees** is a notch between two strokes: the **inner** join can fill it with a chamfer or fillet;
+- a gap of exactly 180 degrees is a straight run and gets nothing.
+
+A bend has one gap of each kind; a T, a Y or a crossing only has notches. Which of the two blocks applies depends on the node: **`corner`** is a bend inside one stroke (two arms of the same stroke), **`junction`** is everything else (tip to tip, a tip on another stroke, a crossing, a stroke passing its own node again). Both use the widths of the strokes at that node. Points in the middle of a curved edge are not nodes: they only get the `corner` outer join, so curves stay smooth. Joins are built within one layer, so components of a composite are not joined to each other.
+
+| Option | Default | Notes |
+|---|---|---|
+| `corner`, `junction` | see below | Each has `outer`, `inner` and `byAngle`. |
+| `outer` | `Miter` (corner and junction) | `style`, plus `miterLimit` for Miter. |
+| `inner` | `Overlap` | `style`, plus `size` for Bevel and Round. |
+| `byAngle[]` | `[]` | Overrides, see below. |
+| `junction.trimCaps` | `false` | Junction only. See below. |
+| `junction.straightenDegrees` | `0` | Junction only; `0` = off. See below. |
+| `junction.straightenLength` | `4` | Junction only: chamfer length in half-widths. |
+
+| `style` | Outer side | Inner side |
+|---|---|---|
+| `Miter` | Sharp pointed corner. Falls back to a bevel when the tip would be longer than `miterLimit` x half-width (minimum 1). | Same as `Overlap`. |
+| `Bevel` | Corner cut flat. | A flat chamfer across the notch, `size` half-widths long. |
+| `Round` | Rounded corner (a full reversal gets a round cap). | A fillet in the notch with a radius of `size` half-widths. |
+| `Overlap` | Nothing added: plain overlapping strokes. | Nothing added: the notch stays sharp. |
+
+The inner `size` is measured in half-widths of the stroke (`1` = half the stroke width) and is limited automatically so the chamfer or fillet never reaches past the neighbouring node. The inner join only ever **adds** ink; it cannot cut away the notch.
+
+**`byAngle`.** A list of rules tried in order; the first whose `angle` range (degrees, 0 to 180, inclusive) contains the angle between the two strokes wins. A rule can give `outer`, `inner` or both; what it leaves out falls back to the context's own. 180 is straight on, 90 a right angle, 45 a sharp turn. On the grid the angle is almost always 45, 90 or 135; on curved edges it is measured on the curve tangents at the node, so it varies continuously. A 45 degree miter is only about 2.6 half-widths long, so `miterLimit` alone never turns grid corners into bevels; `byAngle` is the way to do that.
+
+**`trimCaps`** (junction only). When on, a tip that ends at a junction (a node where another stroke is also present) is drawn **without** its cap, `Ball` terminal or `Ink` start blob, and the joins fill the node instead. A tip that stands alone keeps everything. With the junction's `outer` set to `Overlap` nothing fills the node, so use Miter, Bevel or Round with it. Note that a junction is any node with another stroke in it, including a tip landing on the middle of another stroke.
+
+**`straightenDegrees` / `straightenLength`** (junction only). Where two strokes meet within `straightenDegrees` of a straight line (180) and the notch between them has no other stroke in it, that notch is filled with one long chamfer (`straightenLength` half-widths along each edge, limited so it never passes the neighbouring node), so the edge reads as one straight line instead of a kink. Other strokes may leave the node on the other side, so a branch coming out of a nearly straight line still works. It replaces the inner join for those notches. It does nothing on the convex outside of the bend: straightening that would mean cutting ink away, so use the outer join there (a Miter at a nearly straight angle is almost flat anyway).
+
+### Caps
+
+Caps (`Rectangular` only; the other typefaces choose their own end shapes): `Butt` ends flat at the node, `Square` extends half a width past it, `Round` ends in a half disc. Caps are drawn at open tips, under any junction join, unless `junction.trimCaps` removes them at junctions.
 
 ### Typefaces
 
@@ -562,9 +603,7 @@ One typeface per **language**, resolved once from the seed, so every glyph reads
 | Option | Default | Notes |
 |---|---|---|
 | `width` | `0.05` | Stroke width. |
-| `join` | `Miter` | See the join table. |
 | `cap` | `Butt` | `Butt`, `Square` or `Round`. |
-| `miterLimit` | `4.0` | Miter tip length / half-width above which a miter becomes a bevel. |
 
 **`ThickEnds`** (`typeface.thickEnds`): a body of one width flaring to another at chosen nodes. If `endWidth` is smaller than `width`, the ends pinch instead of flaring.
 
@@ -577,8 +616,6 @@ One typeface per **language**, resolved once from the seed, so every glyph reads
 | `appliesTo` | `ChainEnds` | Which nodes flare: `ChainEnds` = the free tips of open chains (closed loops have no tips, so they stay uniform); `EveryEdge` = both ends of every edge; `ChainEndsAndCorners` = tips plus real corners (direction change of roughly 10 degrees or more; a closed loop flares at its seam if that is a corner). |
 | `terminal` | `Flat` | End shape of open chains: `Flat` (butt), `Round` (round cap) or `Ball` (a disc on each open tip). |
 | `ballScale` | `1.3` | Ball diameter = `endWidth` x `ballScale` (`Ball` only; closed loops get none). |
-| `join` | `Round` | See the join table. |
-| `miterLimit` | `4.0` | As above. |
 
 **`Brush`** (`typeface.brush`): `mode` picks the look, and each mode reads its own options.
 
@@ -600,8 +637,6 @@ One typeface per **language**, resolved once from the seed, so every glyph reads
 | `edgeWobble` | `0.15` | `Ink`: wobble of each edge. |
 | `raggedness` | `0` | `Ink`: roughness of the edges. |
 | `startBlobScale` | `1.4` | `Ink`: above 1 adds a blob where each open stroke starts. |
-| `join` | `Round` | See the join table. |
-| `miterLimit` | `4.0` | As above. |
 
 Example of the other kinds:
 
@@ -652,6 +687,7 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 | `placement` | Known `mode`; `Fixed` needs a `fixedOrigin` on the grid, other modes must not have one; `maxPlacementAttempts` >= 1; `rotations` only on Literal shapes, with `allowRotationOnPlace` on, using only 0/90/180/270; `startOnExistingNode` only with `RandomValid` and not with `arrangement.spacing.minNodeDistance` > 0. |
 | `arrangement` | Spacing distances finite and >= 0, `maxNodeDistance` >= `minNodeDistance`, valid `maxDistanceMode`; known bias modes, no `Tallest`+`Shortest` or `Widest`+`Narrowest`, bias weights valid; `candidates` >= 1; `includeScaleAndRotation` not on a shape. Checked for every shape, for `combination.arrangement` and for each recipe override. |
 | `combination` | `maxRetriesPerRecipe` >= 1; scale numerators/denominators positive; rotation angles 0/90/180/270. |
+| `render.joins` | Known styles; `miterLimit` >= 1; `size` >= 0; `straightenDegrees` 0..90; `straightenLength` >= 0; each `byAngle` rule has an angle range within 0..180 with `max` >= `min`, and sets `outer` and/or `inner`. |
 | `usageSizeBias` | `strength` is finite and >= 0. |
 
 Generation-time errors you may meet:
@@ -798,10 +834,14 @@ A valid config using the current schema. Everything not shown takes its default.
         "background": "#00000000",
         "debugShowNodes": false,
         "debugColorComponents": false,
+        "joins": {
+          "corner":   { "outer": { "style": "Miter", "miterLimit": 4 }, "inner": { "style": "Overlap" } },
+          "junction": { "outer": { "style": "Round" }, "inner": { "style": "Round", "size": 0.5 } }
+        },
         "typeface": {
           "kind": "Rectangular",
           "perGlyphJitter": 0.0,
-          "rectangular": { "width": { "min": 0.045, "max": 0.045 }, "join": "Miter", "cap": "Butt", "miterLimit": 4.0 }
+          "rectangular": { "width": { "min": 0.045, "max": 0.045 }, "cap": "Butt" }
         }
       }
     }
@@ -838,3 +878,17 @@ The migrated config **generates the same glyphs** for the same seed. To make tha
 | `quality`, `curve`, `render`, `canvas`, `grid`, `combination.allowScale` etc. | unchanged |
 
 Things that differ from the old behaviour once you edit a migrated config: crossing is decided per shape (both must allow it); spacing is the placing shape's own; a guaranteed motif's chain rules are its own (changing the language no longer changes it).
+
+### Checking that nothing changed
+
+`GlyphGen.SelfCheck` migrates a set of old-format configs (`LegacyConfigs/`) and compares the generated glyphs with snapshots recorded from the **original** build (`Baselines/`), then checks the new behaviours (per-shape crossing, best-of-N bias, recipe overrides, loader errors):
+
+```
+dotnet run --project GlyphGen.SelfCheck
+```
+
+It exits non-zero on any difference. Re-record the baselines on purpose with `--record` (only after deciding a generation change is intended).
+
+### The schema
+
+`config.schema.json` is generated from the config classes: regenerate it after changing an option with `GlyphGen.Cli --schema config.schema.json` (hover text comes from the XML documentation file, now produced by the Core project).

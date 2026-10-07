@@ -13,6 +13,9 @@ public enum FramingMode
 }
 
 public enum TypefaceKind { Rectangular, ThickEnds, Brush }
+/// <summary>How a join is drawn. Outer side: Miter = sharp point, Bevel = flat cut, Round = arc,
+/// Overlap = nothing added (plain overlapping strokes). Inner side: Bevel = flat chamfer across the
+/// notch, Round = fillet; Miter and Overlap both leave the notch as it is.</summary>
 public enum JoinStyle { Miter, Bevel, Round, Overlap }
 public enum CapStyle { Butt, Square, Round }
 public enum WidthProfile { Linear, Smooth, Sharp }
@@ -29,12 +32,7 @@ public sealed class RectangularTypefaceConfig
 {
     public FloatRange Width { get; set; } = new() { Min = 0.05, Max = 0.05 };
 
-    /// <summary>Miter = sharp pointed corner (the "&gt;" look); Overlap = plain rectangles crossing.</summary>
-    public JoinStyle Join { get; set; } = JoinStyle.Miter;
     public CapStyle Cap { get; set; } = CapStyle.Butt;
-
-    /// <summary>Beyond this tip-length / half-width ratio a miter falls back to a bevel.</summary>
-    public double MiterLimit { get; set; } = 4.0;
 }
 
 public sealed class ThickEndsTypefaceConfig
@@ -52,9 +50,6 @@ public sealed class ThickEndsTypefaceConfig
 
     /// <summary>Ball diameter = EndWidth * BallScale (Terminal == Ball only).</summary>
     public double BallScale { get; set; } = 1.3;
-
-    public JoinStyle Join { get; set; } = JoinStyle.Round;
-    public double MiterLimit { get; set; } = 4.0;
 }
 
 public sealed class BrushTypefaceConfig
@@ -79,9 +74,6 @@ public sealed class BrushTypefaceConfig
     public double Raggedness { get; set; } = 0.0;
     /// <summary>&gt;1 adds a blob where each stroke starts.</summary>
     public double StartBlobScale { get; set; } = 1.4;
-
-    public JoinStyle Join { get; set; } = JoinStyle.Round;
-    public double MiterLimit { get; set; } = 4.0;
 }
 
 /// <summary>

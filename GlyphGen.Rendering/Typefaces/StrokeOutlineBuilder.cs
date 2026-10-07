@@ -20,19 +20,21 @@ public readonly record struct WidthSample(double Left, double Right)
 /// </summary>
 public static class StrokeOutlineBuilder
 {
-    /// <summary>How far past the centre-line a join can reach, as a multiple of the half-width
-    /// (used only for framing padding). Real grid corners are at most ~2.6 for a 45 degree turn.</summary>
-    public static double JoinExtentFactor(JoinStyle join, double miterLimit) =>
-        join == JoinStyle.Miter ? Math.Min(Math.Max(1.0, miterLimit), 2.62) : 1.0;
-
+    /// <summary>
+    /// Emits the segment bodies and the end caps. Joins are NOT built here for grid nodes: when a sink is
+    /// given, each node's arms (and the tips') are recorded there and the renderer builds the joins per
+    /// node once every stroke is known (see JoinBuilder). Smooth points along a curve, and every point
+    /// when no sink is given, get their outer join straight away.
+    /// </summary>
     public static void Build(
         StrokePath path,
         IReadOnlyList<WidthSample> segStart,
         IReadOnlyList<WidthSample> segEnd,
-        JoinStyle join,
-        double miterLimit,
+        JoinsConfig joins,
         CapStyle cap,
-        List<Vec2[]> output)
+        List<Vec2[]> output,
+        JoinSink? sink = null,
+        int strokeId = 0)
     {
         var pts = path.Points;
         int segCount = pts.Count - 1;
@@ -54,21 +56,100 @@ public static class StrokeOutlineBuilder
             });
         }
 
+        var cum = path.CumulativeLengths();
+        var nodes = path.NodeIndices;
+        var nodeSet = new HashSet<int>(nodes);
+
+        // Distance along the path from point i to the next / previous grid node.
+        double ReachForward(int i)
+        {
+            foreach (int idx in nodes) if (idx > i) return cum[idx] - cum[i];
+            return double.MaxValue;
+        }
+
+        double ReachBack(int i)
+        {
+            double reach = double.MaxValue;
+            foreach (int idx in nodes) if (idx < i) reach = cum[i] - cum[idx];
+            return reach;
+        }
+
+        // The two arms of the path at point i: one running back along segment i-1, one forward along segment i.
+        // Widths are given relative to the arm's own direction, so the backward arm swaps left and right.
+        JoinArm Back(int i, int segment, double reach) =>
+            new(pts[i], -dirs[segment], new WidthSample(segEnd[segment].Right, segEnd[segment].Left), reach, strokeId);
+
+        JoinArm Forward(int i, int segment, double reach) =>
+            new(pts[i], dirs[segment], segStart[segment], reach, strokeId);
+
         for (int i = 1; i < segCount; i++)
-            AddJoin(pts[i], dirs[i - 1], dirs[i], segEnd[i - 1], segStart[i], join, miterLimit, output);
+        {
+            var back = Back(i, i - 1, ReachBack(i));
+            var forward = Forward(i, i, ReachForward(i));
+
+            if (sink is not null && nodeSet.Contains(i))
+            {
+                sink.Arms.Add(back);
+                sink.Arms.Add(forward);
+            }
+            else
+            {
+                JoinBuilder.BuildSmoothCorner(back, forward, joins, output);
+            }
+        }
 
         if (path.Closed)
         {
             if (segCount >= 2)
-                AddJoin(pts[0], dirs[segCount - 1], dirs[0], segEnd[segCount - 1], segStart[0], join, miterLimit, output);
+            {
+                double seamBack = nodes.Count >= 2 ? cum[^1] - cum[nodes[^2]] : double.MaxValue;
+                double seamForward = nodes.Count >= 2 ? cum[nodes[1]] : double.MaxValue;
+                var back = Back(0, segCount - 1, seamBack);
+                var forward = Forward(0, 0, seamForward);
+
+                if (sink is not null)
+                {
+                    sink.Arms.Add(back);
+                    sink.Arms.Add(forward);
+                }
+                else
+                {
+                    JoinBuilder.BuildSmoothCorner(back, forward, joins, output);
+                }
+            }
         }
         else
         {
             // Start cap: outward is -dir, which swaps which side counts as "left".
             var s = segStart[0];
-            AddCap(pts[0], -dirs[0], new WidthSample(s.Right, s.Left), cap, output);
-            AddCap(pts[^1], dirs[segCount - 1], segEnd[segCount - 1], cap, output);
+            var startCap = new List<Vec2[]>();
+            var endCap = new List<Vec2[]>();
+            AddCap(pts[0], -dirs[0], new WidthSample(s.Right, s.Left), cap, startCap);
+            AddCap(pts[^1], dirs[segCount - 1], segEnd[segCount - 1], cap, endCap);
+            EmitTip(sink, pts[0], startCap, output);
+            EmitTip(sink, pts[^1], endCap, output);
+
+            // The tips take part in junctions with other strokes.
+            sink?.Arms.Add(Forward(0, 0, ReachForward(0)));
+            sink?.Arms.Add(Back(segCount, segCount - 1, ReachBack(segCount)));
         }
+    }
+
+    /// <summary>Draws something at a free tip. With a sink it is held back, so a junction that wants its
+    /// tips trimmed can drop it; without one it is drawn at once.</summary>
+    public static void EmitTip(JoinSink? sink, Vec2 point, List<Vec2[]> polygons, List<Vec2[]> output)
+    {
+        if (polygons.Count == 0) return;
+        if (sink is null) output.AddRange(polygons);
+        else sink.Tips.Add((point, polygons));
+    }
+
+    /// <summary>A disc at a free tip (ball terminal, start blob), subject to junction trimming.</summary>
+    public static void AddTipDisc(JoinSink? sink, Vec2 center, double radius, List<Vec2[]> output)
+    {
+        var disc = new List<Vec2[]>();
+        AddDisc(center, radius, disc);
+        EmitTip(sink, center, disc, output);
     }
 
     public static void AddDisc(Vec2 center, double radius, List<Vec2[]> output)
@@ -83,92 +164,6 @@ public static class StrokeOutlineBuilder
             poly[i] = center + new Vec2(Math.Cos(a), Math.Sin(a)) * radius;
         }
         Emit(output, poly);
-    }
-
-    /// <summary>
-    /// Builds a real join (Miter/Bevel/Round/Overlap, per the typeface's own settings) between
-    /// two directions meeting at a point - used by the renderer to patch a junction between two
-    /// DIFFERENT chains sharing an endpoint, the same way an interior corner within one chain
-    /// is already handled. dIn/dOut follow the same convention as an interior join: dIn points
-    /// INTO p (the direction of travel arriving there), dOut points AWAY from p (the direction
-    /// of travel leaving). For two chains that both simply END at p, treat one as "arriving"
-    /// (its own tip direction) and the other as "leaving" by negating its tip direction - which
-    /// reads as one continuous stroke bending from one chain into the other at that point.
-    /// </summary>
-    public static void AddExternalJoin(
-        Vec2 p, Vec2 dIn, Vec2 dOut, double halfWidthA, double halfWidthB,
-        JoinStyle join, double miterLimit, List<Vec2[]> output)
-    {
-        AddJoin(p, dIn, dOut, WidthSample.Uniform(halfWidthA), WidthSample.Uniform(halfWidthB), join, miterLimit, output);
-    }
-
-    private static void AddJoin(
-        Vec2 p, Vec2 d0, Vec2 d1, WidthSample w0, WidthSample w1,
-        JoinStyle join, double miterLimit, List<Vec2[]> output)
-    {
-        double cross = d0.Cross(d1);
-        double dot = d0.Dot(d1);
-
-        if (Math.Abs(cross) < 1e-6)
-        {
-            // Collinear continuation needs nothing; a full reversal only gets a cap for Round.
-            if (dot < 0 && join == JoinStyle.Round)
-                AddDisc(p, Math.Max(Math.Max(w0.Left, w0.Right), Math.Max(w1.Left, w1.Right)), output);
-            return;
-        }
-
-        if (join == JoinStyle.Overlap) return; // plain overlapping rectangles, notch and all
-
-        // The turn goes toward one side; the join fills the OTHER (outer) side.
-        double s = cross > 0 ? -1.0 : 1.0;
-        double h0 = s > 0 ? w0.Left : w0.Right;
-        double h1 = s > 0 ? w1.Left : w1.Right;
-        Vec2 a = p + d0.Perp * (s * h0);
-        Vec2 b = p + d1.Perp * (s * h1);
-
-        switch (join)
-        {
-            case JoinStyle.Bevel:
-                Emit(output, new[] { p, a, b });
-                break;
-
-            case JoinStyle.Miter:
-            {
-                // Intersection of the two outer offset lines: a + d0*u == b + d1*v.
-                double u = (b - a).Cross(d1) / cross;
-                Vec2 m = a + d0 * u;
-                double baseHalf = Math.Max(h0, h1);
-
-                if (baseHalf > 1e-9 && (m - p).Length / baseHalf <= miterLimit)
-                    Emit(output, new[] { p, a, m, b });
-                else
-                    Emit(output, new[] { p, a, b }); // too sharp: fall back to a bevel
-                break;
-            }
-
-            case JoinStyle.Round:
-            {
-                double a0 = Math.Atan2(a.Y - p.Y, a.X - p.X);
-                double a1 = Math.Atan2(b.Y - p.Y, b.X - p.X);
-                double delta = a1 - a0;
-                while (delta > Math.PI) delta -= 2 * Math.PI;
-                while (delta <= -Math.PI) delta += 2 * Math.PI;
-
-                double r0 = (a - p).Length, r1 = (b - p).Length;
-                int steps = Math.Max(1, (int)Math.Ceiling(Math.Abs(delta) / (Math.PI / 12)));
-
-                var fan = new List<Vec2>(steps + 2) { p };
-                for (int j = 0; j <= steps; j++)
-                {
-                    double t = j / (double)steps;
-                    double ang = a0 + delta * t;
-                    double r = r0 + (r1 - r0) * t;
-                    fan.Add(p + new Vec2(Math.Cos(ang), Math.Sin(ang)) * r);
-                }
-                Emit(output, fan.ToArray());
-                break;
-            }
-        }
     }
 
     private static void AddCap(Vec2 p, Vec2 outward, WidthSample w, CapStyle cap, List<Vec2[]> output)
@@ -206,7 +201,7 @@ public static class StrokeOutlineBuilder
 
     /// <summary>Adds a polygon with a consistent orientation (needed for a clean non-zero
     /// winding union), skipping degenerate ones.</summary>
-    private static void Emit(List<Vec2[]> output, Vec2[] poly)
+    internal static void Emit(List<Vec2[]> output, Vec2[] poly)
     {
         double area = 0;
         for (int i = 0; i < poly.Length; i++)

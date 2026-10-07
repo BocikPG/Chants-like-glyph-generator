@@ -10,14 +10,14 @@ namespace GlyphGen.Rendering.Typefaces;
 /// </summary>
 public static class TypefaceFactory
 {
-    public static ITypeface Create(TypefaceConfig config, double canvasPx, DeterministicRandom rng)
+    public static ITypeface Create(TypefaceConfig config, JoinsConfig joins, double canvasPx, DeterministicRandom rng)
     {
         switch (config.Kind)
         {
             case TypefaceKind.Rectangular:
             {
                 var c = config.Rectangular ?? new RectangularTypefaceConfig();
-                return new RectangularTypeface(c.Width.Resolve(rng) * canvasPx, c.Join, c.Cap, c.MiterLimit);
+                return new RectangularTypeface(c.Width.Resolve(rng) * canvasPx, c.Cap, joins);
             }
 
             case TypefaceKind.ThickEnds:
@@ -26,7 +26,7 @@ public static class TypefaceFactory
                 double width = c.Width.Resolve(rng) * canvasPx;
                 double endWidth = c.EndWidth.Resolve(rng) * canvasPx;
                 double flare = c.FlareLength.Resolve(rng);
-                return new ThickEndsTypeface(width, endWidth, flare, c);
+                return new ThickEndsTypeface(width, endWidth, flare, c, joins);
             }
 
             case TypefaceKind.Brush:
@@ -36,7 +36,7 @@ public static class TypefaceFactory
                 double tip = c.TipWidth.Resolve(rng) * canvasPx;
                 double thin = c.ThinWidth.Resolve(rng) * canvasPx;
                 double nib = c.NibAngleDegrees.Resolve(rng);
-                return new BrushTypeface(c, width, tip, thin, nib);
+                return new BrushTypeface(c, width, tip, thin, nib, joins);
             }
 
             default:

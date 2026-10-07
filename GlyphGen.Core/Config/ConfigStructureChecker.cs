@@ -23,6 +23,8 @@ internal static class ConfigStructureChecker
         (typeof(ShapeDefinition), nameof(ShapeDefinition.Nodes)),
         (typeof(ShapeDefinition), nameof(ShapeDefinition.SeedLabel)),
         (typeof(RecipeConfig), nameof(RecipeConfig.Arrangement)),
+        (typeof(JoinAngleRule), nameof(JoinAngleRule.Outer)),
+        (typeof(JoinAngleRule), nameof(JoinAngleRule.Inner)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.Rectangular)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.ThickEnds)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.Brush)),
@@ -48,6 +50,17 @@ internal static class ConfigStructureChecker
         [(typeof(LanguageDefinition), "subsymbolspacing")] = "is now 'arrangement.spacing' on each shape (its selfSpacing is 'chain.selfSpacing').",
         [(typeof(CombinationConfig), "allowcomponentstocross")] = "is now 'combination.arrangement.allowCrossing'.",
         [(typeof(CombinationConfig), "bias")] = "is now 'combination.arrangement.bias'.",
+    };
+
+    /// <summary>Render options that moved to render.joins (no migration needed: just delete them).</summary>
+    private static readonly Dictionary<(Type Owner, string Property), string> MovedRenderKeys = new()
+    {
+        [(typeof(RectangularTypefaceConfig), "join")] = "is now 'render.joins' (corner / junction, outer / inner).",
+        [(typeof(RectangularTypefaceConfig), "miterlimit")] = "is now 'miterLimit' under 'render.joins.*.outer'.",
+        [(typeof(ThickEndsTypefaceConfig), "join")] = "is now 'render.joins' (corner / junction, outer / inner).",
+        [(typeof(ThickEndsTypefaceConfig), "miterlimit")] = "is now 'miterLimit' under 'render.joins.*.outer'.",
+        [(typeof(BrushTypefaceConfig), "join")] = "is now 'render.joins' (corner / junction, outer / inner).",
+        [(typeof(BrushTypefaceConfig), "miterlimit")] = "is now 'miterLimit' under 'render.joins.*.outer'.",
     };
 
     private const string LegacyPrefix = "Old option ";
@@ -149,6 +162,13 @@ internal static class ConfigStructureChecker
             {
                 string at = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
                 errors.Add($"{LegacyPrefix}'{at}' {moved}");
+                continue;
+            }
+
+            if (MovedRenderKeys.TryGetValue((type, property.Name.ToLowerInvariant()), out var movedTo))
+            {
+                string at = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
+                errors.Add($"Moved option '{at}' {movedTo}");
                 continue;
             }
 

@@ -49,7 +49,7 @@ public sealed class LanguageRenderer
 
         ulong languageSeed = SeedTree.ForLanguage(rootSeed, language.Name);
         var typeface = TypefaceFactory.Create(
-            render.Typeface, size, new DeterministicRandom(SplitMix64.DeriveSeed(languageSeed, "typeface")));
+            render.Typeface, render.Joins, size, new DeterministicRandom(SplitMix64.DeriveSeed(languageSeed, "typeface")));
         double jitter = Math.Clamp(render.Typeface.PerGlyphJitter, 0.0, 0.9);
 
         // Pass 1: plan every glyph's curves and collect bounds. One planner for the whole
@@ -95,67 +95,6 @@ public sealed class LanguageRenderer
         return results;
     }
 
-    /// <summary>
-    /// Patches the gap between two DIFFERENT open chains that happen to end at the same grid
-    /// node - a case the per-chain join logic never sees, since joins only ever run between
-    /// two segments of the same chain. Builds a REAL join (Miter/Bevel/Round/Overlap, per the
-    /// typeface's own settings) using each chain's actual pixel-space tip direction, the same
-    /// way an interior corner within one chain is handled - not a generic round patch, so
-    /// Miter still gives the sharp "&gt;" look at these junctions too.
-    ///
-    /// Grid coordinates are exact integers carried through as doubles, so exact equality is
-    /// safe for matching "the same node" (no epsilon/clustering needed) - only genuinely
-    /// identical shared nodes are patched. Scoped to one layer at a time (the glyph's own
-    /// chains, or one combination component); a junction between two DIFFERENT components
-    /// isn't currently patched - flag if that turns out to matter.
-    /// </summary>
-    private static void FillSharedTipJoints(
-        List<(PlannedChain Chain, StrokePath Path)> built,
-        double tipHalfWidthPx,
-        JoinStyle join,
-        double miterLimit,
-        List<Vec2[]> polygons)
-    {
-        if (tipHalfWidthPx <= 1e-9) return;
-
-        // DirIn points INTO the tip (the direction of travel arriving there), matching the
-        // convention interior joins use for their "incoming" side.
-        var tips = new List<(Vec2 Grid, Vec2 Pixel, Vec2 DirIn)>();
-        foreach (var (chain, path) in built)
-        {
-            if (chain.Closed || chain.Edges.Count == 0 || path.Points.Count < 2) continue;
-
-            tips.Add((chain.Edges[0].P0, path.Points[0], (path.Points[0] - path.Points[1]).Normalized()));
-            tips.Add((chain.Edges[^1].P3, path.Points[^1], (path.Points[^1] - path.Points[^2]).Normalized()));
-        }
-
-        var handled = new HashSet<int>();
-        for (int i = 0; i < tips.Count; i++)
-        {
-            if (handled.Contains(i)) continue;
-
-            var group = new List<int> { i };
-            for (int j = i + 1; j < tips.Count; j++)
-                if (tips[j].Grid.X == tips[i].Grid.X && tips[j].Grid.Y == tips[i].Grid.Y)
-                    group.Add(j);
-
-            if (group.Count < 2) continue;
-            foreach (var idx in group) handled.Add(idx);
-
-            // Pairwise between every pair at this node - covers 3+ chains meeting at one point,
-            // not just exactly 2. Treat b's side as "outgoing" by negating its tip direction, so
-            // this reads as one continuous stroke bending from a into b at the shared point.
-            for (int a = 0; a < group.Count; a++)
-                for (int b = a + 1; b < group.Count; b++)
-                {
-                    var ta = tips[group[a]];
-                    var tb = tips[group[b]];
-                    StrokeOutlineBuilder.AddExternalJoin(
-                        ta.Pixel, ta.DirIn, -tb.DirIn, tipHalfWidthPx, tipHalfWidthPx, join, miterLimit, polygons);
-                }
-        }
-    }
-
     private static byte[] DrawGlyph(
         GlyphPlan plan, LayoutTransform transform, ITypeface typeface, RenderConfig render,
         int size, SKColor foreground, SKColor background)
@@ -167,24 +106,27 @@ public sealed class LanguageRenderer
         foreach (var layer in plan.Planned.Layers)
         {
             var polygons = new List<Vec2[]>();
-            var built = new List<(PlannedChain, StrokePath)>();
+            // Every stroke of this layer records its nodes here; joins are built per node afterwards,
+            // so a bend, a meeting of strokes and a crossing all go through the same code.
+            var joinSink = new JoinSink();
 
             foreach (var chain in layer.Chains)
             {
                 var path = StrokePathBuilder.Build(chain, transform.Apply, typeface.SampleSpacingPx);
                 if (path.Points.Count < 2) { chainIndex++; continue; }
 
+                int strokeId = chainIndex;
                 var context = new StrokeContext
                 {
                     WidthScale = plan.WidthScale,
                     PathSeed = SplitMix64.DeriveSeed(plan.Seed, chainIndex++),
+                    JoinSink = joinSink,
+                    StrokeId = strokeId,
                 };
                 typeface.AppendOutline(path, context, polygons);
-                built.Add((chain, path));
             }
 
-            double tipHalf = typeface.TipHalfWidthPx * plan.WidthScale;
-            FillSharedTipJoints(built, tipHalf, typeface.Join, typeface.MiterLimit, polygons);
+            JoinBuilder.BuildNodes(joinSink, render.Joins, polygons);
 
             layerPolygons.Add(polygons);
         }
@@ -254,10 +196,11 @@ public sealed class LanguageRenderer
             float radius = (float)Math.Max(3.0, size * 0.008);
             foreach (var chain in GlyphGeometryUtils.GetAllChains(plan.Glyph))
             {
-                var paint = chain.MotifId is not null ? motifDot : freeDot;
+                var chainPaint = chain.MotifId is not null ? motifDot : freeDot;
                 foreach (var node in chain.Nodes)
                 {
-                    if (occurrences[node] >= 2) paint = stackedDot;
+                    // Chosen per node: only the points that really occur twice are yellow.
+                    var paint = occurrences[node] >= 2 ? stackedDot : chainPaint;
                     var p = transform.Apply(new Vec2(node.X, node.Y));
                     canvas.DrawCircle((float)p.X, (float)p.Y, radius, paint);
                 }

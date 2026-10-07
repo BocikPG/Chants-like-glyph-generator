@@ -118,10 +118,17 @@
             "width": {
               "min": 0.045,
               "max": 0.045
+            }
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Bevel"
             },
-            "join": "Miter",
-            "cap": "Butt",
-            "miterLimit": 4.0
+            "inner": {
+              "style": "Bevel"
+            }
           }
         }
       },
@@ -183,7 +190,6 @@
         "sizePx": 512,
         "marginPx": 32
       },
-
       "glyphs": [
         "Man/Human",
         "You",
@@ -426,13 +432,11 @@
         "affectSubSymbolCount": true,
         "affectSubSymbolLength": false
       },
-
       "quality": {
         "maxSimilarity": 0.7,
         "rejectStraightLineOnly": true,
         "maxRegenerationAttempts": 50
       },
-
       "curve": {
         "mode": "Derived",
         "contextMode": "AllCurved",
@@ -464,7 +468,6 @@
           "minDistanceToOtherNodes": 1
         }
       },
-      
       "render": {
         "framing": "GlyphCentered",
         "foreground": "#FFFFFFFF",
@@ -479,9 +482,21 @@
               "min": 0.045,
               "max": 0.045
             },
-            "join": "Miter",
-            "cap": "Square",
-            "miterLimit": 4.0
+            "cap":"Round"
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Round"
+            },
+            "inner": {
+              "style": "Round"
+            }
+          },
+          "junction": {
+
+            "trimCaps": true
           }
         }
       }

@@ -17,9 +17,11 @@ public sealed class ThickEndsTypeface : ITypeface
     private readonly double _endHalf;
     private readonly double _flareFraction;
     private readonly ThickEndsTypefaceConfig _cfg;
+    private readonly JoinsConfig _joins;
 
-    public ThickEndsTypeface(double baseWidthPx, double endWidthPx, double flareFraction, ThickEndsTypefaceConfig cfg)
+    public ThickEndsTypeface(double baseWidthPx, double endWidthPx, double flareFraction, ThickEndsTypefaceConfig cfg, JoinsConfig joins)
     {
+        _joins = joins;
         _baseHalf = Math.Max(0, baseWidthPx) / 2;
         _endHalf = Math.Max(0, endWidthPx) / 2;
         _flareFraction = Math.Clamp(flareFraction, 0.0, 0.5);
@@ -35,16 +37,9 @@ public sealed class ThickEndsTypeface : ITypeface
         {
             double h = Math.Max(_baseHalf, _endHalf);
             if (_cfg.Terminal == TerminalStyle.Ball) h = Math.Max(h, _endHalf * _cfg.BallScale);
-            return h * StrokeOutlineBuilder.JoinExtentFactor(_cfg.Join, _cfg.MiterLimit);
+            return h * JoinResolver.ExtentFactor(_joins);
         }
     }
-
-    // Every AppliesTo mode flares real chain tips (ChainEnds and ChainEndsAndCorners flare
-    // them directly; EveryEdge's flag array is all-true, which includes them too), so the tip
-    // width is always the flared EndWidth, not the body Width.
-    public double TipHalfWidthPx => _cfg.Terminal == TerminalStyle.Ball ? _endHalf * _cfg.BallScale : _endHalf;
-    public JoinStyle Join => _cfg.Join;
-    public double MiterLimit => _cfg.MiterLimit;
 
     public void AppendOutline(StrokePath path, StrokeContext context, List<Vec2[]> polygons)
     {
@@ -90,12 +85,12 @@ public sealed class ThickEndsTypeface : ITypeface
         }
 
         var cap = _cfg.Terminal == TerminalStyle.Round ? CapStyle.Round : CapStyle.Butt;
-        StrokeOutlineBuilder.Build(path, start, end, _cfg.Join, _cfg.MiterLimit, cap, polygons);
+        StrokeOutlineBuilder.Build(path, start, end, _joins, cap, polygons, context.JoinSink, context.StrokeId);
 
         if (_cfg.Terminal == TerminalStyle.Ball && !path.Closed)
         {
-            StrokeOutlineBuilder.AddDisc(pts[0], endH * _cfg.BallScale, polygons);
-            StrokeOutlineBuilder.AddDisc(pts[m - 1], endH * _cfg.BallScale, polygons);
+            StrokeOutlineBuilder.AddTipDisc(context.JoinSink, pts[0], endH * _cfg.BallScale, polygons);
+            StrokeOutlineBuilder.AddTipDisc(context.JoinSink, pts[m - 1], endH * _cfg.BallScale, polygons);
         }
     }
 
