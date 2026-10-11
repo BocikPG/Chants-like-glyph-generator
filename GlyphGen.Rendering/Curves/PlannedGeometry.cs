@@ -14,8 +14,21 @@ public sealed class PlannedEdge
     public Vec2 At(double t) => IsLine ? Vec2.Lerp(P0, P3, t) : Vec2.Bezier(P0, C1, C2, P3, t);
 }
 
+public enum PlannedChainKind
+{
+    /// <summary>An ordinary stroke.</summary>
+    Stroke,
+
+    /// <summary>A circle (4 beziers, closed). Never flattened to lines.</summary>
+    Circle,
+
+    /// <summary>A dot: one degenerate edge at the point, drawn as a disc.</summary>
+    Dot,
+}
+
 public sealed class PlannedChain
 {
+    public PlannedChainKind Kind { get; set; } = PlannedChainKind.Stroke;
     public List<PlannedEdge> Edges { get; } = new();
     public bool Closed { get; set; }
     public string? MotifId { get; set; }

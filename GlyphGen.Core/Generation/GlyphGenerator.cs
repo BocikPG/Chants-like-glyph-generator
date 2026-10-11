@@ -79,8 +79,9 @@ public sealed class GlyphGenerator : IGlyphGenerator
         ulong glyphSeed,
         Dictionary<string, Glyph> generated,
         GlyphUsageTracker usageTracker,
-        int variation = 0)
-        => GenerateGlyphCore(language, glyphDef, grid, glyphSeed, generated, usageTracker, new HashSet<string>(), variation);
+        int variation = 0,
+        ulong languageSeed = 0)
+        => GenerateGlyphCore(language, glyphDef, grid, glyphSeed, generated, usageTracker, new HashSet<string>(), variation, languageSeed);
 
     private Glyph GenerateGlyphCore(
         LanguageDefinition language,
@@ -90,7 +91,8 @@ public sealed class GlyphGenerator : IGlyphGenerator
         Dictionary<string, Glyph> generated,
         GlyphUsageTracker usageTracker,
         HashSet<string> inProgress,
-        int variation)
+        int variation,
+        ulong languageSeed = 0)
     {
         if (language.Combination.Recipes.TryGetValue(glyphDef.Name, out var recipe))
         {
@@ -105,7 +107,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
             try
             {
                 return GenerateComposite(
-                    language, glyphDef, grid, glyphSeed, generated, usageTracker, recipe, inProgress, variation);
+                    language, glyphDef, grid, glyphSeed, generated, usageTracker, recipe, inProgress, variation, languageSeed);
             }
             finally
             {
@@ -200,10 +202,23 @@ public sealed class GlyphGenerator : IGlyphGenerator
         }
 
         var bias = shape.Arrangement.Bias;
-        int wanted = bias.IsActive ? Math.Max(1, shape.Arrangement.Candidates) : 1;
+
+        // A side pull (placement.side): the sides are listed, or drawn here for this instance from a derived
+        // stream (which leaves every other sequence untouched). It ranks the candidates like a bias does.
+        List<GlyphSide>? sides = null;
+        double sideWeight = 1.0;
+        if (shape.Placement.Side is { } pull)
+        {
+            var chosen = SideScoring.Choose(pull.Mode == SidePullMode.SetRandom, pull.Sides, pull.Pick, rng.Derive("side"));
+            if (chosen.Count > 0) { sides = chosen; sideWeight = pull.Weight; }
+        }
+
+        bool ranked = bias.IsActive || sides is not null;
+        int wanted = ranked ? Math.Max(1, shape.Arrangement.Candidates) : 1;
 
         var candidates = new List<SubSymbolChain>();
         var seen = new HashSet<string>();
+        int repeats = 0;
         for (int k = 0; k < wanted; k++)
         {
             // The first call uses the shape's own stream, so with no bias (or Candidates 1) the
@@ -215,21 +230,44 @@ public sealed class GlyphGenerator : IGlyphGenerator
 
             if (!result.Success || result.PlacedShape is null) break;
 
-            // Nothing varies (e.g. a fixed literal shape): further candidates would be copies.
-            if (!seen.Add(Signature(result.PlacedShape))) break;
+            // A repeat of an earlier candidate is skipped (a small grid repeats by chance); several in a row
+            // mean nothing varies (a fixed literal shape), so asking for more would only give copies.
+            if (!seen.Add(Signature(result.PlacedShape)))
+            {
+                if (++repeats >= 4) break;
+                continue;
+            }
+
+            repeats = 0;
             candidates.Add(result.PlacedShape);
         }
 
         if (candidates.Count == 0) return null;
-        if (candidates.Count == 1 || !bias.IsActive) return candidates[0];
+        if (candidates.Count == 1 || !ranked) return candidates[0];
 
-        // Bias only ranks shapes that already passed every hard rule. Strict < keeps the earliest
-        // of equal scores, so ties resolve to the first-found candidate.
+        double Score(SubSymbolChain candidate)
+        {
+            double score = bias.IsActive
+                ? BiasScoring.ScoreWithCandidate(bias, geometry.NodeGroups, candidate.Nodes, grid)
+                : 0.0;
+
+            if (sides is not null)
+            {
+                int minX = candidate.Nodes.Min(n => n.X), maxX = candidate.Nodes.Max(n => n.X);
+                int minY = candidate.Nodes.Min(n => n.Y), maxY = candidate.Nodes.Max(n => n.Y);
+                score += SideScoring.Score(sides, sideWeight, (minX + maxX) / 2.0, (minY + maxY) / 2.0, grid);
+            }
+
+            return score;
+        }
+
+        // Ranking only picks among shapes that already passed every hard rule. Strict < keeps the
+        // earliest of equal scores, so ties resolve to the first-found candidate.
         SubSymbolChain best = candidates[0];
-        double bestScore = BiasScoring.ScoreWithCandidate(bias, geometry.NodeGroups, best.Nodes, grid);
+        double bestScore = Score(best);
         for (int i = 1; i < candidates.Count; i++)
         {
-            double score = BiasScoring.ScoreWithCandidate(bias, geometry.NodeGroups, candidates[i].Nodes, grid);
+            double score = Score(candidates[i]);
             if (score < bestScore) { best = candidates[i]; bestScore = score; }
         }
         return best;
@@ -255,7 +293,6 @@ public sealed class GlyphGenerator : IGlyphGenerator
             AllowNodeRevisit = chainRules.AllowNodeRevisit,
             AllowEdgeRevisit = chainRules.AllowEdgeRevisit,
             AllowClosedLoop = chainRules.AllowClosedLoop,
-            ClosedLoopWeight = chainRules.ClosedLoopWeight,
             ConnectionWeighting = chainRules.ConnectionWeighting,
             SelfSpacingRules = chainRules.SelfSpacing,
         };
@@ -322,7 +359,8 @@ public sealed class GlyphGenerator : IGlyphGenerator
         GlyphUsageTracker usageTracker,
         RecipeConfig recipe,
         HashSet<string> inProgress,
-        int variation)
+        int variation,
+        ulong languageSeed = 0)
     {
         var rng = new DeterministicRandom(glyphSeed);
 
@@ -331,7 +369,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
             var componentDef = language.Glyphs.FirstOrDefault(g => g.Name == name)
                 ?? new GlyphDefinition { Name = name };
             ulong seed = SplitMix64.DeriveSeed(glyphSeed, $"regen-{name}-{attemptIndex}");
-            return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0);
+            return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
         }
 
         var composite = _combinationResolver.TryCombine(
@@ -344,13 +382,25 @@ public sealed class GlyphGenerator : IGlyphGenerator
             usageTracker,
             RegenerateComponent,
             recipe.EffectiveArrangement ?? language.Combination.Arrangement,
-            variation);
+            variation,
+            languageSeed);
 
         if (composite is null)
         {
+            var used = recipe.EffectiveArrangement ?? language.Combination.Arrangement;
+            bool hasFixed = used.Placements.Any(p => p.Mode == ComponentPlacementMode.Fixed && recipe.Components.Contains(p.Glyph));
+
             throw new GlyphGenerationException(
                 $"[{language.Name}] Could not satisfy combination recipe for '{glyphDef.Name}' " +
-                $"after {language.Combination.MaxRetriesPerRecipe} attempts.");
+                $"after {language.Combination.MaxRetriesPerRecipe} attempts." +
+                (used.Placements.Any(p => p.Mode != ComponentPlacementMode.Fixed && recipe.Components.Contains(p.Glyph))
+                    ? " Side rules are hard: each ruled component's middle must be on its side of the others' middles, " +
+                      "so conflicting rules (or too little room on a small grid) make a recipe unbuildable."
+                    : "") +
+                (hasFixed
+                    ? " A component with a Fixed placement has no alternatives: check that its fixed position stays on the grid " +
+                      "and leaves room under the crossing and spacing rules, and list fixed components first in the recipe."
+                    : ""));
         }
 
         composite.LanguageName = language.Name;

@@ -141,6 +141,7 @@ public sealed class GlyphCurvePlanner
         {
             for (int i = 0; i < chain.Edges.Count; i++)
             {
+                if (chain.Kind != PlannedChainKind.Stroke) break;
                 var e = chain.Edges[i];
                 if (e.IsLine) continue;
 
@@ -197,7 +198,7 @@ public sealed class GlyphCurvePlanner
 
     private static PlannedChain MapChain(PlannedChain chain, Func<Vec2, Vec2> map)
     {
-        var result = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId };
+        var result = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId, Kind = chain.Kind };
         foreach (var e in chain.Edges)
         {
             result.Edges.Add(new PlannedEdge
@@ -216,9 +217,11 @@ public sealed class GlyphCurvePlanner
             var newLayer = new PlannedLayer { Label = layer.Label };
             foreach (var chain in layer.Chains)
             {
-                var newChain = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId };
+                var newChain = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId, Kind = chain.Kind };
                 foreach (var e in chain.Edges)
-                    newChain.Edges.Add(new PlannedEdge { P0 = e.P0, C1 = e.P0, C2 = e.P3, P3 = e.P3, IsLine = true });
+                    newChain.Edges.Add(chain.Kind != PlannedChainKind.Stroke
+                        ? e // circles and dots are not "bent lines": flattening would wreck them
+                        : new PlannedEdge { P0 = e.P0, C1 = e.P0, C2 = e.P3, P3 = e.P3, IsLine = true });
                 newLayer.Chains.Add(newChain);
             }
             result.Layers.Add(newLayer);

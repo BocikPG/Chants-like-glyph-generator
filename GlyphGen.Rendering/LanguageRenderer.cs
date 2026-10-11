@@ -101,6 +101,7 @@ public sealed class LanguageRenderer
     {
         // Ink polygons per layer (a layer is the glyph's own chains, or one combination component).
         var layerPolygons = new List<List<Vec2[]>>();
+        var layerSinks = new List<JoinSink>();
         int chainIndex = 0;
 
         foreach (var layer in plan.Planned.Layers)
@@ -112,6 +113,15 @@ public sealed class LanguageRenderer
 
             foreach (var chain in layer.Chains)
             {
+                if (chain.Kind == PlannedChainKind.Dot)
+                {
+                    // A dot is just a disc, thick as the stroke; it takes no part in joins.
+                    StrokeOutlineBuilder.AddDisc(transform.Apply(chain.Edges[0].P0),
+                        typeface.DotRadiusPx * plan.WidthScale, polygons);
+                    chainIndex++;
+                    continue;
+                }
+
                 var path = StrokePathBuilder.Build(chain, transform.Apply, typeface.SampleSpacingPx);
                 if (path.Points.Count < 2) { chainIndex++; continue; }
 
@@ -129,6 +139,7 @@ public sealed class LanguageRenderer
             JoinBuilder.BuildNodes(joinSink, render.Joins, polygons);
 
             layerPolygons.Add(polygons);
+            layerSinks.Add(joinSink);
         }
 
         using var bitmap = new SKBitmap(size, size, SKColorType.Rgba8888, SKAlphaType.Premul);
@@ -136,7 +147,16 @@ public sealed class LanguageRenderer
         canvas.Clear(background);
 
         bool separateLayers = render.DebugColorComponents && layerPolygons.Count > 1;
-        if (separateLayers)
+        if (render.DebugColorParts)
+        {
+            // Debug only: strokes in their colour, then the ink that joins and caps add, in their own colours.
+            for (int i = 0; i < layerPolygons.Count; i++)
+            {
+                var bodyColor = separateLayers ? DebugPalette[i % DebugPalette.Length] : foreground;
+                FillParts(canvas, layerPolygons[i], layerSinks[i].Kinds, bodyColor);
+            }
+        }
+        else if (separateLayers)
         {
             for (int i = 0; i < layerPolygons.Count; i++)
                 FillPolygons(canvas, layerPolygons[i], DebugPalette[i % DebugPalette.Length]);
@@ -210,6 +230,53 @@ public sealed class LanguageRenderer
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
+    }
+
+    private static readonly SKColor CapColor = SKColors.Gray;
+    private static readonly SKColor CornerColor = new(148, 0, 211);     // dark violet
+    private static readonly SKColor JunctionColor = SKColors.HotPink;
+
+    private static void AddPolygon(SKPath path, Vec2[] poly)
+    {
+        path.MoveTo((float)poly[0].X, (float)poly[0].Y);
+        for (int i = 1; i < poly.Length; i++)
+            path.LineTo((float)poly[i].X, (float)poly[i].Y);
+        path.Close();
+    }
+
+    /// <summary>
+    /// Debug "parts" view of one layer: the stroke bodies in bodyColor, then every cap / corner join /
+    /// junction join in its own colour, in the order they were built. Each part is painted only where it
+    /// goes beyond the bodies, so what you see is the ink that part actually adds.
+    /// </summary>
+    private static void FillParts(SKCanvas canvas, List<Vec2[]> polygons, IReadOnlyDictionary<Vec2[], InkKind> kinds, SKColor bodyColor)
+    {
+        using var bodies = new SKPath { FillType = SKPathFillType.Winding };
+        foreach (var poly in polygons)
+            if (!kinds.ContainsKey(poly)) AddPolygon(bodies, poly);
+
+        using (var bodyPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = bodyColor })
+            canvas.DrawPath(bodies, bodyPaint);
+
+        foreach (var poly in polygons)
+        {
+            if (!kinds.TryGetValue(poly, out var kind)) continue;
+
+            using var part = new SKPath { FillType = SKPathFillType.Winding };
+            AddPolygon(part, poly);
+
+            // Only the part outside the strokes; if Skia can't compute it, show the whole polygon.
+            using var outside = part.Op(bodies, SKPathOp.Difference);
+            var color = kind switch
+            {
+                InkKind.Cap => CapColor,
+                InkKind.Corner => CornerColor,
+                _ => JunctionColor,
+            };
+
+            using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color };
+            canvas.DrawPath(outside ?? part, paint);
+        }
     }
 
     private static void FillPolygons(SKCanvas canvas, List<Vec2[]> polygons, SKColor color)

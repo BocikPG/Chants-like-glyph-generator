@@ -42,6 +42,7 @@ public interface ICombinationResolver
         DeterministicRandom rng,
         GlyphUsageTracker usageTracker,
         Func<string, int, Glyph> regenerateComponent,
-        ArrangementRules arrangement,
-        int variation = 0);
+        CombinationArrangementRules arrangement,
+        int variation = 0,
+        ulong languageSeed = 0);
 }

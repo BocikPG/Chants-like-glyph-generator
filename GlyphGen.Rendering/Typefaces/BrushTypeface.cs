@@ -38,6 +38,7 @@ public sealed class BrushTypeface : ITypeface
         _ => 0.0, // BroadNib: width is constant along a straight edge
     };
 
+    public double DotRadiusPx => _halfWidth;
     public double MaxInkExtentPx
     {
         get

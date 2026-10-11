@@ -134,26 +134,30 @@ foreach (var language in config.Languages)
     if (baseNames.Count > 0) Directory.CreateDirectory(basesDir);
 
     // The normal images are always clean. The debug options (render.debugShowNodes /
-    // debugColorComponents) add a second set, "<glyph>.debug.png", drawn with the enabled overlays;
-    // with both off no debug files are written. RenderConfig is a plain mutable class, so toggling
+    // debugColorComponents / debugColorParts) add a second set, "<glyph>.debug.png", drawn with the
+    // enabled overlays; with all of them off no debug files are written. RenderConfig is a plain mutable class, so toggling
     // in place and restoring afterward is simplest here.
     bool wantNodes = language.Render.DebugShowNodes;
     bool wantColors = language.Render.DebugColorComponents;
+    bool wantParts = language.Render.DebugColorParts;
 
     language.Render.DebugShowNodes = false;
     language.Render.DebugColorComponents = false;
+    language.Render.DebugColorParts = false;
     var rendered = renderer.Render(language, glyphs, config.RootSeed);
 
     IReadOnlyList<RenderedGlyph>? debugRendered = null;
-    if (wantNodes || wantColors)
+    if (wantNodes || wantColors || wantParts)
     {
         language.Render.DebugShowNodes = wantNodes;
         language.Render.DebugColorComponents = wantColors;
+        language.Render.DebugColorParts = wantParts;
         debugRendered = renderer.Render(language, glyphs, config.RootSeed);
     }
 
     language.Render.DebugShowNodes = wantNodes;
     language.Render.DebugColorComponents = wantColors;
+    language.Render.DebugColorParts = wantParts;
 
     foreach (var r in rendered)
     {

@@ -18,9 +18,9 @@ public sealed class RenderConfig
     /// <summary>The overview sheet(s) the CLI writes next to the glyph images.</summary>
     public ContactSheetConfig ContactSheet { get; set; } = new();
 
-    /// <summary>Debug option. When this or DebugColorComponents is on, the CLI writes an extra
+    /// <summary>Debug option. When any of the debug options is on, the CLI writes an extra
     /// "&lt;glyph&gt;.debug.png" next to each normal image, drawn with the enabled overlays (the
-    /// normal images stay clean; with both options off no debug files are written).
+    /// normal images stay clean; with all of them off no debug files are written).
     /// Overlay for checking generation output: the whole lattice as faint dots with
     /// coordinates labelled every 5 cells, plus a dot on every node of the glyph - red for a
     /// free-form sub-symbol, blue for a guaranteed motif, gold where a node is used more than
@@ -29,6 +29,13 @@ public sealed class RenderConfig
     /// <summary>Debug option (see DebugShowNodes): colour each combination component differently in
     /// the extra ".debug.png" images.</summary>
     public bool DebugColorComponents { get; set; } = false;
+
+    /// <summary>Debug option (see DebugShowNodes): in the extra ".debug.png" images, colour the ink each
+    /// kind of part ADDS on top of the stroke bodies - grey for caps (and Ball / Ink terminals), violet for
+    /// corner joins, pink for junction joins (including straightening). The strokes themselves keep the
+    /// foreground colour (or their component colour). Parts are painted over the strokes in the order they
+    /// are built: corner joins, then junction joins, then caps.</summary>
+    public bool DebugColorParts { get; set; } = false;
 }
 
 /// <summary>Settings for the contact sheet(s): one PNG laying a language's glyphs out in a grid.</summary>

@@ -6,7 +6,7 @@ namespace GlyphGen.Core.Config;
 /// preferred. Used by every entry in a language's shapes list and by the combination block
 /// (for the components of a composite).
 /// </summary>
-public sealed class ArrangementRules
+public class ArrangementRules
 {
     /// <summary>If true, this shape's edges may cross edges already placed. A crossing is only
     /// allowed when BOTH shapes allow it: the shape being placed AND the shape that owns the

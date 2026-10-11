@@ -17,7 +17,7 @@ public sealed class RecipeConfig
     public List<string> Components { get; set; } = new();
 
     /// <summary>This recipe's overrides as written (object form only).</summary>
-    public ArrangementRules? Arrangement { get; set; }
+    public CombinationArrangementRules? Arrangement { get; set; }
 
     /// <summary>The raw JSON of the override, merged with combination.arrangement when the
     /// config loads (see RootConfigLoader).</summary>
@@ -26,7 +26,7 @@ public sealed class RecipeConfig
     /// <summary>The arrangement this recipe actually uses: the combination-level one with this
     /// recipe's overrides applied. Set by the loader.</summary>
     [JsonIgnore]
-    public ArrangementRules? EffectiveArrangement { get; internal set; }
+    public CombinationArrangementRules? EffectiveArrangement { get; internal set; }
 }
 
 public sealed class RecipeConfigConverter : JsonConverter<RecipeConfig>
@@ -70,7 +70,7 @@ public sealed class RecipeConfigConverter : JsonConverter<RecipeConfig>
                 if (property.Value.ValueKind != JsonValueKind.Object)
                     throw new JsonException("A recipe's \"arrangement\" must be an object.");
                 recipe.ArrangementJson = property.Value.Clone();
-                recipe.Arrangement = property.Value.Deserialize<ArrangementRules>(options);
+                recipe.Arrangement = property.Value.Deserialize<CombinationArrangementRules>(options);
             }
             else
             {

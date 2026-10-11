@@ -92,7 +92,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
                 ? baseSeed
                 : SplitMix64.DeriveSeed(baseSeed, $"quality-retry-{attempt}");
 
-            var candidate = _glyphGenerator.GenerateGlyph(language, glyphDef, grid, seed, generated, usageTracker, variation: attempt);
+            var candidate = _glyphGenerator.GenerateGlyph(language, glyphDef, grid, seed, generated, usageTracker, variation: attempt, languageSeed: languageSeed);
 
             bool trivialLine = rejectStraightLine && GlyphQualityChecker.IsTrivialStraightLine(candidate);
             var similar = trivialLine

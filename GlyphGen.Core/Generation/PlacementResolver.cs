@@ -134,6 +134,12 @@ public sealed class PlacementResolver : IPlacementResolver
 
         foreach (var edge in shape.Edges)
         {
+            if (edge.IsCircle)
+            {
+                var (minX, minY, maxX, maxY) = edge.Extent();
+                if (minX < -1e-9 || minY < -1e-9 || maxX > grid.Width - 1 + 1e-9 || maxY > grid.Height - 1 + 1e-9) return false;
+            }
+
             foreach (var existing in existingGeometry.BlockingEdges)
             {
                 if (edge.Intersects(existing)) return false;

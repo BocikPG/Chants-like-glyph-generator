@@ -21,7 +21,8 @@ public interface IGlyphGenerator
         ulong glyphSeed,
         Dictionary<string, Glyph> generated,
         GlyphUsageTracker usageTracker,
-        int variation = 0);
+        int variation = 0,
+        ulong languageSeed = 0);
 }
 
 /// <summary>Generates every glyph for one language, in dependency-safe order (components

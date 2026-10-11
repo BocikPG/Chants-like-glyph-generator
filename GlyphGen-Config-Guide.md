@@ -117,11 +117,10 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
     "chain": {
       "length": { "min": 6, "max": 8 },
       "connectionRules": [
-        { "direction": "Orthogonal", "minLength": 1, "maxLength": 5, "weight": 3.0 },
+        { "direction": "Orthogonal", "minLength": 1, "maxLength": 5, "weight": 3.0, "backToStartChance": 10 },
         { "direction": "Diagonal",   "minLength": 1, "maxLength": 5, "weight": 1.0 }
       ],
-      "allowClosedLoop": true,
-      "closedLoopWeight": 0.3
+      "allowClosedLoop": true
     },
     "arrangement": { "allowCrossing": true }
   }
@@ -157,14 +156,14 @@ A language with plain or base glyphs needs at least one shape. A language whose 
 "chain": {
   "length": { "min": 6, "max": 8 },
   "connectionRules": [
-    { "direction": "Orthogonal", "minLength": 1, "maxLength": 5, "weight": 3.0 },
+    { "direction": "Orthogonal", "minLength": 1, "maxLength": 5, "weight": 3.0,
+      "curve": { "chanceToBeCurved": 30 } },
     { "direction": "Diagonal",   "minLength": 1, "maxLength": 5, "weight": 1.0 }
   ],
   "connectionWeighting": "PerMove",
   "allowNodeRevisit": true,
   "allowEdgeRevisit": true,
   "allowClosedLoop": false,
-  "closedLoopWeight": 0.0,
   "selfSpacing": [ { "mode": "Adjacent", "minDistance": 1.5, "lookback": 2 } ]
 }
 ```
@@ -176,19 +175,51 @@ A language with plain or base glyphs needs at least one shape. A language whose 
 | `connectionWeighting` | `PerMove` | How rule weights become move probabilities, see below. |
 | `allowNodeRevisit` | `false` | A chain may step onto a node it already visited. |
 | `allowEdgeRevisit` | `false` | A chain may exactly retrace an earlier edge. When allowed, a retrace skips the geometry check. |
-| `allowClosedLoop` | `false` | Allows a move back to the chain's start node, ending the chain (needs at least 3 nodes). A closed chain counts as complete even if shorter than the target. |
-| `closedLoopWeight` | `0.0` | Weight of the loop-closing move against the other candidate moves. |
+| `allowClosedLoop` | `false` | Allows the chain to go back to its start node, ending it (needs at least 3 nodes). A closed chain counts as complete even if shorter than the target. How likely that is is set per rule, by `backToStartChance`. |
 | `selfSpacing[]` | `[]` | Node-to-node spacing inside the chain, see below. |
 
-`count` and `length` are integer ranges, **inclusive at both ends** (`1..3` can give 1, 2 or 3), chosen uniformly with the glyph's seeded random generator. If `max` is smaller than `min`, the result is simply `min` (the loader rejects that). Percent and float ranges used elsewhere (`straightLineBias`, widths, angles, jitter) are continuous and uniform between `min` and `max`.
+`count` and `length` are integer ranges, **inclusive at both ends** (`1..3` can give 1, 2 or 3), chosen uniformly with the glyph's seeded random generator. If `max` is smaller than `min`, the result is simply `min` (the loader rejects that). Percent and float ranges used elsewhere (widths, angles, jitter) are continuous and uniform between `min` and `max`.
 
 ### Connection rules
 
-| Field | Notes |
+| Field | Default | Notes |
+|---|---|---|
+| `direction` | `Orthogonal` | Which moves the rule may make, see the table below. |
+| `minLength`, `maxLength` | `1`, `1` | Step length in grid cells. A diagonal step of length *n* spans *n* cells on each axis. See each direction for what "length" means. Minimum 1, except for `Circle` (0 is a dot). |
+| `weight` | `1.0` | Relative probability of choosing this rule. A chain with a single rule uses it every time. |
+| `minAngle`, `maxAngle` | `0`, `180` | Limits the **turn** at the current node (not for `Circle`), see "Angles". |
+| `anglePreset` | `None` | `Straight`, `Gentle`, `Right` or `Sharp`: a ready-made `minAngle`/`maxAngle` pair. Replaces them (set one or the other). |
+| `backToStartChance` | `0` | 0-100. Each time this rule is the one picked, this is the chance that the chain instead goes back to its start node and closes. Needs `chain.allowClosedLoop`, at least 3 nodes, and a closing edge that crosses nothing; otherwise the rule just makes its normal move. If the chain has no valid move left, the best chance among the rules is tried before giving up. Replaces `closedLoopWeight`. |
+| `curve` | see section 11 | How the edges **this rule** makes are bent. |
+
+| `direction` | What it does |
 |---|---|
-| `direction` | `Orthogonal` (4 directions, the default), `Diagonal` (4 diagonals) or `Both`. |
-| `minLength`, `maxLength` | Step length in grid cells along the direction. Both default to `1` (adjacent); minimum effective value 1. A diagonal step of length *n* spans *n* cells on each axis. |
-| `weight` | Relative probability of choosing this rule (default `1.0`). A chain with a single rule uses it every time. |
+| `Orthogonal` | The 4 straight directions. |
+| `Diagonal` | The 4 diagonals. |
+| `Both` | All 8. |
+| `Any` | **Any node on the grid, at any angle.** Length is the Chebyshev distance `max(|dx|, |dy|)`, so length 1 is exactly `Both` and longer lengths also reach the in-between nodes (3 right and 1 up, say). Still limited by `minLength`/`maxLength` and, if set, the angle. |
+| `Angle` | Like `Any`, but requires an angle limit (`anglePreset` or `minAngle`/`maxAngle`); the validator rejects it without one. Any other direction accepts the same limits too, so `Both` + `Right` is a valid way to say "diagonal or straight, but only right-angle turns". |
+| `Circle` | Draws a **circle instead of a line.** The circle's **diameter** runs from the current node to the node `length` steps away in one of the 8 directions, and the chain carries on from that far node. A diagonal circle of length *L* has diameter *L*·√2. `minLength` may be `0`: length 0 is a **dot** (a disc as thick as the stroke) on the current node, and the chain carries on from the same node. A circle must fit inside the grid, and it blocks like any other edge: it may not cut through other lines or circles, but may touch them at nodes, contain them, or be tangent. Angle limits do not apply. Circles are drawn as their own closed shape, so they do not take part in joins. |
+
+### Angles
+
+The turn at a node is the angle between the edge you came along and the new one: **180 = carry straight on, 90 = right angle, 0 = fold back onto yourself** (the same convention as `render.joins`). The first edge of a chain, and the edge after a circle or dot, has nothing to turn from and is never limited.
+
+| `anglePreset` | Turn |
+|---|---|
+| `Straight` | 170-180 |
+| `Gentle` | 120-170 |
+| `Right` | 80-100 |
+| `Sharp` | 0-60 |
+
+```json
+{ "direction": "Angle", "minLength": 1, "maxLength": 4, "anglePreset": "Right", "weight": 2 },
+{ "direction": "Any",   "minLength": 2, "maxLength": 3, "weight": 1 },
+{ "direction": "Both",  "minLength": 1, "maxLength": 2, "minAngle": 120, "maxAngle": 180 },
+{ "direction": "Circle", "minLength": 0, "maxLength": 2, "weight": 0.5 }
+```
+
+With `PerMove`, a rule with many possible moves (`Any` with a long range has dozens) carries far more total weight than a narrow one of the same `weight`; use `connectionWeighting: "PerRule"` when you want the weights to mean what they say.
 
 At each step every geometrically valid concrete move (every direction x length of every rule) is listed, and one is picked by weight. With **`PerMove`** (default) each concrete move inherits its rule's full weight, so a rule with a wide length range or `Both` directions gets more total probability than a narrow rule with the same `weight`. With **`PerRule`** a rule's weight is split evenly over its valid moves at that step, so each rule's share depends only on the weights (a rule with no valid move drops out).
 
@@ -252,6 +283,7 @@ Each shape has its own `placement` block.
 | `rotations` | `null` | Literal shapes only. `null`: use `combination.rotation.allowed` when `combination.allowRotate` is on (the original coupling). A list: use exactly these angles. `[]`: never rotate. Only 0, 90, 180, 270. |
 | `maxPlacementAttempts` | `20` | Attempts per instance (>= 1). Only used when something varies between attempts (random position, rotation, or a generated shape); otherwise one attempt. Generative shapes always vary. |
 | `startOnExistingNode` | `false` | New shapes start on a node already in the glyph. See below. |
+| `side` | none | Pull the shape towards a side or corner (`RandomValid` only). See "Side pull" below. |
 
 Each attempt resolves an origin, asks the shape to build itself there, then checks grid bounds, crossing and spacing. The first attempt that passes wins (with a bias active, up to `arrangement.candidates` such placements are collected, see section 7).
 
@@ -267,6 +299,35 @@ Requirements (the loader rejects violations):
 - `arrangement.spacing.minNodeDistance` must be `0` when that shape's spacing is enabled (a shared node is at distance 0, so every attempt would be rejected).
 
 Edges that only meet at a shared node do **not** count as crossing (section 7), so this works with crossing off as well.
+
+### Side pull (`placement.side`)
+
+`side` pulls a shape towards a side or corner of the glyph. It only applies with `mode: RandomValid` (the other modes always use the same origin).
+
+```json
+"placement": { "mode": "RandomValid", "side": { "mode": "Prefer", "sides": [ "Top", "Left" ] } }
+"placement": { "mode": "RandomValid", "side": { "mode": "SetRandom", "pick": "Corner" } }
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `mode` | `Prefer` | `Prefer` uses `sides`; `SetRandom` draws the sides, see below. |
+| `sides` | `[]` | `Prefer` only: `Left`, `Right`, `Top`, `Bottom`; one or two (two = a corner). Left with Right, or Top with Bottom, cancel out and are rejected. |
+| `pick` | `Any` | `SetRandom` only: what is drawn, see below. |
+| `weight` | `1.0` | How strongly the pull counts against `arrangement.bias`, when both are on. `0` turns it off. |
+
+**How it works.** It is a ranking, like `bias`: the shape is placed up to `arrangement.candidates` times (each a fully legal placement), and the one whose bounding box is nearest the chosen side(s) is kept. It never relaxes a rule, and **the pull is as strong as `candidates` is high**: with the default of 3 it is mild, with 20 or 30 the shape lands almost at the edge. Top is the smaller y (row 0 is the top of the image), and the middle of the shape's own bounding box is what is measured. If `arrangement.bias` is also active the two scores are added.
+
+**`SetRandom`.** The sides are drawn at random, then used exactly like `Prefer` with those sides. `pick` decides what is drawn:
+
+| `pick` | Draws |
+|---|---|
+| `Any` | One of `Left`, `Right`, `Top`, `Bottom`. |
+| `Corner` | Two sides, one horizontal and one vertical: a random corner. |
+| `Horizontal` | `Left` or `Right`. |
+| `Vertical` | `Top` or `Bottom`. |
+
+The draw is made **for each instance** of the shape (a shape with a `count` can put each of its strokes on a different side), and comes from the glyph's seeded random generator, so the same seed gives the same sides. Drawing never changes the other random choices, so adding a side pull to one shape leaves everything else in the glyph as it was.
 
 ---
 
@@ -420,63 +481,103 @@ Block: `combination`. A composite is a glyph whose name is a key in `recipes`; i
 - **Spacing**: each placed component counts as **one** shape, checked against the components already placed in this composite. With `minCenterDistance` / `minNodeDistance` set, the plain (0,0) overlay of two components usually fails and components get pushed apart.
 - **Bias**: below. `candidates` does not apply: components search every placement exhaustively.
 
-### Placement search
+### Placing individual components
 
-For each component, in order:
+`arrangement.placements` controls where a named component goes. It is a list of rules, each naming a component glyph; components without a rule are placed as described below. It lives in `combination.arrangement`, and a recipe's own `arrangement` can replace the whole list for that recipe.
 
-1. **Identity first**: scale 1/1, rotation 0, every translation that keeps the shape on the grid, shuffled; the (0,0) overlay is tried before the others.
-2. If nothing fits, every allowed **scale x rotation** combination (shuffled, or weight-ordered) is tried, each with its full translation search.
-3. Only when everything is exhausted is a dependency regenerated: the component used by the fewest composites built so far goes first (ties follow recipe order), cycling through the recipe's components on later attempts. The regenerated glyph replaces the canonical one, and every other recipe using it is rebuilt to match.
-
-Every candidate must satisfy: all nodes inside the grid, no crossing with already-placed components (unless allowed), and the arrangement's spacing rules.
-
-### Bias
-
-Steers composites towards an overall shape. It is a **ranking only**: it chooses among placements that already pass every constraint, never relaxes one, and if only one placement is legal it is used.
+```json
+"arrangement": {
+  "placements": [
+    { "glyph": "frame", "mode": "Fixed", "offset": { "x": 0, "y": 0 } },
+    { "glyph": "dot",   "mode": "Prefer", "sides": [ "Top", "Right" ] },
+    { "glyph": "tick",  "sides": [ "Bottom" ] }
+  ]
+}
+```
 
 | Option | Default | Notes |
 |---|---|---|
-| `bias.modes` | `[]` | Empty = off (first legal placement is used). Any of `Tallest`, `Shortest`, `Widest`, `Narrowest`, `Squarest`. |
-| `bias.weights` | `{}` | Optional weight per listed mode (default 1), e.g. `{ "Tallest": 3, "Squarest": 1 }`. Only the ratios matter. |
-| `bias.includeScaleAndRotation` | `false` | Composites only. `false`: bias picks only among translations, keeping the translate-first order. `true`: every allowed scale and rotation competes too, so `Tallest` could choose a larger scale or a 90-degree turn. |
+| `glyph` | (required) | The component's name. It applies wherever that glyph is a component of a recipe the arrangement covers, and to every instance if a recipe lists it twice. |
+| `mode` | `Prefer` | `Prefer`, `SetRandom` or `Fixed`, see below. |
+| `sides` | `[]` | `Prefer` only: `Left`, `Right`, `Top`, `Bottom`; one or two. |
+| `pick` | `Any` | `SetRandom` only: `Any`, `Corner`, `Horizontal` or `Vertical`. |
+| `scope` | `Language` | `SetRandom` only: `Language` or `Composite`, see below. |
+| `offset` | none | `Fixed` only: `{ "x": 2, "y": 0 }` or `[2, 0]`. |
+| `weight` | `1.0` | `Prefer` and `SetRandom`: how strongly the pull counts against `bias` when both are on. `0` turns it off. |
 
-- "Size" is the bounding box of the combined node positions, in grid units.
-- Several modes can be combined; each contributes a score relative to the grid size and the scores are added (times their weights). Examples: `Shortest` + `Narrowest` = smallest box; `Tallest` + `Widest` = biggest; `Tallest` + `Narrowest` = tall and thin; `Squarest` + `Shortest` = compact and square.
-- `Tallest` with `Shortest`, or `Widest` with `Narrowest`, cancel out and are rejected.
-- With 3 or more components the bias is greedy: each is placed to best serve the shape so far.
+**`Fixed`.** The component goes exactly where it is in its own glyph, moved by `offset` (omitted = not moved: the plain overlay). It is never scaled or rotated and has no alternatives: if it leaves the grid, crosses something or breaks the spacing, the recipe cannot be built and fails with an error. Regenerating the other components doesn't help a fixed one, so the others are placed around it (fixed components are placed first automatically).
+
+**`Prefer`.** A hard rule, compared by the **middles** (bounding-box centres) of the components: a component with `sides: ["Left"]` always ends up with its middle strictly left of the middle of every other component in the composite, `Right` strictly right, `Top` above, `Bottom` below. Two sides mean a corner (`["Top", "Left"]` is above **and** left of all the others). Left with Right, and Top with Bottom, cancel out and are rejected. Top is the smaller y, because row 0 is the top of the image. The rule also binds the components placed around it: an unruled component can't end up on the wrong side of a ruled one. Among the placements that satisfy this and every other hard rule (grid bounds, crossing, spacing), the one nearest the chosen side is used (the same ranking as before, added to `bias` if that is on). If two components ask for the same side, the one placed first is the more extreme.
+
+**Order.** Components with a rule are placed before the others (`Fixed` first, then side rules; recipe order breaks ties), so they get the pick of the grid and the rest are placed around them. The finished composite still lists its components in recipe order. Because the side rule is hard, conflicting rules, or too little room on a small grid, can make a recipe unbuildable; it then fails with an error that says so.
+
+**`SetRandom`.** The sides are drawn at random, then used exactly like `Prefer` with those sides. `pick` decides what is drawn:
+
+| `pick` | Draws |
+|---|---|
+| `Any` | One of `Left`, `Right`, `Top`, `Bottom`. |
+| `Corner` | Two sides, one horizontal and one vertical: a random corner. |
+| `Horizontal` | `Left` or `Right`. |
+| `Vertical` | `Top` or `Bottom`. |
+
+`scope` decides how often the draw is made:
+
+- **`Language`** (default): once for the whole language, per glyph. The glyph gets the same side in **every** composite it is part of (Man/Human always in the same corner), and the draw is fixed by the root seed, so quality retries of a composite never move it.
+- **`Composite`**: once per composite, so the same glyph can sit on different sides in different composites, and on a different one after a quality retry.
+
+Note what a side means: the pull is toward that side of the **grid** (the nearest legal placement is used), and the hard rule is that the component's middle ends up on that side of the other components' middles. Drawing never changes the other random choices.
 
 ---
 
 ## 11. Curves
 
-Block: `curve`. Grid edges are always straight in the generated topology; the renderer turns each edge into a straight line or a cubic bezier. Curves are planned from the seed and can in principle bulge into neighbouring strokes; the tension cap and the proximity guard make that rare but do not rule it out.
+How an edge bends is set **per connection rule**, in the rule's `curve` block, so one stroke can mix gentle curves and dead-straight ticks. The top-level `curve` block only holds what is not per edge: `edge` (the settings for edges that no rule made, i.e. Literal shapes), the proximity guard, `forceAllEdgesCurved` and `contextMode`.
+
+Grid edges are always straight in the generated topology; the renderer turns each edge into a straight line or a cubic bezier. Curves are planned from the seed and can in principle bulge into neighbouring strokes; the tension cap and the proximity guard make that rare but do not rule it out.
+
+```json
+"connectionRules": [
+  { "direction": "Orthogonal", "minLength": 1, "maxLength": 5, "weight": 3,
+    "curve": {
+      "chanceToBeCurved": 40,
+      "mode": "Derived",
+      "tension": { "options": [ { "min": 0, "max": 0, "weight": 3 }, { "min": 0.4, "max": 0.5, "weight": 2 } ] },
+      "explicitJitterDegrees": { "min": 20, "max": 20 }
+    } },
+  { "direction": "Circle", "minLength": 1, "maxLength": 2 }
+]
+```
 
 ```json
 "curve": {
-  "mode": "Derived",
   "contextMode": "AllCurved",
-  "straightLineBias": { "min": 50, "max": 90 },
-  "tension": {
-    "options": [
-      { "min": 0,   "max": 0,   "weight": 3 },
-      { "min": 0.4, "max": 0.5, "weight": 2 }
-    ]
-  },
-  "explicitJitterDegrees": { "min": 20, "max": 20 },
+  "edge": { "chanceToBeCurved": 100 },
   "proximityGuard": { "enabled": true, "minEdgeLength": 2, "minDistanceToOtherNodes": 1 }
 }
 ```
 
+Per rule (`connectionRules[].curve`, and `curve.edge`):
+
 | Option | Notes |
 |---|---|
-| `mode` | Default `Derived` (tangent from the neighbouring nodes, smooth); `Explicit` (in/out handles deviate independently, kinks possible); `Hybrid` (each node randomly Derived or Explicit). |
-| `straightLineBias` `{min,max}` | Default `0..0` (nothing forced straight). Percentage 0-100, resolved once per glyph, then used as the **per-edge probability** of being straight. A soft hint: the realised share only approximates it. |
+| `chanceToBeCurved` | Default `100`. Percentage 0-100: the chance that an edge made by this rule is a curve rather than a straight line, rolled per edge. (This replaces the old language-wide `straightLineBias`: `chanceToBeCurved = 100 - straightLineBias`.) 100 still looks straight if the tension is 0. |
+| `mode` | Default `Derived` (tangents from the neighbouring nodes, smooth); `Explicit` (the two handles of the edge deviate independently, kinks possible); `Hybrid` (each edge randomly Derived or Explicit). |
 | `tension.range` `{min,max}` | Default `0.25..0.35`. Used **only when `options` is empty**: one continuous range, sampled uniformly. |
-| `tension.options[]` | Default empty. Weighted bands `{min, max, weight}` (weight default `1`); one band is picked per node handle, then a value is sampled inside it. This is what allows bimodal looks such as "70% dead straight (`0..0`), 30% strongly curved (`0.4..0.5`)". When non-empty it replaces `range`. The final value is clamped to `0..0.5` and is the handle length as a fraction of the edge length. |
-| `explicitJitterDegrees` `{min,max}` | Default `20..60`. Maximum angular deviation of explicit handles, in degrees, drawn per node. Only matters in `Explicit`/`Hybrid` modes. |
+| `tension.options[]` | Default empty. Weighted bands `{min, max, weight}` (weight default `1`); one band is picked per handle, then a value is sampled inside it. This is what allows bimodal looks such as "70% dead straight (`0..0`), 30% strongly curved (`0.4..0.5`)". When non-empty it replaces `range`. The final value is clamped to `0..0.5` and is the handle length as a fraction of the edge length. |
+| `explicitJitterDegrees` `{min,max}` | Default `20..60`. Maximum angular deviation of explicit handles, in degrees. Only matters in `Explicit`/`Hybrid`. |
+
+Circles and dots ignore all of this: a circle is always drawn round, a dot is always a disc. Where the two edges around a node come from different rules, each uses its own settings; the handle directions at the node are still derived from the neighbouring nodes, so the join stays smooth.
+
+Language level (`curve`):
+
+| Option | Notes |
+|---|---|
+| `edge` | Default: always curved, `Derived`, tension `0.25..0.35`. Used for edges no rule made (Literal shapes). |
 | `proximityGuard.enabled` | Default `false`. Forces some edges straight to reduce bulging into neighbours; it changes how many edges end up curved. |
 | `proximityGuard.minEdgeLength` | Default `1.5`. Edges shorter than this (grid units) are forced straight. |
 | `proximityGuard.minDistanceToOtherNodes` | Default `0` (off). An edge is forced straight when any other node in the glyph (any chain or component) lies closer than this to either endpoint. Broader and more expensive than `minEdgeLength`. |
+| `recheckProximityInCombined` | Default `false`. Re-runs the guard on components once they sit in a composite. Needs the guard. |
+| `forceAllEdgesCurved` | Default `false`. Every edge is a curve, ignoring every `chanceToBeCurved` and the guard. Rejected if any chance is below 100 or the guard is on. |
 | `contextMode` | Default `AllCurved`. Curved or straight, for glyphs on their own versus inside composites (below). |
 
 ### `contextMode`
@@ -490,7 +591,7 @@ Block: `curve`. Grid edges are always straight in the generated topology; the re
 | `CurvedMiniStraightCombined` | curved | straight |
 | `StraightMiniCurvedCombined` | straight | curved |
 
-- "Curved" means the glyph's normal curve plan: `straightLineBias` still decides edge by edge which edges are lines. It does **not** force every edge to bend.
+- "Curved" means the glyph's normal curve plan: each rule's `chanceToBeCurved` still decides edge by edge which edges are lines. It does **not** force every edge to bend.
 - "Straight" makes every edge a straight line.
 - Wherever a glyph is curved, its curves are the **same** in both contexts: a component reuses its source glyph's plan, mapped through the component's scale, rotation and translation.
 - Reused curves are not re-checked against neighbouring components, so a bulge can reach into an adjacent component. `CurvedMiniStraightCombined` avoids that.
@@ -509,6 +610,7 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
   "background": "#00000000",
   "debugShowNodes": false,
   "debugColorComponents": false,
+  "debugColorParts": false,
   "typeface": {
     "kind": "Rectangular",
     "perGlyphJitter": 0.0,
@@ -530,6 +632,7 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
 | `foreground`, `background` | `#RRGGBB` or `#AARRGGBB`. Defaults: foreground `#000000`, background `#00000000` (transparent). Unparseable values fall back to black / transparent. |
 | `debugShowNodes` | Draws the faint lattice with coordinate labels every 5 cells, plus node dots: red = free-form sub-symbol, blue = motif, **gold = a node used more than once** (a revisit or a node shared by shapes). |
 | `debugColorComponents` | Fills each combination component in its own colour. |
+| `debugColorParts` | Colours the ink each kind of part adds: **grey** caps (and Ball / Ink terminals), **violet** corner joins, **pink** junction joins (including straightening). Strokes keep the foreground (or component) colour. Each part shows only where it goes beyond the strokes, painted over them in build order: corner joins, junction joins, caps. A cap removed by `trimCaps` is not drawn, so it is not shown. |
 | `typeface.kind` | `Rectangular` (default), `ThickEnds` or `Brush`. Selects which sub-block below is used; a missing sub-block means that typeface's defaults. |
 | `typeface.perGlyphJitter` | `0` (default) = every glyph uses the identical typeface; `0.1` = each glyph's widths vary by up to +-10%. Clamped to 0-0.9. |
 
@@ -572,8 +675,9 @@ A bend has one gap of each kind; a T, a Y or a crossing only has notches. Which 
 | `inner` | `Overlap` | `style`, plus `size` for Bevel and Round. |
 | `byAngle[]` | `[]` | Overrides, see below. |
 | `junction.trimCaps` | `false` | Junction only. See below. |
-| `junction.straightenDegrees` | `0` | Junction only; `0` = off. See below. |
-| `junction.straightenLength` | `4` | Junction only: chamfer length in half-widths. |
+| `junction.straightenInnerDegrees` | `0` | Junction only; `0` = off. See below. |
+| `junction.straightenOuterDegrees` | `0` | Junction only; `0` = off. See below. |
+| `junction.straightenLength` | `4` | Junction only: length of the straightening fill in half-widths. |
 
 | `style` | Outer side | Inner side |
 |---|---|---|
@@ -582,13 +686,18 @@ A bend has one gap of each kind; a T, a Y or a crossing only has notches. Which 
 | `Round` | Rounded corner (a full reversal gets a round cap). | A fillet in the notch with a radius of `size` half-widths. |
 | `Overlap` | Nothing added: plain overlapping strokes. | Nothing added: the notch stays sharp. |
 
-The inner `size` is measured in half-widths of the stroke (`1` = half the stroke width) and is limited automatically so the chamfer or fillet never reaches past the neighbouring node. The inner join only ever **adds** ink; it cannot cut away the notch.
+The inner `size` is measured in half-widths of the stroke (`1` = half the stroke width) and is limited automatically so the chamfer or fillet never reaches past the neighbouring node. The inner join only ever **adds** ink; it cannot cut away the notch. It follows the strokes' real edges, so it still meets the borders when a stroke curves away from the node.
 
 **`byAngle`.** A list of rules tried in order; the first whose `angle` range (degrees, 0 to 180, inclusive) contains the angle between the two strokes wins. A rule can give `outer`, `inner` or both; what it leaves out falls back to the context's own. 180 is straight on, 90 a right angle, 45 a sharp turn. On the grid the angle is almost always 45, 90 or 135; on curved edges it is measured on the curve tangents at the node, so it varies continuously. A 45 degree miter is only about 2.6 half-widths long, so `miterLimit` alone never turns grid corners into bevels; `byAngle` is the way to do that.
 
 **`trimCaps`** (junction only). When on, a tip that ends at a junction (a node where another stroke is also present) is drawn **without** its cap, `Ball` terminal or `Ink` start blob, and the joins fill the node instead. A tip that stands alone keeps everything. With the junction's `outer` set to `Overlap` nothing fills the node, so use Miter, Bevel or Round with it. Note that a junction is any node with another stroke in it, including a tip landing on the middle of another stroke.
 
-**`straightenDegrees` / `straightenLength`** (junction only). Where two strokes meet within `straightenDegrees` of a straight line (180) and the notch between them has no other stroke in it, that notch is filled with one long chamfer (`straightenLength` half-widths along each edge, limited so it never passes the neighbouring node), so the edge reads as one straight line instead of a kink. Other strokes may leave the node on the other side, so a branch coming out of a nearly straight line still works. It replaces the inner join for those notches. It does nothing on the convex outside of the bend: straightening that would mean cutting ink away, so use the outer join there (a Miter at a nearly straight angle is almost flat anyway).
+**`straightenInnerDegrees` / `straightenOuterDegrees` / `straightenLength`** (junction only). Where two strokes meet within the given number of degrees of a straight line (180), the kink is straightened. The two sides of a nearly straight pair behave differently, so each has its own tolerance (`0` = off):
+
+- **Inner** is the side that bends inwards (a gap under 180 degrees, with no other stroke in it). It is filled with one long chamfer, `straightenLength` half-widths along each edge, so the edge reads as one straight line. It replaces the inner join there.
+- **Outer** is the side that bends outwards (a gap over 180 degrees), for example the top of a T whose bar is slightly bent that way. Ink can't be removed, so the two edges are extended along one straight line through their corner (the average of the two directions) and the thin wedges between that line and the real edges are filled. Each wedge ends in a small step; its height grows with the angle and with `straightenLength` (about `length x half-width x tan(angle / 2)`, so keep the angle small or the length short if it shows). It replaces the outer join there.
+
+Whether the top of a T is "inner" or "outer" depends on which way the bar bends, so set both if you want it straightened either way. Other strokes may leave the node on the other side. Both lengths are limited so they never reach past the neighbouring node. A gap within 0.5 degrees of straight needs nothing.
 
 ### Caps
 
@@ -664,7 +773,7 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 ```
 
 - File and folder names are sanitized (characters invalid in file names become `_`).
-- The contact sheet lists real glyphs in the order of `glyphs`, each cell at the glyph's own pixel size with a light-grey frame and 8 px gaps, no labels. The column count (6) is fixed in `Program.cs`. If `render.background` is transparent or translucent, the sheet uses white so glyphs stay visible.
+- The contact sheet lists real glyphs in the order of `glyphs`, at each glyph's own pixel size, edge to edge: no margins, gaps or frames, no labels. Columns come from `render.contactSheet.columns`. It uses `render.background` exactly as configured; if that is transparent or translucent, so is the sheet.
 - The console also prints an ASCII preview of every glyph (straight lines only), marking base glyphs.
 - PNGs can differ slightly between platforms and Skia versions because of anti-aliasing; geometry is deterministic, but don't expect byte-identical files.
 
@@ -683,11 +792,13 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 | Grid | No top-level `grid`; every language has its own; width and height >= 1. |
 | Glyph names | Non-empty; unique across `glyphs` and `baseGlyphs`. |
 | Recipes | A base glyph can't be a recipe key; a recipe needs components; every component must be listed in `glyphs` or `baseGlyphs`; a composite built from a composite must come after it in `glyphs` (which also rules out cycles). |
-| `shapes` | At least one when there are plain/base glyphs. Each `id` non-empty and unique; `seedLabel` unique. `count` >= 0 with `max` >= `min`. Literal: `nodes` present, >= 2 points, no repeated consecutive point. Generative: no `nodes`; `chain.length` >= 2; at least one valid `connectionRules` entry (valid direction, `minLength` >= 1, `maxLength` >= `minLength`, weights >= 0 and not all 0); `closedLoopWeight` >= 0; each `selfSpacing` rule valid. |
+| `shapes` | At least one when there are plain/base glyphs. Each `id` non-empty and unique; `seedLabel` unique. `count` >= 0 with `max` >= `min`. Literal: `nodes` present, >= 2 points, no repeated consecutive point. Generative: no `nodes`; `chain.length` >= 2; at least one valid `connectionRules` entry (valid direction, `minLength` >= 1 (0 for `Circle`), `maxLength` >= `minLength`, weights >= 0 and not all 0, angles within 0-180 with `maxAngle` >= `minAngle`, no preset together with explicit angles, `Angle` has a limit, `Circle` has none, `backToStartChance` and `chanceToBeCurved` within 0-100, valid `curve` block); each `selfSpacing` rule valid. |
 | `placement` | Known `mode`; `Fixed` needs a `fixedOrigin` on the grid, other modes must not have one; `maxPlacementAttempts` >= 1; `rotations` only on Literal shapes, with `allowRotationOnPlace` on, using only 0/90/180/270; `startOnExistingNode` only with `RandomValid` and not with `arrangement.spacing.minNodeDistance` > 0. |
 | `arrangement` | Spacing distances finite and >= 0, `maxNodeDistance` >= `minNodeDistance`, valid `maxDistanceMode`; known bias modes, no `Tallest`+`Shortest` or `Widest`+`Narrowest`, bias weights valid; `candidates` >= 1; `includeScaleAndRotation` not on a shape. Checked for every shape, for `combination.arrangement` and for each recipe override. |
+| `placement.side` | Only with `mode: RandomValid`; `Prefer` needs one or two sides, none cancelling, and no `pick`; `SetRandom` takes no `sides`; `weight` >= 0. |
+| `placements` | The glyph must be listed in `glyphs` or `baseGlyphs` (in a recipe's own arrangement: be one of its components) and have only one rule; `Prefer` needs one or two sides, none cancelling, and no `offset` or `pick`; `SetRandom` takes no `sides` or `offset`; `Fixed` takes no `sides`, `pick` or `scope`; `weight` >= 0. |
 | `combination` | `maxRetriesPerRecipe` >= 1; scale numerators/denominators positive; rotation angles 0/90/180/270. |
-| `render.joins` | Known styles; `miterLimit` >= 1; `size` >= 0; `straightenDegrees` 0..90; `straightenLength` >= 0; each `byAngle` rule has an angle range within 0..180 with `max` >= `min`, and sets `outer` and/or `inner`. |
+| `render.joins` | Known styles; `miterLimit` >= 1; `size` >= 0; `straightenInnerDegrees` and `straightenOuterDegrees` 0..90; `straightenLength` >= 0; each `byAngle` rule has an angle range within 0..180 with `max` >= `min`, and sets `outer` and/or `inner`. |
 | `usageSizeBias` | `strength` is finite and >= 0. |
 
 Generation-time errors you may meet:
@@ -779,12 +890,13 @@ A valid config using the current schema. Everything not shown takes its default.
           "chain": {
             "length": { "min": 5, "max": 8 },
             "connectionRules": [
-              { "direction": "Orthogonal", "minLength": 1, "maxLength": 4, "weight": 3.0 },
+              { "direction": "Orthogonal", "minLength": 1, "maxLength": 4, "weight": 3.0, "backToStartChance": 15,
+                "curve": { "chanceToBeCurved": 40,
+                           "tension": { "options": [ { "min": 0, "max": 0, "weight": 3 }, { "min": 0.4, "max": 0.5, "weight": 1 } ] } } },
               { "direction": "Diagonal",   "minLength": 1, "maxLength": 3, "weight": 1.0 }
             ],
             "connectionWeighting": "PerRule",
             "allowClosedLoop": true,
-            "closedLoopWeight": 0.5,
             "selfSpacing": [
               { "mode": "Existing", "minDistance": 1.4 },
               { "mode": "AllNodes", "maxDistance": 7 }
@@ -822,9 +934,6 @@ A valid config using the current schema. Everything not shown takes its default.
       "curve": {
         "mode": "Derived",
         "contextMode": "CurvedMiniStraightCombined",
-        "straightLineBias": { "min": 50, "max": 90 },
-        "tension": { "options": [ { "min": 0, "max": 0, "weight": 3 }, { "min": 0.4, "max": 0.5, "weight": 1 } ] },
-        "explicitJitterDegrees": { "min": 20, "max": 20 },
         "proximityGuard": { "enabled": true, "minEdgeLength": 2, "minDistanceToOtherNodes": 1 }
       },
 
@@ -865,7 +974,7 @@ The migrated config **generates the same glyphs** for the same seed. To make tha
 |---|---|
 | `subSymbolCount` | `count` on the free-form shape (the tool names it `strokes`) |
 | `subSymbolLength` | `chain.length` |
-| `connectionRules`, `connectionWeighting`, `allowNodeRevisit`, `allowEdgeRevisit`, `allowClosedLoop`, `closedLoopWeight` | the same names under `chain`, **copied onto every generative shape** (guaranteed generative motifs used to inherit the revisit flags and weighting silently) |
+| `connectionRules`, `connectionWeighting`, `allowNodeRevisit`, `allowEdgeRevisit`, `allowClosedLoop` | the same names under `chain`, **copied onto every generative shape** (guaranteed generative motifs used to inherit the revisit flags and weighting silently) |
 | `guaranteedMotifs[]` | entries of `shapes` without a `count`. `type` becomes `kind`; `literal.nodes` becomes `nodes`; `generative.lengthRange` becomes `chain.length`; the rest moves under `chain` |
 | `subSymbolPlacement`, a motif's `placement` | `placement` on the shape |
 | `allowSymbolsToCross` | `arrangement.allowCrossing` on every shape. Note it is now per shape and needs both shapes' permission |
@@ -892,3 +1001,7 @@ It exits non-zero on any difference. Re-record the baselines on purpose with `--
 ### The schema
 
 `config.schema.json` is generated from the config classes: regenerate it after changing an option with `GlyphGen.Cli --schema config.schema.json` (hover text comes from the XML documentation file, now produced by the Core project).
+
+### Curve and loop options moved onto the rules
+
+`curve.mode`, `curve.straightLineBias`, `curve.tension`, `curve.explicitJitterDegrees` and `chain.closedLoopWeight` no longer exist as language/chain options. The loader converts them automatically (the file on disk is not touched): every connection rule without its own `curve` block gets the old language settings, with `chanceToBeCurved = 100 - the middle of straightLineBias`, they are also copied to `curve.edge`, and `closedLoopWeight` *w* becomes `backToStartChance = 100·w / (w + rule weight)` on each rule. The loop chance is an approximation, since the old weight competed with the rules' moves while the new chance is rolled once a rule is picked, so loops (and everything generated after them) can differ for the same seed. Re-save your config with the new options when convenient.

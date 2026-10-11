@@ -31,6 +31,7 @@ public sealed class ThickEndsTypeface : ITypeface
     public string Name => "ThickEnds";
     public double SampleSpacingPx => 3.0;
 
+    public double DotRadiusPx => _baseHalf;
     public double MaxInkExtentPx
     {
         get

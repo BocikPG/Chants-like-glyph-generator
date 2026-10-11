@@ -51,7 +51,7 @@ public sealed class TensionConfig
 }
 
 /// <summary>
-/// Forces an edge straight based on geometry, independent of CurveMode/StraightLineBias - a
+/// Forces an edge straight based on geometry, independent of the edge's curve settings - a
 /// safety net against a curve bulging into nearby ink (see CurvePlanner's remarks on this).
 /// Disabled by default since it changes how many edges end up curved vs. the language's other
 /// settings alone would produce.
@@ -73,24 +73,15 @@ public sealed class CurveProximityGuardConfig
 }
 
 /// <summary>
-/// Rendering-time curve behavior. Kept independent of the underlying straight-edge grid
-/// topology (which is what intersection checks always operate on) — this only affects how
-/// the final glyph is drawn, never whether a connection is valid.
+/// Rendering-time curve behavior that is NOT per edge. How an edge bends (chance, mode, tension,
+/// jitter) is set on the connection rule that made it - see EdgeCurveConfig. Kept independent of the
+/// underlying straight-edge grid topology (which is what intersection checks always operate on):
+/// this only affects how the final glyph is drawn, never whether a connection is valid.
 /// </summary>
 public sealed class CurveConfig
 {
-    public CurveMode Mode { get; set; } = CurveMode.Derived;
-
-    /// <summary>Soft hint: probability any given connection is forced straight regardless of
-    /// Mode. 0-100.</summary>
-    public PercentRange StraightLineBias { get; set; } = new() { Min = 0, Max = 0 };
-
-    /// <summary>Each handle draws its own value independently (see TensionConfig).</summary>
-    public TensionConfig Tension { get; set; } = new();
-
-    /// <summary>Explicit/Hybrid modes: max angle (degrees) a node's in/out tangent may deviate
-    /// from the derived tangent; drawn per node.</summary>
-    public FloatRange ExplicitJitterDegrees { get; set; } = new() { Min = 20, Max = 60 };
+    /// <summary>Curve settings for edges that no connection rule made (the edges of Literal shapes).</summary>
+    public EdgeCurveConfig Edge { get; set; } = new();
 
     public CurveProximityGuardConfig ProximityGuard { get; set; } = new();
 
@@ -104,12 +95,13 @@ public sealed class CurveConfig
     public bool RecheckProximityInCombined { get; set; } = false;
 
     /// <summary>
-    /// Plans EVERY edge as a curve: ignores StraightLineBias and the proximity guard (both would
+    /// Plans EVERY edge as a curve: ignores every chanceToBeCurved and the proximity guard (both would
     /// otherwise force edges straight), so "curved" really means curved everywhere. Whether an
     /// edge visibly bends still depends on tension: a 0..0 tension band gives a bezier that looks
-    /// straight. Must not be combined with a non-zero StraightLineBias or an enabled guard
+    /// straight. Must not be combined with a chanceToBeCurved below 100 or an enabled guard
     /// (the loader rejects that, since they would be silently overridden). Default false.
     /// </summary>
     public bool ForceAllEdgesCurved { get; set; } = false;
+
     public CurveContextMode ContextMode { get; set; } = CurveContextMode.AllCurved;
 }

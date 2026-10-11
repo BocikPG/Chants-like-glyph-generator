@@ -22,6 +22,7 @@ public sealed class RectangularTypeface : ITypeface
     }
 
     public string Name => "Rectangular";
+    public double DotRadiusPx => _halfWidth;
     public double SampleSpacingPx => 0.0; // width never varies, so straight edges stay one segment
     public double MaxInkExtentPx =>
         _halfWidth * Math.Max(JoinResolver.ExtentFactor(_joins), _cap == CapStyle.Square ? 1.5 : 1.0);

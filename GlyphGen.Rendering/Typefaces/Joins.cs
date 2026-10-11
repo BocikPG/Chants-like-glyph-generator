@@ -4,11 +4,26 @@ using GlyphGen.Rendering.Geometry;
 namespace GlyphGen.Rendering.Typefaces;
 
 /// <summary>
-/// One stroke leaving a node: where the node is, the direction the stroke runs AWAY from it, the
-/// half-widths of the stroke right there (Left is the +Perp side of Dir) and how far it runs before
-/// the next node (so an inner fillet never reaches past it).
+/// One stroke leaving a node: where the node is, the direction the stroke runs AWAY from it, and the
+/// half-widths of the stroke right there (Left is the +Perp side of Dir). For arms at grid nodes it also
+/// carries the stroke's two real edge outlines from the node to the next node - Plus on the +Perp side,
+/// Minus on the other - so an inner join can follow the edges even where the stroke curves away.
 /// </summary>
-public readonly record struct JoinArm(Vec2 Point, Vec2 Dir, WidthSample Width, double Reach, int Stroke);
+public readonly record struct JoinArm(
+    Vec2 Point, Vec2 Dir, WidthSample Width, int Stroke, Vec2[]? Plus = null, Vec2[]? Minus = null)
+{
+    /// <summary>An arm that runs perfectly straight for the given length (used for tests and simple cases).</summary>
+    public static JoinArm Straight(Vec2 point, Vec2 dir, WidthSample width, double length, int stroke)
+    {
+        var perp = dir.Perp;
+        return new JoinArm(point, dir, width, stroke,
+            new[] { point + perp * width.Left, point + dir * length + perp * width.Left },
+            new[] { point - perp * width.Right, point + dir * length - perp * width.Right });
+    }
+}
+
+/// <summary>What a polygon is, for the debug "parts" view. Anything not tagged is a stroke body.</summary>
+public enum InkKind { Cap, Corner, Junction }
 
 /// <summary>
 /// Collects the arms of every stroke in one layer, so joins can be built per NODE once all strokes are
@@ -17,6 +32,15 @@ public readonly record struct JoinArm(Vec2 Point, Vec2 Dir, WidthSample Width, d
 public sealed class JoinSink
 {
     public List<JoinArm> Arms { get; } = new();
+
+    /// <summary>Which polygons are caps / corner joins / junction joins (by reference). Used only by the
+    /// debug parts view; polygons that are not in here are stroke bodies.</summary>
+    public Dictionary<Vec2[], InkKind> Kinds { get; } = new(ReferenceEqualityComparer.Instance);
+
+    internal void Tag(List<Vec2[]> output, int from, InkKind kind)
+    {
+        for (int i = from; i < output.Count; i++) Kinds[output[i]] = kind;
+    }
 
     /// <summary>What a stroke draws at a free tip (cap, ball, blob), held back until it is known whether
     /// the tip ends at a junction that wants it trimmed.</summary>
@@ -90,21 +114,29 @@ public static class JoinBuilder
         {
             if (group.Count < 2) continue;
             bool corner = group.Count == 2 && group[0].Stroke == group[1].Stroke;
+            int before = output.Count;
             BuildNode(group, corner ? joins.Corner : joins.Junction, corner ? null : joins.Junction, outerOnly: false, output);
+            sink.Tag(output, before, corner ? InkKind.Corner : InkKind.Junction);
         }
 
         foreach (var (point, polygons) in sink.Tips)
         {
             bool atJunction = nodes.TryGetValue(KeyOf(point), out var here) && here.Count >= 2;
             if (atJunction && joins.Junction.TrimCaps) continue;
+            int before = output.Count;
             output.AddRange(polygons);
+            sink.Tag(output, before, InkKind.Cap);
         }
     }
 
     /// <summary>A bend at a point inside a stroke that is not a grid node (a smooth curve sample):
     /// outer side only, as only real nodes have notches worth filling.</summary>
-    public static void BuildSmoothCorner(JoinArm back, JoinArm forward, JoinsConfig joins, List<Vec2[]> output) =>
+    public static void BuildSmoothCorner(JoinArm back, JoinArm forward, JoinsConfig joins, List<Vec2[]> output, JoinSink? sink = null)
+    {
+        int before = output.Count;
         BuildNode(new List<JoinArm> { back, forward }, joins.Corner, null, outerOnly: true, output);
+        sink?.Tag(output, before, InkKind.Corner);
+    }
 
     private static void BuildNode(
         List<JoinArm> arms, JoinContextConfig context, JunctionJoinConfig? junction, bool outerOnly, List<Vec2[]> output)
@@ -131,14 +163,18 @@ public static class JoinBuilder
 
             if (gapDeg > 180.0)
             {
-                AddOuter(a, b, gap, outer, output);
+                // Nearly straight on the convex side: extend the edges along one line instead of a join.
+                bool straightened = junction is { StraightenOuterDegrees: > 0 }
+                    && gapDeg - 180.0 <= junction.StraightenOuterDegrees
+                    && AddStraightOuter(a, b, junction.StraightenLength, output);
+                if (!straightened) AddOuter(a, b, gap, outer, output);
             }
             else if (!outerOnly)
             {
                 // Two strokes meeting almost straight, with nothing between them on this side: one
                 // long chamfer makes the edge straight (the gap is adjacent, so no stroke is in it).
                 double off = 180.0 - gapDeg;
-                if (junction is { StraightenDegrees: > 0 } && off <= junction.StraightenDegrees)
+                if (junction is { StraightenInnerDegrees: > 0 } && off <= junction.StraightenInnerDegrees)
                     AddInner(a, b, gap, new JoinSideConfig { Style = JoinStyle.Bevel, Size = junction.StraightenLength }, output);
                 else
                     AddInner(a, b, gap, inner, output);
@@ -206,61 +242,217 @@ public static class JoinBuilder
         }
     }
 
+    /// <summary>
+    /// Straightens the convex side of a nearly straight pair. The two outer edges meet at a corner K; a line
+    /// through K along the average of the two directions lies just outside both edges, so the thin wedges
+    /// between it and each edge are filled (up to `length` half-widths from K). Returns false if the arms
+    /// do not form such a corner, so the normal outer join is used instead.
+    /// </summary>
+    private static bool AddStraightOuter(JoinArm a, JoinArm b, double length, List<Vec2[]> output)
+    {
+        var ea = a.Plus;
+        var eb = b.Minus;
+        if (ea is null || eb is null || ea.Length < 2 || eb.Length < 2 || length <= 0) return false;
+
+        double cross = a.Dir.Cross(b.Dir);
+        if (Math.Abs(cross) < 1e-9) return false;
+
+        // K: where the lines of the two outer edges meet, behind the start of both outlines.
+        double ta = (eb[0] - ea[0]).Cross(b.Dir) / cross;
+        Vec2 k = ea[0] + a.Dir * ta;
+        double tb = (k - eb[0]).Dot(b.Dir);
+        if (ta > 1e-9 || tb > 1e-9) return false;
+
+        double half = Math.Max(a.Width.Left, b.Width.Right);
+        double d = length * half;
+        if (d <= 1e-6) return false;
+
+        Vec2 u = (a.Dir - b.Dir).Normalized(); // the straight line, pointing towards arm a
+        var ca = Cumulative(ea);
+        var cb = Cumulative(eb);
+
+        bool any = false;
+        any |= AddStraightWedge(k, u, ea, ca, d + ta, output);
+        any |= AddStraightWedge(k, -u, eb, cb, d + tb, output);
+        return any;
+    }
+
+    // The wedge between the line from K (direction u) and one edge, out to arc length s along that edge.
+    private static bool AddStraightWedge(Vec2 k, Vec2 u, Vec2[] edge, double[] cum, double s, List<Vec2[]> output)
+    {
+        s = Math.Min(s, cum[^1]);
+        if (s <= 1e-6) return false;
+
+        Vec2 far = PointAt(edge, cum, s);
+        double along = (far - k).Dot(u);
+        if (along <= 1e-6) return false;
+
+        Vec2 onLine = k + u * along; // foot of the edge point on the line: the closing step is square to it
+
+        var poly = new List<Vec2> { k, onLine, far };
+        AddVerticesBetween(poly, edge, cum, 0, s, forward: false);
+        poly.Add(edge[0]);
+        StrokeOutlineBuilder.Emit(output, poly.ToArray());
+        return true;
+    }
+
     private static void AddInner(JoinArm a, JoinArm b, double gap, JoinSideConfig side, List<Vec2[]> output)
     {
         // Miter and Overlap both leave the notch as the two bodies make it.
         if (side.Style is JoinStyle.Overlap or JoinStyle.Miter || side.Size <= 0) return;
 
-        Vec2 p = a.Point;
-        Vec2 pa = p + a.Dir.Perp * a.Width.Left;
-        Vec2 pb = p - b.Dir.Perp * b.Width.Right;
+        // The notch is bounded by a's +Perp edge and b's -Perp edge. Both are followed as the real
+        // outlines, so the fill meets the borders even where a stroke curves away from its tangent.
+        var ea = a.Plus;
+        var eb = b.Minus;
+        if (ea is null || eb is null || ea.Length < 2 || eb.Length < 2) return;
 
-        // The notch corner M: where a's +Perp edge meets b's -Perp edge.
-        double cross = a.Dir.Cross(b.Dir);
-        if (Math.Abs(cross) < Eps) return;
-        double t = (pb - pa).Cross(b.Dir) / cross;
-        Vec2 m = pa + a.Dir * t;
-        double s = (m - pb).Dot(b.Dir);
-        if (t <= 0 || s <= 0) return;
+        var ca = Cumulative(ea);
+        var cb = Cumulative(eb);
+        if (!FirstCrossing(ea, ca, eb, cb, out double sa, out double sb, out Vec2 m)) return;
 
         double half = Math.Min(a.Width.Left, b.Width.Right);
         if (half <= 1e-9) return;
 
-        double tanHalf = Math.Tan(gap / 2);
-        double wanted = side.Style == JoinStyle.Round ? side.Size * half / tanHalf : side.Size * half;
+        // The opening of the notch where the edges actually meet.
+        Vec2 ta = TangentAt(ea, ca, sa);
+        Vec2 tb = TangentAt(eb, cb, sb);
+        double local = Math.Acos(Math.Clamp(ta.Dot(tb), -1.0, 1.0));
+        if (local > Math.PI - 0.02) return;
+        local = Math.Max(local, 0.02);
 
-        // Never run past the neighbouring node along either edge.
-        double room = Math.Min(a.Reach - t, b.Reach - s);
+        double wanted = side.Style == JoinStyle.Round ? side.Size * half / Math.Tan(local / 2) : side.Size * half;
+
+        // Never run past the neighbouring node along either edge (the outlines end there).
+        double room = Math.Min(ca[^1] - sa, cb[^1] - sb);
         double d = Math.Min(wanted, room);
         if (d <= 1e-6) return;
 
-        Vec2 c1 = m + a.Dir * d;
-        Vec2 c2 = m + b.Dir * d;
+        Vec2 c1 = PointAt(ea, ca, sa + d);
+        Vec2 c2 = PointAt(eb, cb, sb + d);
 
-        if (side.Style == JoinStyle.Bevel)
+        // The filled region: M, along a's edge to c1, across to c2, back along b's edge to M.
+        var poly = new List<Vec2> { m };
+        AddVerticesBetween(poly, ea, ca, sa, sa + d, forward: true);
+        poly.Add(c1);
+
+        double phi = 0;
+        if (side.Style == JoinStyle.Round)
         {
-            StrokeOutlineBuilder.Emit(output, new[] { m, c1, c2 });
-            return;
+            // A fillet leaves c1 heading back towards M and arrives at c2 heading away from it: a cubic
+            // with those tangents, sized like a circular arc through both points. For straight edges this
+            // is the exact fillet of radius size x half-width.
+            Vec2 t1 = TangentAt(ea, ca, sa + d);
+            Vec2 t2 = TangentAt(eb, cb, sb + d);
+            phi = Math.Acos(Math.Clamp((-t1).Dot(t2), -1.0, 1.0));
+            double chord = (c2 - c1).Length;
+
+            if (phi > 0.05 && chord > 1e-6)
+            {
+                double r = chord / (2 * Math.Sin(phi / 2));
+                double k = 4.0 / 3.0 * Math.Tan(phi / 4) * r;
+                Vec2 p1 = c1 - t1 * k;
+                Vec2 p2 = c2 - t2 * k;
+
+                int steps = Math.Max(3, (int)Math.Ceiling(phi / (Math.PI / 12)));
+                for (int j = 1; j < steps; j++)
+                {
+                    double t = j / (double)steps, u = 1 - t;
+                    poly.Add(c1 * (u * u * u) + p1 * (3 * u * u * t) + p2 * (3 * u * t * t) + c2 * (t * t * t));
+                }
+            }
         }
 
-        // Round: a fillet of radius d * tan(gap/2), tangent to both edges at c1 and c2.
-        double radius = d * tanHalf;
-        Vec2 bisector = (a.Dir + b.Dir).Normalized();
-        Vec2 center = m + bisector * (radius / Math.Sin(gap / 2));
-
-        double s0 = Math.Atan2(c1.Y - center.Y, c1.X - center.X);
-        double s1 = Math.Atan2(c2.Y - center.Y, c2.X - center.X);
-        double delta = s1 - s0;
-        while (delta > Math.PI) delta -= TwoPi;
-        while (delta <= -Math.PI) delta += TwoPi;
-
-        int steps = Math.Max(2, (int)Math.Ceiling(Math.Abs(delta) / (Math.PI / 12)));
-        var poly = new List<Vec2>(steps + 2) { m };
-        for (int j = 0; j <= steps; j++)
-        {
-            double ang = s0 + delta * (j / (double)steps);
-            poly.Add(center + new Vec2(Math.Cos(ang), Math.Sin(ang)) * radius);
-        }
+        poly.Add(c2);
+        AddVerticesBetween(poly, eb, cb, sb, sb + d, forward: false);
         StrokeOutlineBuilder.Emit(output, poly.ToArray());
+    }
+
+    // ---- polyline helpers (edge outlines) ---------------------------------------------------------
+
+    private static double[] Cumulative(Vec2[] poly)
+    {
+        var cum = new double[poly.Length];
+        for (int i = 1; i < poly.Length; i++) cum[i] = cum[i - 1] + (poly[i] - poly[i - 1]).Length;
+        return cum;
+    }
+
+    private static int SegmentAt(double[] cum, double s)
+    {
+        int last = cum.Length - 2;
+        for (int i = 0; i <= last; i++)
+            if (s < cum[i + 1]) return i;
+        return last;
+    }
+
+    private static Vec2 PointAt(Vec2[] poly, double[] cum, double s)
+    {
+        s = Math.Clamp(s, 0, cum[^1]);
+        int i = SegmentAt(cum, s);
+        double len = cum[i + 1] - cum[i];
+        double t = len > 1e-12 ? (s - cum[i]) / len : 0;
+        return poly[i] + (poly[i + 1] - poly[i]) * t;
+    }
+
+    private static Vec2 TangentAt(Vec2[] poly, double[] cum, double s)
+    {
+        s = Math.Clamp(s, 0, cum[^1]);
+        int i = SegmentAt(cum, s);
+        var d = poly[i + 1] - poly[i];
+        return d.Length > 1e-12 ? d.Normalized() : new Vec2(1, 0);
+    }
+
+    /// <summary>The polyline's own vertices strictly between arc lengths s0 and s1, in either direction.</summary>
+    private static void AddVerticesBetween(List<Vec2> output, Vec2[] poly, double[] cum, double s0, double s1, bool forward)
+    {
+        if (forward)
+        {
+            for (int i = 0; i < poly.Length; i++)
+                if (cum[i] > s0 + 1e-9 && cum[i] < s1 - 1e-9) output.Add(poly[i]);
+        }
+        else
+        {
+            for (int i = poly.Length - 1; i >= 0; i--)
+                if (cum[i] > s0 + 1e-9 && cum[i] < s1 - 1e-9) output.Add(poly[i]);
+        }
+    }
+
+    /// <summary>The crossing of the two outlines nearest the node (smallest combined distance along both).</summary>
+    private static bool FirstCrossing(
+        Vec2[] pa, double[] ca, Vec2[] pb, double[] cb, out double sa, out double sb, out Vec2 point)
+    {
+        sa = sb = 0;
+        point = default;
+        double best = double.MaxValue;
+        bool found = false;
+
+        for (int i = 0; i < pa.Length - 1; i++)
+        {
+            Vec2 r = pa[i + 1] - pa[i];
+            for (int j = 0; j < pb.Length - 1; j++)
+            {
+                Vec2 u = pb[j + 1] - pb[j];
+                double denom = r.Cross(u);
+                if (Math.Abs(denom) < 1e-12) continue;
+
+                Vec2 qp = pb[j] - pa[i];
+                double t = qp.Cross(u) / denom;
+                double w = qp.Cross(r) / denom;
+                if (t < -1e-9 || t > 1 + 1e-9 || w < -1e-9 || w > 1 + 1e-9) continue;
+
+                double x = ca[i] + t * r.Length;
+                double y = cb[j] + w * u.Length;
+                if (x + y < best)
+                {
+                    best = x + y;
+                    sa = x;
+                    sb = y;
+                    point = pa[i] + r * t;
+                    found = true;
+                }
+            }
+        }
+
+        return found;
     }
 }

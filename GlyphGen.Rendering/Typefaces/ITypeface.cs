@@ -20,5 +20,9 @@ public interface ITypeface
     /// whose width varies along an edge). 0 = leave straight edges as one segment.</summary>
     double SampleSpacingPx { get; }
 
+    /// <summary>Radius of a dot (a Circle rule with length 0), before per-glyph width jitter: half the
+    /// stroke width, so a dot is as thick as the line it sits among.</summary>
+    double DotRadiusPx { get; }
+
     void AppendOutline(StrokePath path, StrokeContext context, List<Vec2[]> polygons);
 }

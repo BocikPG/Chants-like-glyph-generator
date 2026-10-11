@@ -56,45 +56,97 @@ public static class StrokeOutlineBuilder
             });
         }
 
-        var cum = path.CumulativeLengths();
         var nodes = path.NodeIndices;
         var nodeSet = new HashSet<int>(nodes);
 
-        // Distance along the path from point i to the next / previous grid node.
-        double ReachForward(int i)
+        // Width of the stroke at path point k, relative to the path's own direction.
+        WidthSample WidthAt(int k)
         {
-            foreach (int idx in nodes) if (idx > i) return cum[idx] - cum[i];
-            return double.MaxValue;
+            if (k <= 0) return segStart[0];
+            if (k >= segCount) return segEnd[segCount - 1];
+            var e = segEnd[k - 1];
+            var st = segStart[k];
+            return new WidthSample((e.Left + st.Left) / 2, (e.Right + st.Right) / 2);
         }
 
-        double ReachBack(int i)
+        // The arm leaving point `from` along the path (step +1 = forward, -1 = backward), up to the next /
+        // previous grid node. It carries both edge outlines, so inner joins can follow curved edges.
+        // Widths are relative to the arm's own direction, so a backward arm swaps left and right.
+        JoinArm ArmAlong(int from, int step)
         {
-            double reach = double.MaxValue;
-            foreach (int idx in nodes) if (idx < i) reach = cum[i] - cum[idx];
-            return reach;
-        }
-
-        // The two arms of the path at point i: one running back along segment i-1, one forward along segment i.
-        // Widths are given relative to the arm's own direction, so the backward arm swaps left and right.
-        JoinArm Back(int i, int segment, double reach) =>
-            new(pts[i], -dirs[segment], new WidthSample(segEnd[segment].Right, segEnd[segment].Left), reach, strokeId);
-
-        JoinArm Forward(int i, int segment, double reach) =>
-            new(pts[i], dirs[segment], segStart[segment], reach, strokeId);
-
-        for (int i = 1; i < segCount; i++)
-        {
-            var back = Back(i, i - 1, ReachBack(i));
-            var forward = Forward(i, i, ReachForward(i));
-
-            if (sink is not null && nodeSet.Contains(i))
+            int end;
+            if (step > 0)
             {
-                sink.Arms.Add(back);
-                sink.Arms.Add(forward);
+                end = segCount;
+                foreach (int idx in nodes) if (idx > from) { end = idx; break; }
             }
             else
             {
-                JoinBuilder.BuildSmoothCorner(back, forward, joins, output);
+                end = 0;
+                foreach (int idx in nodes) if (idx < from) end = idx;
+            }
+
+            int count = Math.Abs(end - from) + 1;
+            var pos = new Vec2[count];
+            var left = new double[count];
+            var right = new double[count];
+            var tan = new Vec2[Math.Max(1, count - 1)];
+
+            for (int n = 0; n < count; n++)
+            {
+                int k = from + step * n;
+                pos[n] = pts[k];
+
+                WidthSample w = n == 0
+                    ? (step > 0 ? segStart[from] : segEnd[from - 1])
+                    : WidthAt(k);
+                left[n] = step > 0 ? w.Left : w.Right;
+                right[n] = step > 0 ? w.Right : w.Left;
+
+                if (n < count - 1)
+                    tan[n] = step > 0 ? dirs[k] : -dirs[k - 1];
+            }
+
+            var plus = new Vec2[count];
+            var minus = new Vec2[count];
+            for (int n = 0; n < count; n++)
+            {
+                Vec2 normal;
+                double scale = 1.0;
+                if (n == 0) normal = tan[0].Perp;
+                else if (n == count - 1) normal = tan[count - 2].Perp;
+                else
+                {
+                    Vec2 n0 = tan[n - 1].Perp, n1 = tan[n].Perp;
+                    var mid = n0 + n1;
+                    normal = mid.Length < 1e-9 ? n1 : mid.Normalized();
+                    scale = 1.0 / Math.Max(normal.Dot(n1), 0.5);
+                }
+
+                plus[n] = pos[n] + normal * (left[n] * scale);
+                minus[n] = pos[n] - normal * (right[n] * scale);
+            }
+
+            return new JoinArm(pts[from], tan[0], new WidthSample(left[0], right[0]), strokeId, plus, minus);
+        }
+
+        // Arms without outlines, for points along a smooth curve (they only get an outer join).
+        JoinArm PlainBack(int i, int segment) =>
+            new(pts[i], -dirs[segment], new WidthSample(segEnd[segment].Right, segEnd[segment].Left), strokeId);
+
+        JoinArm PlainForward(int i, int segment) =>
+            new(pts[i], dirs[segment], segStart[segment], strokeId);
+
+        for (int i = 1; i < segCount; i++)
+        {
+            if (sink is not null && nodeSet.Contains(i))
+            {
+                sink.Arms.Add(ArmAlong(i, -1));
+                sink.Arms.Add(ArmAlong(i, +1));
+            }
+            else
+            {
+                JoinBuilder.BuildSmoothCorner(PlainBack(i, i - 1), PlainForward(i, i), joins, output, sink);
             }
         }
 
@@ -102,19 +154,14 @@ public static class StrokeOutlineBuilder
         {
             if (segCount >= 2)
             {
-                double seamBack = nodes.Count >= 2 ? cum[^1] - cum[nodes[^2]] : double.MaxValue;
-                double seamForward = nodes.Count >= 2 ? cum[nodes[1]] : double.MaxValue;
-                var back = Back(0, segCount - 1, seamBack);
-                var forward = Forward(0, 0, seamForward);
-
                 if (sink is not null)
                 {
-                    sink.Arms.Add(back);
-                    sink.Arms.Add(forward);
+                    sink.Arms.Add(ArmAlong(segCount, -1));
+                    sink.Arms.Add(ArmAlong(0, +1));
                 }
                 else
                 {
-                    JoinBuilder.BuildSmoothCorner(back, forward, joins, output);
+                    JoinBuilder.BuildSmoothCorner(PlainBack(0, segCount - 1), PlainForward(0, 0), joins, output);
                 }
             }
         }
@@ -130,8 +177,11 @@ public static class StrokeOutlineBuilder
             EmitTip(sink, pts[^1], endCap, output);
 
             // The tips take part in junctions with other strokes.
-            sink?.Arms.Add(Forward(0, 0, ReachForward(0)));
-            sink?.Arms.Add(Back(segCount, segCount - 1, ReachBack(segCount)));
+            if (sink is not null)
+            {
+                sink.Arms.Add(ArmAlong(0, +1));
+                sink.Arms.Add(ArmAlong(segCount, -1));
+            }
         }
     }
 

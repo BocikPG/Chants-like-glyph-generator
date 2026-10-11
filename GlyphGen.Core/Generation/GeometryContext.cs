@@ -1,3 +1,4 @@
+using GlyphGen.Core.Config;
 using GlyphGen.Core.Grid;
 using GlyphGen.Core.Model;
 
@@ -33,6 +34,13 @@ public sealed class GeometryContext : IIntersectionContext
     /// shapes that forbid being crossed. Both sides must allow a crossing.</summary>
     public IEnumerable<GridEdge> BlockingEdges => AllowCrossing ? _protectedEdges : _edges;
     public IReadOnlyList<IReadOnlyList<GridPoint>> NodeGroups => _nodeGroups;
+
+    /// <summary>Combination only: the side(s) the component being placed must end up on, compared with the
+    /// middles of the components already placed. null = no rule for it.</summary>
+    public IReadOnlyList<GlyphSide>? CurrentSides { get; set; }
+
+    /// <summary>Combination only: middle (bounding-box centre) and side rule of every component placed so far.</summary>
+    public List<(double X, double Y, IReadOnlyList<GlyphSide> Sides)> PlacedSides { get; } = new();
 
     /// <summary>Grid dimensions for the glyph being generated.</summary>
     public int GridWidth { get; set; }

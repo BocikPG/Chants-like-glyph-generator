@@ -63,7 +63,7 @@ internal static class ConfigValidator
 
         ValidateShapes(l, c);
 
-        ValidateCurve(l.Curve, c);
+        ValidateCurve(l, c);
         ValidateCombinationSettings(l.Combination, c);
 
         if (!double.IsFinite(l.Quality.MaxSimilarity) || l.Quality.MaxSimilarity <= 0)
@@ -127,7 +127,10 @@ internal static class ConfigValidator
                 c.Add(where, "has no components.");
 
             if (recipe.Arrangement is not null)
+            {
                 ValidateArrangement(c, where + ".arrangement", recipe.Arrangement, forShape: false);
+                ValidatePlacements(c, where + ".arrangement", recipe.Arrangement.Placements, known, components);
+            }
 
             foreach (var component in components)
             {
@@ -153,6 +156,8 @@ internal static class ConfigValidator
                 }
             }
         }
+
+        ValidatePlacements(c, "combination.arrangement", l.Combination.Arrangement.Placements, known, null);
     }
 
     private static void ValidateCombinationSettings(CombinationConfig combination, Ctx c)
@@ -197,9 +202,28 @@ internal static class ConfigValidator
             string where = $"{path}[{i}]";
 
             Enum(c, where + ".direction", rule.Direction);
-            if (rule.MinLength < 1) c.Add(where, $"minLength must be at least 1 (got {rule.MinLength}).");
+            Enum(c, where + ".anglePreset", rule.AnglePreset);
+
+            bool circle = rule.Direction == ConnectionDirection.Circle;
+            int lowest = circle ? 0 : 1;
+            if (rule.MinLength < lowest)
+                c.Add(where, circle
+                    ? $"minLength must be at least 0 (got {rule.MinLength}); 0 is a dot."
+                    : $"minLength must be at least 1 (got {rule.MinLength}).");
             if (rule.MaxLength < rule.MinLength) c.Add(where, $"maxLength ({rule.MaxLength}) is smaller than minLength ({rule.MinLength}).");
             if (Number(c, where + ".weight", rule.Weight, 0, double.MaxValue)) total += rule.Weight;
+
+            Number(c, where + ".minAngle", rule.MinAngle, 0, 180);
+            Number(c, where + ".maxAngle", rule.MaxAngle, 0, 180);
+            if (rule.MaxAngle < rule.MinAngle) c.Add(where, $"maxAngle ({rule.MaxAngle}) is smaller than minAngle ({rule.MinAngle}).");
+            if (rule.AnglePreset != AnglePreset.None && (rule.MinAngle > 0 || rule.MaxAngle < 180))
+                c.Add(where + ".anglePreset", "replaces minAngle/maxAngle - set one or the other, not both.");
+            if (rule.Direction == ConnectionDirection.Angle && !rule.LimitsAngle)
+                c.Add(where, "direction Angle needs an anglePreset or a minAngle/maxAngle narrower than 0..180 (otherwise use Any).");
+            if (circle && (rule.LimitsAngle))
+                c.Add(where, "angle limits do not apply to a Circle rule.");
+            Number(c, where + ".backToStartChance", rule.BackToStartChance, 0, 100);
+            ValidateEdgeCurve(c, where + ".curve", rule.Curve);
         }
 
         if (total <= 0) c.Add(path, "every rule has weight 0, so none could ever be chosen.");
@@ -250,7 +274,6 @@ internal static class ConfigValidator
                     IntRange(c, chain + ".length", shape.Chain.Length, 2, "a stroke needs at least 2 nodes");
                     ValidateRules(c, chain + ".connectionRules", shape.Chain.ConnectionRules, required: shape.Count is null || shape.Count.Max > 0);
                     Enum(c, chain + ".connectionWeighting", shape.Chain.ConnectionWeighting);
-                    Number(c, chain + ".closedLoopWeight", shape.Chain.ClosedLoopWeight, 0, double.MaxValue);
                     for (int r = 0; r < shape.Chain.SelfSpacing.Count; r++)
                     {
                         var rule = shape.Chain.SelfSpacing[r];
@@ -262,6 +285,83 @@ internal static class ConfigValidator
 
             ValidatePlacement(l, c, where + ".placement", shape.Placement, rotationApplies: shape.Kind == ShapeKind.Literal, shape.Arrangement);
             ValidateArrangement(c, where + ".arrangement", shape.Arrangement, forShape: true);
+        }
+    }
+
+    /// <summary>Placement rules: the glyph must exist (and, in a recipe's own arrangement, be one of its
+    /// components); a Prefer rule needs one or two non-cancelling sides; a Fixed rule takes an offset only.</summary>
+    private static void ValidatePlacements(
+        Ctx c, string path, List<ComponentPlacementRule> rules, ISet<string> known, IReadOnlyList<string>? recipeComponents)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < rules.Count; i++)
+        {
+            var rule = rules[i];
+            string where = $"{path}.placements[{i}]";
+            if (rule is null) { c.Add(where, "must not be null."); continue; }
+
+            if (string.IsNullOrWhiteSpace(rule.Glyph)) c.Add(where + ".glyph", "must not be empty.");
+            else if (!known.Contains(rule.Glyph)) c.Add(where + ".glyph", $"'{rule.Glyph}' is not listed in glyphs or baseGlyphs.");
+            else if (recipeComponents is not null && !recipeComponents.Contains(rule.Glyph))
+                c.Add(where + ".glyph", $"'{rule.Glyph}' is not a component of this recipe, so the rule would never apply.");
+            else if (!seen.Add(rule.Glyph)) c.Add(where + ".glyph", $"'{rule.Glyph}' has more than one rule.");
+
+            Enum(c, where + ".mode", rule.Mode);
+
+            switch (rule.Mode)
+            {
+                case ComponentPlacementMode.Prefer:
+                    if (rule.Offset is not null) c.Add(where + ".offset", "only applies to Fixed placements.");
+                    if (rule.Pick is not null) c.Add(where + ".pick", "only applies to SetRandom placements.");
+                    if (rule.Scope is not null) c.Add(where + ".scope", "only applies to SetRandom placements.");
+                    if (rule.Sides.Count == 0) c.Add(where + ".sides", "a Prefer rule needs at least one side (Left, Right, Top or Bottom).");
+                    ValidateSides(c, where + ".sides", rule.Sides);
+                    Number(c, where + ".weight", rule.Weight, 0, double.MaxValue);
+                    break;
+
+                case ComponentPlacementMode.SetRandom:
+                    if (rule.Offset is not null) c.Add(where + ".offset", "only applies to Fixed placements.");
+                    if (rule.Sides.Count > 0) c.Add(where + ".sides", "only applies to Prefer placements; SetRandom draws its own (see pick).");
+                    if (rule.Pick is { } pick) Enum(c, where + ".pick", pick);
+                    if (rule.Scope is { } scope) Enum(c, where + ".scope", scope);
+                    Number(c, where + ".weight", rule.Weight, 0, double.MaxValue);
+                    break;
+
+                default: // Fixed
+                    if (rule.Sides.Count > 0) c.Add(where + ".sides", "only applies to Prefer placements; a Fixed one is placed by its offset.");
+                    if (rule.Pick is not null) c.Add(where + ".pick", "only applies to SetRandom placements.");
+                    if (rule.Scope is not null) c.Add(where + ".scope", "only applies to SetRandom placements.");
+                    break;
+            }
+        }
+    }
+
+    private static void ValidateSides(Ctx c, string path, List<GlyphSide> sides)
+    {
+        if (sides.Count > 2) c.Add(path, "takes at most two sides (one horizontal and one vertical).");
+        if (sides.Distinct().Count() != sides.Count) c.Add(path, "lists a side twice.");
+        if (sides.Contains(GlyphSide.Left) && sides.Contains(GlyphSide.Right))
+            c.Add(path, "Left and Right cancel each other out.");
+        if (sides.Contains(GlyphSide.Top) && sides.Contains(GlyphSide.Bottom))
+            c.Add(path, "Top and Bottom cancel each other out.");
+        foreach (var side in sides) Enum(c, path, side);
+    }
+
+    private static void ValidateSidePull(Ctx c, string path, SidePull pull)
+    {
+        Enum(c, path + ".mode", pull.Mode);
+        Number(c, path + ".weight", pull.Weight, 0, double.MaxValue);
+
+        if (pull.Mode == SidePullMode.Prefer)
+        {
+            if (pull.Pick is not null) c.Add(path + ".pick", "only applies to SetRandom.");
+            if (pull.Sides.Count == 0) c.Add(path + ".sides", "a Prefer pull needs at least one side (Left, Right, Top or Bottom).");
+            ValidateSides(c, path + ".sides", pull.Sides);
+        }
+        else
+        {
+            if (pull.Sides.Count > 0) c.Add(path + ".sides", "only applies to Prefer; SetRandom draws its own (see pick).");
+            if (pull.Pick is { } pick) Enum(c, path + ".pick", pick);
         }
     }
 
@@ -301,6 +401,13 @@ internal static class ConfigValidator
     private static void ValidatePlacement(LanguageDefinition l, Ctx c, string path, PlacementConfig p, bool rotationApplies, ArrangementRules arrangement)
     {
         Enum(c, path + ".mode", p.Mode);
+
+        if (p.Side is not null)
+        {
+            if (p.Mode != PlacementMode.RandomValid)
+                c.Add(path + ".side", "only applies with mode RandomValid: Fixed and CenterAnchor always use the same origin, so there is nothing to pull.");
+            ValidateSidePull(c, path + ".side", p.Side);
+        }
 
         if (p.Rotations is not null)
         {
@@ -345,38 +452,48 @@ internal static class ConfigValidator
 
     // ---- curves ------------------------------------------------------------------------------
 
-    private static void ValidateCurve(CurveConfig curve, Ctx c)
+    private static void ValidateCurve(LanguageDefinition l, Ctx c)
     {
-        Enum(c, "curve.mode", curve.Mode);
+        var curve = l.Curve;
         Enum(c, "curve.contextMode", curve.ContextMode);
+        ValidateEdgeCurve(c, "curve.edge", curve.Edge);
 
-        Percent(c, "curve.straightLineBias", curve.StraightLineBias);
-        FloatRange(c, "curve.explicitJitterDegrees", curve.ExplicitJitterDegrees.Min, curve.ExplicitJitterDegrees.Max, 0, 180);
-
-        if (curve.Tension.Options.Count == 0)
+        if (curve.RecheckProximityInCombined && !curve.ProximityGuard.Enabled)
+            c.Add("curve.recheckProximityInCombined", "needs curve.proximityGuard.enabled, otherwise there is no guard to re-run.");
+        if (curve.ForceAllEdgesCurved)
         {
-            FloatRange(c, "curve.tension.range", curve.Tension.Range.Min, curve.Tension.Range.Max, 0, 0.5);
+            bool someStraight = curve.Edge.ChanceToBeCurved < 100
+                || l.Shapes.Any(s => s.Chain.ConnectionRules.Any(r => r.Curve.ChanceToBeCurved < 100));
+            if (someStraight || curve.ProximityGuard.Enabled)
+                c.Add("curve.forceAllEdgesCurved", "overrides every chanceToBeCurved and proximityGuard, which would be silently ignored - set the chances to 100 and disable the guard (or turn this off).");
+        }
+
+        Number(c, "curve.proximityGuard.minEdgeLength", curve.ProximityGuard.MinEdgeLength, 0, double.MaxValue);
+        Number(c, "curve.proximityGuard.minDistanceToOtherNodes", curve.ProximityGuard.MinDistanceToOtherNodes, 0, double.MaxValue);
+    }
+
+    private static void ValidateEdgeCurve(Ctx c, string path, EdgeCurveConfig edge)
+    {
+        Number(c, path + ".chanceToBeCurved", edge.ChanceToBeCurved, 0, 100);
+        Enum(c, path + ".mode", edge.Mode);
+        FloatRange(c, path + ".explicitJitterDegrees", edge.ExplicitJitterDegrees.Min, edge.ExplicitJitterDegrees.Max, 0, 180);
+
+        if (edge.Tension.Options.Count == 0)
+        {
+            FloatRange(c, path + ".tension.range", edge.Tension.Range.Min, edge.Tension.Range.Max, 0, 0.5);
         }
         else
         {
             double total = 0;
-            for (int i = 0; i < curve.Tension.Options.Count; i++)
+            for (int i = 0; i < edge.Tension.Options.Count; i++)
             {
-                var option = curve.Tension.Options[i];
-                string where = $"curve.tension.options[{i}]";
+                var option = edge.Tension.Options[i];
+                string where = $"{path}.tension.options[{i}]";
                 FloatRange(c, where, option.Min, option.Max, 0, 0.5);
                 if (Number(c, where + ".weight", option.Weight, 0, double.MaxValue)) total += option.Weight;
             }
-            if (total <= 0) c.Add("curve.tension.options", "every option has weight 0, so none could ever be chosen.");
+            if (total <= 0) c.Add(path + ".tension.options", "every option has weight 0, so none could ever be chosen.");
         }
-
-        if (curve.RecheckProximityInCombined && !curve.ProximityGuard.Enabled)
-            c.Add("curve.recheckProximityInCombined", "needs curve.proximityGuard.enabled, otherwise there is no guard to re-run.");
-        if (curve.ForceAllEdgesCurved && (curve.StraightLineBias.Max > 0 || curve.ProximityGuard.Enabled))
-            c.Add("curve.forceAllEdgesCurved", "overrides straightLineBias and proximityGuard, which would be silently ignored - set straightLineBias to 0 and disable the guard (or turn this off).");
-
-        Number(c, "curve.proximityGuard.minEdgeLength", curve.ProximityGuard.MinEdgeLength, 0, double.MaxValue);
-        Number(c, "curve.proximityGuard.minDistanceToOtherNodes", curve.ProximityGuard.MinDistanceToOtherNodes, 0, double.MaxValue);
     }
 
     // ---- rendering ---------------------------------------------------------------------------
@@ -440,7 +557,8 @@ internal static class ConfigValidator
         ValidateJoinContext(c, path + ".junction", joins.Junction);
 
         var junction = joins.Junction;
-        Number(c, path + ".junction.straightenDegrees", junction.StraightenDegrees, 0, 90);
+        Number(c, path + ".junction.straightenInnerDegrees", junction.StraightenInnerDegrees, 0, 90);
+        Number(c, path + ".junction.straightenOuterDegrees", junction.StraightenOuterDegrees, 0, 90);
         Number(c, path + ".junction.straightenLength", junction.StraightenLength, 0, double.MaxValue);
     }
 

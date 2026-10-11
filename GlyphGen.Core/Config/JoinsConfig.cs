@@ -42,14 +42,20 @@ public sealed class JunctionJoinConfig : JoinContextConfig
     /// node, so pair this with Miter, Bevel or Round.</summary>
     public bool TrimCaps { get; set; } = false;
 
-    /// <summary>0 = off. Otherwise, where two strokes meet at an angle within this many degrees of
-    /// straight (180) and the notch between them has no other stroke in it, that notch is filled with
-    /// a long chamfer (see straightenLength) so the edge reads as one straight line instead of a kink.
-    /// Other strokes may leave the node elsewhere. It replaces the inner join for those notches and does
-    /// nothing on the convex outside of the bend (that would mean cutting ink away).</summary>
-    public double StraightenDegrees { get; set; } = 0.0;
+    /// <summary>0 = off. Where two strokes meet within this many degrees of straight (180) and the NOTCH between
+    /// them (the side that bends inwards, under 180 degrees) has no other stroke in it, that notch is filled
+    /// with a long chamfer (see straightenLength) so the edge reads as one straight line instead of a kink.
+    /// Other strokes may leave the node on the other side. Replaces the inner join for those notches.</summary>
+    public double StraightenInnerDegrees { get; set; } = 0.0;
 
-    /// <summary>Length of the straightening chamfer along each stroke's edge, in half-widths. Limited
+    /// <summary>0 = off. The same for the OUTSIDE of the bend (the side that bends outwards, over 180 degrees),
+    /// e.g. the top of a T whose bar is slightly bent that way. Ink cannot be removed, so instead the edges are
+    /// extended along one straight line through the corner and the thin wedges between that line and the
+    /// real edges are filled; each wedge ends in a small step whose height grows with the angle and with
+    /// straightenLength. Replaces the outer join for those gaps.</summary>
+    public double StraightenOuterDegrees { get; set; } = 0.0;
+
+    /// <summary>Length of the straightening fill along each stroke's edge, in half-widths. Limited
     /// automatically so it never reaches past the neighbouring node.</summary>
     public double StraightenLength { get; set; } = 4.0;
 }

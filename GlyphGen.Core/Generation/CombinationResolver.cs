@@ -24,7 +24,12 @@ namespace GlyphGen.Core.Generation;
 /// glyph generator uses for sub-symbols) against every component already placed in this
 /// composite, on top of the no-crossing check.
 ///
-/// Optionally (Combination.Bias) the search is steered instead of taking the first legal
+/// A component can also have a placement rule (Arrangement.Placements): Fixed places it at exactly one
+/// position; a side rule (Prefer / SetRandom) is a HARD requirement that its middle ends up on that side of the
+/// other components' middles, and ranks its legal placements by nearness to that side like a bias does. Ruled
+/// components are placed first.
+///
+/// Optionally (Arrangement.Bias) the search is steered instead of taking the first legal
 /// placement: every legal candidate is ranked by how well the resulting composite's bounding box
 /// matches the bias (tallest, narrowest, squarest, ...) and the best one that passes ALL the
 /// normal checks wins. The bias is only a ranking - it never relaxes a constraint.
@@ -40,8 +45,9 @@ public sealed class CombinationResolver : ICombinationResolver
         DeterministicRandom rng,
         GlyphUsageTracker usageTracker,
         Func<string, int, Glyph> regenerateComponent,
-        ArrangementRules arrangement,
-        int variation = 0)
+        CombinationArrangementRules arrangement,
+        int variation = 0,
+        ulong languageSeed = 0)
     {
         var working = new Dictionary<string, Glyph>();
         foreach (var name in componentNames)
@@ -55,6 +61,23 @@ public sealed class CombinationResolver : ICombinationResolver
             working[name] = g;
         }
 
+        // Side preferences: listed sides, or SetRandom's draw - made once per composite (from a derived
+        // stream, so nothing else's randomness moves) and used by every attempt. A glyph listed twice in a
+        // recipe gets the same sides both times.
+        var sides = new Dictionary<string, (List<GlyphSide> Sides, double Weight)>();
+        foreach (var rule in arrangement.Placements)
+        {
+            if (rule.Mode == ComponentPlacementMode.Fixed || !componentNames.Contains(rule.Glyph)) continue;
+            bool random = rule.Mode == ComponentPlacementMode.SetRandom;
+            // SetRandom: by default one draw per language and glyph (the same side in every composite, and
+            // not moved by quality retries, which reseed the composite); Scope Composite draws per composite.
+            var sideRng = random && languageSeed != 0 && (rule.Scope ?? SetRandomScope.Language) == SetRandomScope.Language
+                ? new DeterministicRandom(SplitMix64.DeriveSeed(languageSeed, $"setrandom-side-{rule.Glyph}"))
+                : rng.Derive($"side-{rule.Glyph}");
+            var chosen = SideScoring.Choose(random, rule.Sides, rule.Pick, sideRng);
+            if (chosen.Count > 0) sides[rule.Glyph] = (chosen, rule.Weight);
+        }
+
         for (int attempt = 0; attempt < config.MaxRetriesPerRecipe; attempt++)
         {
             var attemptRng = rng.Derive($"combine-attempt-{attempt}");
@@ -63,12 +86,25 @@ public sealed class CombinationResolver : ICombinationResolver
             // composition is deliberate controlled stacking, not free intersection. (A crossing
             // needs BOTH components to allow it; here they all share this arrangement.)
             var geometry = new GeometryContext(allowCrossing: arrangement.AllowCrossing);
-            var placedComponents = new List<PlacedComponent>();
+            var placedByIndex = new PlacedComponent?[componentNames.Count];
             bool allPlaced = true;
 
-            foreach (var name in componentNames)
+            // Components with a placement rule go first (Fixed ones before side rules), so they get the
+            // pick of the grid; the rest are placed around them. Stable, so recipe order breaks ties, and
+            // the finished composite lists its components in recipe order again.
+            int Priority(int i)
             {
-                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, arrangement, variation);
+                var rule = arrangement.Placements.FirstOrDefault(r => r.Glyph == componentNames[i]);
+                if (rule is { Mode: ComponentPlacementMode.Fixed }) return 0;
+                return sides.ContainsKey(componentNames[i]) ? 1 : 2;
+            }
+
+            foreach (int index in Enumerable.Range(0, componentNames.Count).OrderBy(Priority))
+            {
+                var name = componentNames[index];
+                sides.TryGetValue(name, out var pull);
+                geometry.CurrentSides = pull.Sides;
+                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, arrangement, pull.Sides, pull.Weight, variation);
                 if (placed is null)
                 {
                     allPlaced = false;
@@ -76,8 +112,12 @@ public sealed class CombinationResolver : ICombinationResolver
                 }
 
                 geometry.CommitAsOneShape(placed.TransformedChains, arrangement.AllowCrossing);
-                placedComponents.Add(placed);
+                var (cx, cy) = CenterOf(placed.TransformedChains);
+                geometry.PlacedSides.Add((cx, cy, (IReadOnlyList<GlyphSide>)(pull.Sides ?? new List<GlyphSide>())));
+                placedByIndex[index] = placed;
             }
+
+            var placedComponents = placedByIndex.Where(p => p is not null).Select(p => p!).ToList();
 
             if (allPlaced)
             {
@@ -123,13 +163,24 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        ArrangementRules arrangement,
+        CombinationArrangementRules arrangement,
+        List<GlyphSide>? preferSides,
+        double sideWeight,
         int variation)
     {
         var sourceChains = GlyphGeometryUtils.GetAllChains(source).ToList();
 
-        if (arrangement.Bias is { IsActive: true })
-            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, arrangement, variation);
+        // A placement rule for this component: Fixed has exactly one candidate (the component moved by its
+        // offset, nothing else); Prefer ranks the legal placements by their nearness to the chosen side(s).
+        var rule = arrangement.Placements.FirstOrDefault(r => r.Glyph == sourceName);
+        if (rule is { Mode: ComponentPlacementMode.Fixed })
+        {
+            return TryBuildPlacement(
+                sourceChains, 1, 1, 0, rule.Offset ?? new GridPoint(0, 0), sourceName, grid, geometry, arrangement);
+        }
+
+        if (arrangement.Bias is { IsActive: true } || preferSides is { Count: > 0 })
+            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, arrangement, preferSides, sideWeight, variation);
 
         // Phase 1: identity scale/rotation, exhaustive-but-shuffled search across every
         // position the shape could legally occupy.
@@ -212,12 +263,13 @@ public sealed class CombinationResolver : ICombinationResolver
         string sourceName,
         LatticeGrid grid,
         GeometryContext geometry,
-        ArrangementRules arrangement)
+        CombinationArrangementRules arrangement)
     {
         var transformedChains = TransformChains(sourceChains, numerator, denominator, rotationDegrees, translation);
 
         if (!AllNodesInBounds(transformedChains, grid)) return null; // safety net; range math should already guarantee this
         if (!FitsGeometry(transformedChains, geometry)) return null;
+        if (!SatisfiesSides(transformedChains, geometry)) return null;
         if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, arrangement.Spacing)) return null;
 
         var placed = new PlacedComponent
@@ -230,6 +282,44 @@ public sealed class CombinationResolver : ICombinationResolver
         };
         placed.TransformedChains.AddRange(transformedChains);
         return placed;
+    }
+
+    /// <summary>Middle of the bounding box of a component's nodes.</summary>
+    private static (double X, double Y) CenterOf(IEnumerable<SubSymbolChain> chains)
+    {
+        var nodes = chains.SelectMany(c => c.Nodes).ToList();
+        if (nodes.Count == 0) return (0, 0);
+        return ((nodes.Min(n => n.X) + nodes.Max(n => n.X)) / 2.0, (nodes.Min(n => n.Y) + nodes.Max(n => n.Y)) / 2.0);
+    }
+
+    private static bool Beyond(GlyphSide side, double x, double y, double otherX, double otherY) => side switch
+    {
+        GlyphSide.Left => x < otherX,
+        GlyphSide.Right => x > otherX,
+        GlyphSide.Top => y < otherY,
+        _ => y > otherY,
+    };
+
+    /// <summary>The hard side rule: a component with a side rule must have its middle strictly on that side of
+    /// the middle of every other component - the ones already placed (when it is placed) and the ones placed
+    /// later (checked when they are). Two components asking for the same side: the one placed first is the more
+    /// extreme. Horizontal and vertical are compared separately, so a corner means both.</summary>
+    private static bool SatisfiesSides(List<SubSymbolChain> chains, GeometryContext geometry)
+    {
+        var mine = geometry.CurrentSides ?? Array.Empty<GlyphSide>();
+        if (mine.Count == 0 && geometry.PlacedSides.All(p => p.Sides.Count == 0)) return true;
+
+        var (cx, cy) = CenterOf(chains);
+        foreach (var (qx, qy, qSides) in geometry.PlacedSides)
+        {
+            foreach (var side in mine)
+                if (!qSides.Contains(side) && !Beyond(side, cx, cy, qx, qy)) return false;
+
+            foreach (var side in qSides)
+                if (!Beyond(side, qx, qy, cx, cy)) return false;
+        }
+
+        return true;
     }
 
     private readonly record struct BiasCandidate(
@@ -249,7 +339,9 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        ArrangementRules arrangement,
+        CombinationArrangementRules arrangement,
+        List<GlyphSide>? preferSides,
+        double sideWeight,
         int variation)
     {
         var bias = arrangement.Bias;
@@ -276,13 +368,23 @@ public sealed class CombinationResolver : ICombinationResolver
             foreach (var t in EnumerateShuffledTranslations(shape, grid, comboRng, preferIdentity: variation == 0))
             {
                 int minX = sMinX + t.X, maxX = sMaxX + t.X, minY = sMinY + t.Y, maxY = sMaxY + t.Y;
-                if (existing is { } e)
+                double score = 0.0;
+
+                if (preferSides is { Count: > 0 })
+                    score += SideScoring.Score(preferSides, sideWeight, (minX + maxX) / 2.0, (minY + maxY) / 2.0, grid);
+
+                if (bias.IsActive)
                 {
-                    minX = Math.Min(minX, e.MinX); maxX = Math.Max(maxX, e.MaxX);
-                    minY = Math.Min(minY, e.MinY); maxY = Math.Max(maxY, e.MaxY);
+                    if (existing is { } e)
+                    {
+                        minX = Math.Min(minX, e.MinX); maxX = Math.Max(maxX, e.MaxX);
+                        minY = Math.Min(minY, e.MinY); maxY = Math.Max(maxY, e.MaxY);
+                    }
+
+                    score += BiasScoring.Score(bias, maxX - minX, maxY - minY, grid);
                 }
 
-                list.Add(new BiasCandidate(num, den, rot, t, BiasScoring.Score(bias, maxX - minX, maxY - minY, grid)));
+                list.Add(new BiasCandidate(num, den, rot, t, score));
             }
 
             return list;
@@ -306,7 +408,7 @@ public sealed class CombinationResolver : ICombinationResolver
             ? OrderedAlternativeCombos(config, rng)
             : new List<(int Numerator, int Denominator, int Rotation)>();
 
-        if (bias.IncludeScaleAndRotation)
+        if (bias.IsActive && bias.IncludeScaleAndRotation)
         {
             var all = new List<BiasCandidate>(identity);
             foreach (var (num, den, rot) in alternatives)
@@ -344,7 +446,7 @@ public sealed class CombinationResolver : ICombinationResolver
         LatticeGrid grid,
         DeterministicRandom rng,
         GeometryContext geometry,
-        ArrangementRules arrangement,
+        CombinationArrangementRules arrangement,
         int variation)
     {
         var origin = new GridPoint(0, 0);
@@ -452,7 +554,7 @@ public sealed class CombinationResolver : ICombinationResolver
             var transformed = new SubSymbolChain { IsClosedLoop = chain.IsClosedLoop, MotifId = chain.MotifId };
             transformed.Nodes.AddRange(chain.Nodes.Select(Transform));
             foreach (var edge in chain.Edges)
-                transformed.Edges.Add(new GridEdge(Transform(edge.From), Transform(edge.To)));
+                transformed.Edges.Add(edge.WithPoints(Transform(edge.From), Transform(edge.To)));
 
             result.Add(transformed);
         }
@@ -461,7 +563,15 @@ public sealed class CombinationResolver : ICombinationResolver
     }
 
     private static bool AllNodesInBounds(List<SubSymbolChain> chains, LatticeGrid grid) =>
-        chains.All(c => c.Nodes.All(grid.Contains));
+        chains.All(c => c.Nodes.All(grid.Contains) && c.Edges.All(e => EdgeInGrid(e, grid)));
+
+    /// <summary>A circle's outline can bulge past its two nodes, so check its whole extent.</summary>
+    private static bool EdgeInGrid(GridEdge edge, LatticeGrid grid)
+    {
+        if (!edge.IsCircle) return true;
+        var (minX, minY, maxX, maxY) = edge.Extent();
+        return minX >= -1e-9 && minY >= -1e-9 && maxX <= grid.Width - 1 + 1e-9 && maxY <= grid.Height - 1 + 1e-9;
+    }
 
     private static bool FitsGeometry(List<SubSymbolChain> chains, GeometryContext geometry)
     {

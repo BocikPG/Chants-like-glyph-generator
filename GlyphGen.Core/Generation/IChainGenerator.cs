@@ -13,7 +13,6 @@ public sealed class ChainGenerationRequest
     public bool AllowNodeRevisit { get; init; }
     public bool AllowEdgeRevisit { get; init; }
     public bool AllowClosedLoop { get; init; }
-    public double ClosedLoopWeight { get; init; }
     public ConnectionWeighting ConnectionWeighting { get; init; } = ConnectionWeighting.PerMove;
     /// <summary>Node-to-node spacing rules within this chain; a new node must satisfy all.</summary>
     public IReadOnlyList<SelfSpacingRule> SelfSpacingRules { get; init; } = Array.Empty<SelfSpacingRule>();

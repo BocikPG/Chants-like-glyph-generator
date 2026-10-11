@@ -78,7 +78,7 @@ public static class RootConfigLoader
                     merged[key] = System.Text.Json.Nodes.JsonNode.Parse(property.Value.GetRawText());
                 }
 
-                recipe.EffectiveArrangement = merged.Deserialize<ArrangementRules>(GlyphGenJsonOptions.Default);
+                recipe.EffectiveArrangement = merged.Deserialize<CombinationArrangementRules>(GlyphGenJsonOptions.Default);
             }
         }
     }

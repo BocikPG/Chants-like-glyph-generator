@@ -30,8 +30,8 @@ public sealed class CombinationConfig
 
     /// <summary>How a composite's components relate to each other: crossing (default: none -
     /// overlay composition is controlled stacking, they may only touch at shared nodes), spacing
-    /// and bias. A recipe can override parts of it with its own "arrangement". Each placed
+    /// bias and per-component placement rules (placements). A recipe can override parts of it with its own "arrangement". Each placed
     /// component counts as one shape. Components search every translation exhaustively, so
     /// arrangement.candidates does not apply here.</summary>
-    public ArrangementRules Arrangement { get; set; } = new();
+    public CombinationArrangementRules Arrangement { get; set; } = new();
 }

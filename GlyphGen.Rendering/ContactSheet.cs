@@ -4,8 +4,10 @@ namespace GlyphGen.Rendering;
 
 /// <summary>
 /// One PNG showing a whole language's glyphs in a grid (in config order), handy for eyeballing
-/// similarity and consistency. Cells keep the glyphs' own pixel size (no rescaling). No labels,
-/// to avoid depending on font availability; the order matches the language's glyph list.
+/// similarity and consistency. The images sit edge to edge: no margins, no gaps, no frames, and they keep
+/// their own pixel size (no rescaling). The sheet uses render.background exactly as configured, transparent
+/// or translucent included. No labels, to avoid depending on font availability; the order matches the
+/// language's glyph list.
 /// </summary>
 public static class ContactSheet
 {
@@ -20,33 +22,23 @@ public static class ContactSheet
             int cellH = bitmaps.Max(b => b.Height);
             int cols = Math.Clamp(columns, 1, glyphs.Count);
             int rows = (glyphs.Count + cols - 1) / cols;
-            const int gap = 8;
+            int width = cols * cellW;
+            int height = rows * cellH;
 
-            int width = cols * cellW + (cols + 1) * gap;
-            int height = rows * cellH + (rows + 1) * gap;
-
-            SKColor background = SKColor.TryParse(backgroundHex, out var parsed) && parsed.Alpha == 255
-                ? parsed
-                : SKColors.White; // transparent/translucent backgrounds get white so glyphs stay visible
+            // The configured background as it is (transparent included); an unparsable value falls back to
+            // transparent, like the glyph images themselves.
+            SKColor background = SKColor.TryParse(backgroundHex, out var parsed) ? parsed : SKColors.Transparent;
 
             using var sheet = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
             using var canvas = new SKCanvas(sheet);
             canvas.Clear(background);
 
-            using var frame = new SKPaint
-            {
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = 1,
-                Color = SKColors.LightGray,
-            };
+            // Copy each glyph as it is. Blending would stack a translucent glyph background on the sheet's
+            // own and change the colour.
+            using var copy = new SKPaint { BlendMode = SKBlendMode.Src };
 
             for (int i = 0; i < bitmaps.Count; i++)
-            {
-                int x = gap + (i % cols) * (cellW + gap);
-                int y = gap + (i / cols) * (cellH + gap);
-                canvas.DrawBitmap(bitmaps[i], x, y);
-                canvas.DrawRect(x, y, cellW, cellH, frame);
-            }
+                canvas.DrawBitmap(bitmaps[i], (i % cols) * cellW, (i / cols) * cellH, copy);
 
             using var image = SKImage.FromBitmap(sheet);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);

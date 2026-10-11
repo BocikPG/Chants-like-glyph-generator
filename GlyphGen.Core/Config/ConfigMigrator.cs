@@ -45,6 +45,76 @@ public static class ConfigMigrator
 
     private static bool MigrateLanguage(JsonObject language)
     {
+        bool changed = MigrateLayout(language);
+        changed |= MoveCurveIntoRules(language);
+        return changed;
+    }
+
+    /// <summary>
+    /// The language-wide curve options (mode, straightLineBias, tension, explicitJitterDegrees) and
+    /// chain.closedLoopWeight now live on each connection rule. Every rule without its own 'curve'
+    /// block gets a copy of the old language settings (chanceToBeCurved = 100 - the middle of the old
+    /// straightLineBias), curve.edge gets them too for Literal shapes, and closedLoopWeight w becomes
+    /// backToStartChance = 100 * w / (w + rule weight) on each rule (an approximation: the old weight
+    /// competed with the rules' moves, the new chance is rolled once the rule is picked).
+    /// </summary>
+    private static bool MoveCurveIntoRules(JsonObject language)
+    {
+        bool changed = false;
+        var shapes = Get(language, "shapes") as JsonArray;
+
+        if (Get(language, "curve") is JsonObject curve)
+        {
+            var edge = new JsonObject();
+            foreach (var key in new[] { "mode", "tension", "explicitJitterDegrees" })
+                if (Get(curve, key) is { } v) { edge[key] = v.DeepClone(); Remove(curve, key); }
+
+            if (Get(curve, "straightLineBias") is JsonObject bias)
+            {
+                double lo = Get(bias, "min") is JsonValue a && a.TryGetValue(out double x) ? x : 0;
+                double hi = Get(bias, "max") is JsonValue b && b.TryGetValue(out double y) ? y : 0;
+                edge["chanceToBeCurved"] = Math.Round(100 - (lo + hi) / 2, 2);
+                Remove(curve, "straightLineBias");
+            }
+
+            if (edge.Count > 0)
+            {
+                changed = true;
+                if (Get(curve, "edge") is null) curve["edge"] = edge.DeepClone();
+
+                if (shapes is not null)
+                    foreach (var shape in shapes)
+                        if (Get(shape as JsonObject, "chain") is JsonObject chain && Get(chain, "connectionRules") is JsonArray rules)
+                            foreach (var rule in rules)
+                                if (rule is JsonObject r && Get(r, "curve") is null)
+                                    r["curve"] = edge.DeepClone();
+            }
+        }
+
+        if (shapes is not null)
+        {
+            foreach (var shape in shapes)
+            {
+                if (Get(shape as JsonObject, "chain") is not JsonObject chain || Find(chain, "closedLoopWeight") is not { } kv) continue;
+                double w = kv.Value is JsonValue wv && wv.TryGetValue(out double weight) ? weight : 0;
+                chain.Remove(kv.Key);
+                changed = true;
+                if (w <= 0 || Get(chain, "connectionRules") is not JsonArray rules) continue;
+
+                foreach (var rule in rules)
+                {
+                    if (rule is not JsonObject r || Get(r, "backToStartChance") is not null) continue;
+                    double ruleWeight = Get(r, "weight") is JsonValue rw && rw.TryGetValue(out double x) ? x : 1.0;
+                    r["backToStartChance"] = Math.Round(100 * w / (w + ruleWeight), 1);
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    private static bool MigrateLayout(JsonObject language)
+    {
         var combination = Get(language, "combination") as JsonObject;
         bool legacyLanguage = LegacyLanguageKeys.Any(k => Find(language, k) is not null);
         bool legacyCombination = combination is not null

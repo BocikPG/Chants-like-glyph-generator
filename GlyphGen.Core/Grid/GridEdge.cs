@@ -1,4 +1,16 @@
+using GlyphGen.Core.Config;
+
 namespace GlyphGen.Core.Grid;
+
+public enum GridEdgeKind : byte
+{
+    /// <summary>A straight connection From -> To.</summary>
+    Line,
+
+    /// <summary>A circle whose DIAMETER runs From -> To (From == To is a dot).</summary>
+    Circle,
+}
+
 
 /// <summary>
 /// A straight connection between two lattice points, possibly spanning several units
@@ -10,11 +22,37 @@ public readonly struct GridEdge
 {
     public GridPoint From { get; }
     public GridPoint To { get; }
+    public GridEdgeKind Kind { get; }
 
-    public GridEdge(GridPoint from, GridPoint to)
+    /// <summary>How the rule that made this edge wants it bent; null = the language's curve.edge.</summary>
+    public EdgeCurveConfig? Curve { get; }
+
+    public GridEdge(GridPoint from, GridPoint to, GridEdgeKind kind = GridEdgeKind.Line, EdgeCurveConfig? curve = null)
     {
         From = from;
         To = to;
+        Kind = kind;
+        Curve = curve;
+    }
+
+    public bool IsCircle => Kind == GridEdgeKind.Circle;
+    public bool IsDot => Kind == GridEdgeKind.Circle && From == To;
+
+    /// <summary>The same edge with new end points (after a scale/rotate/translate), keeping kind and curve.</summary>
+    public GridEdge WithPoints(GridPoint from, GridPoint to) => new(from, to, Kind, Curve);
+
+    /// <summary>Circle centre and radius (a Circle edge only).</summary>
+    public (double Cx, double Cy, double R) CircleGeometry =>
+        ((From.X + To.X) / 2.0, (From.Y + To.Y) / 2.0,
+         Math.Sqrt((double)(To.X - From.X) * (To.X - From.X) + (double)(To.Y - From.Y) * (To.Y - From.Y)) / 2.0);
+
+    /// <summary>The box the drawn edge covers: the end points for a line, the whole circle for a circle.</summary>
+    public (double MinX, double MinY, double MaxX, double MaxY) Extent()
+    {
+        if (!IsCircle)
+            return (Math.Min(From.X, To.X), Math.Min(From.Y, To.Y), Math.Max(From.X, To.X), Math.Max(From.Y, To.Y));
+        var (cx, cy, r) = CircleGeometry;
+        return (cx - r, cy - r, cx + r, cy + r);
     }
 
     /// <summary>
@@ -27,6 +65,8 @@ public readonly struct GridEdge
     /// </summary>
     public bool Intersects(GridEdge other)
     {
+        if (IsCircle || other.IsCircle) return CircleIntersects(this, other);
+
         GridPoint p1 = From, q1 = To, p2 = other.From, q2 = other.To;
 
         bool sharesEndpoint = p1 == p2 || p1 == q2 || q1 == p2 || q1 == q2;
@@ -60,6 +100,46 @@ public readonly struct GridEdge
         return CollinearOverlapLength(p1, q1, p2, q2) > 0;
     }
 
+    private const double Eps = 1e-7;
+
+    /// <summary>
+    /// Circle rules. A circle only "crosses" something when the curve itself is cut: a line with one end
+    /// strictly inside and one strictly outside, a line passing through the inside without ending in it,
+    /// or two circles whose outlines intersect at two points. Touching (at the lattice nodes the circle
+    /// passes through), lines lying wholly inside or outside it, and nested or tangent circles are fine.
+    /// A dot blocks nothing.
+    /// </summary>
+    private static bool CircleIntersects(GridEdge a, GridEdge b)
+    {
+        if (a.IsDot || b.IsDot) return false;
+        if (a.IsCircle && b.IsCircle)
+        {
+            var (x1, y1, r1) = a.CircleGeometry;
+            var (x2, y2, r2) = b.CircleGeometry;
+            double d = Math.Sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
+            if (d < Eps && Math.Abs(r1 - r2) < Eps) return true; // the same outline twice
+            return d < r1 + r2 - Eps && d > Math.Abs(r1 - r2) + Eps;
+        }
+
+        var circle = a.IsCircle ? a : b;
+        var line = a.IsCircle ? b : a;
+        var (cx, cy, r) = circle.CircleGeometry;
+
+        double d1 = Dist(line.From.X, line.From.Y, cx, cy), d2 = Dist(line.To.X, line.To.Y, cx, cy);
+        bool in1 = d1 < r - Eps, in2 = d2 < r - Eps, out1 = d1 > r + Eps, out2 = d2 > r + Eps;
+        if ((in1 && out2) || (out1 && in2)) return true;
+        if (in1 || in2) return false; // ends inside (or on) the circle: stays inside
+
+        // Neither end is inside: does the segment still pass through the inside?
+        double vx = line.To.X - line.From.X, vy = line.To.Y - line.From.Y;
+        double len2 = vx * vx + vy * vy;
+        double t = len2 < Eps ? 0 : Math.Clamp(((cx - line.From.X) * vx + (cy - line.From.Y) * vy) / len2, 0, 1);
+        return Dist(line.From.X + t * vx, line.From.Y + t * vy, cx, cy) < r - Eps;
+    }
+
+    private static double Dist(double x1, double y1, double x2, double y2) =>
+        Math.Sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
+
     /// <summary>Twice the signed area of triangle (a, b, c); its sign gives orientation and
     /// zero means collinear. Doubling avoids fractional results while keeping everything in
     /// exact integer arithmetic.</summary>
@@ -91,5 +171,5 @@ public readonly struct GridEdge
         return Math.Max(0, Math.Min(max1, max2) - Math.Max(min1, min2));
     }
 
-    public override string ToString() => $"{From} -> {To}";
+    public override string ToString() => IsCircle ? $"circle {From} .. {To}" : $"{From} -> {To}";
 }

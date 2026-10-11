@@ -25,11 +25,9 @@ public sealed class ChainRules
     /// <summary>Whether the chain may revisit edges already in it.</summary>
     public bool AllowEdgeRevisit { get; set; } = false;
 
-    /// <summary>Whether the chain may close into a loop back to its start node.</summary>
+    /// <summary>Whether the chain may close into a loop back to its start node. How likely that is
+    /// is set per rule (connectionRules[].backToStartChance).</summary>
     public bool AllowClosedLoop { get; set; } = false;
-
-    /// <summary>Weight of the loop-closing move, relative to the connection rules' weights.</summary>
-    public double ClosedLoopWeight { get; set; } = 0.0;
 
     /// <summary>Node-to-node spacing rules inside this chain, all enforced together as each node
     /// is added, on top of the ordinary intersection check. Empty = none.</summary>

@@ -35,17 +35,60 @@
                 "direction": "Orthogonal",
                 "minLength": 1,
                 "maxLength": 5,
-                "weight": 3.0
+                "weight": 3.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 2
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 80,
+                    "max": 100
+                  },
+                  "chanceToBeCurved": 10
+                }
               },
               {
                 "direction": "Diagonal",
                 "minLength": 1,
                 "maxLength": 5,
-                "weight": 1.0
+                "weight": 1.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 2
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 80,
+                    "max": 100
+                  },
+                  "chanceToBeCurved": 10
+                }
               }
             ],
             "allowClosedLoop": false,
-            "closedLoopWeight": 0.0,
             "allowNodeRevisit": true,
             "allowEdgeRevisit": true
           },
@@ -61,33 +104,32 @@
         }
       ],
       "curve": {
-        "mode": "Derived",
-        "straightLineBias": {
-          "min": 80,
-          "max": 100
-        },
-        "tension": {
-          "options": [
-            {
-              "min": 0,
-              "max": 0,
-              "weight": 3
-            },
-            {
-              "min": 0.4,
-              "max": 0.5,
-              "weight": 2
-            }
-          ]
-        },
-        "explicitJitterDegrees": {
-          "min": 80,
-          "max": 100
-        },
         "proximityGuard": {
           "enabled": true,
           "minEdgeLength": 2,
           "minDistanceToOtherNodes": 1
+        },
+        "edge": {
+          "mode": "Derived",
+          "tension": {
+            "options": [
+              {
+                "min": 0,
+                "max": 0,
+                "weight": 3
+              },
+              {
+                "min": 0.4,
+                "max": 0.5,
+                "weight": 2
+              }
+            ]
+          },
+          "explicitJitterDegrees": {
+            "min": 80,
+            "max": 100
+          },
+          "chanceToBeCurved": 10
         }
       },
       "quality": {
@@ -252,17 +294,62 @@
                 "direction": "Orthogonal",
                 "minLength": 1,
                 "maxLength": 5,
-                "weight": 3.0
+                "weight": 3.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 1
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 20,
+                    "max": 20
+                  },
+                  "chanceToBeCurved": 30
+                },
+                "backToStartChance": 18.9
               },
               {
                 "direction": "Diagonal",
                 "minLength": 1,
                 "maxLength": 5,
-                "weight": 1.0
+                "weight": 1.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 1
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 20,
+                    "max": 20
+                  },
+                  "chanceToBeCurved": 30
+                },
+                "backToStartChance": 41.2
               }
             ],
             "allowClosedLoop": false,
-            "closedLoopWeight": 0.7,
             "allowNodeRevisit": false,
             "allowEdgeRevisit": false
           },
@@ -282,33 +369,32 @@
         }
       ],
       "curve": {
-        "mode": "Derived",
-        "straightLineBias": {
-          "min": 50,
-          "max": 90
-        },
-        "tension": {
-          "options": [
-            {
-              "min": 0,
-              "max": 0,
-              "weight": 3
-            },
-            {
-              "min": 0.4,
-              "max": 0.5,
-              "weight": 1
-            }
-          ]
-        },
-        "explicitJitterDegrees": {
-          "min": 20,
-          "max": 20
-        },
         "proximityGuard": {
           "enabled": true,
           "minEdgeLength": 2,
           "minDistanceToOtherNodes": 1
+        },
+        "edge": {
+          "mode": "Derived",
+          "tension": {
+            "options": [
+              {
+                "min": 0,
+                "max": 0,
+                "weight": 3
+              },
+              {
+                "min": 0.4,
+                "max": 0.5,
+                "weight": 1
+              }
+            ]
+          },
+          "explicitJitterDegrees": {
+            "min": 20,
+            "max": 20
+          },
+          "chanceToBeCurved": 30
         }
       },
       "quality": {

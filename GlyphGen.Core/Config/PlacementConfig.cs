@@ -18,6 +18,36 @@ public enum PlacementMode
     CenterAnchor,
 }
 
+/// <summary>How a SidePull chooses its sides.</summary>
+public enum SidePullMode
+{
+    /// <summary>The listed sides.</summary>
+    Prefer,
+
+    /// <summary>Sides drawn at random (see Pick) for each instance of the shape, then used like Prefer.</summary>
+    SetRandom,
+}
+
+/// <summary>
+/// Pulls a shape towards a side or corner of the glyph. Among the shape's legal placements (the best-of-N
+/// candidates of its arrangement) the one nearest the chosen side(s) is kept. A ranking only: it never relaxes
+/// a hard rule, and the pull is as strong as arrangement.candidates is high.
+/// </summary>
+public sealed class SidePull
+{
+    public SidePullMode Mode { get; set; } = SidePullMode.Prefer;
+
+    /// <summary>Prefer only: one or two sides; two means a corner. Left with Right, or Top with Bottom, cancel out.</summary>
+    public List<GlyphSide> Sides { get; set; } = new();
+
+    /// <summary>SetRandom only: what is drawn. Default Any.</summary>
+    public RandomSidePick? Pick { get; set; }
+
+    /// <summary>How strongly the pull counts against the arrangement's bias, when both are active (default 1;
+    /// 0 turns it off).</summary>
+    public double Weight { get; set; } = 1.0;
+}
+
 /// <summary>
 /// One shared schema for "where does this shape go" — used identically by both
 /// guaranteedMotifs[].placement and a language's subSymbolPlacement, so there's a single
@@ -56,4 +86,8 @@ public sealed class PlacementConfig
     /// crossing permission - edges that merely meet at a node don't count as crossing - but can't
     /// be combined with SubSymbolSpacing.MinNodeDistance &gt; 0 (a shared node is distance 0).</summary>
     public bool StartOnExistingNode { get; set; } = false;
+
+    /// <summary>RandomValid only: pull the shape towards a side or corner of the glyph. null = no pull. It ranks
+    /// the shape's best-of-N candidates (arrangement.candidates), so raise that for a stronger pull.</summary>
+    public SidePull? Side { get; set; }
 }

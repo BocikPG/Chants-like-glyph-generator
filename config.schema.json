@@ -183,13 +183,8 @@
         },
         "allowClosedLoop": {
           "type": "boolean",
-          "description": "Whether the chain may close into a loop back to its start node.",
+          "description": "Whether the chain may close into a loop back to its start node. How likely that is is set per rule (connectionRules[].backToStartChance).",
           "default": false
-        },
-        "closedLoopWeight": {
-          "type": "number",
-          "description": "Weight of the loop-closing move, relative to the connection rules' weights.",
-          "default": 0
         },
         "selfSpacing": {
           "type": "array",
@@ -201,6 +196,42 @@
       },
       "additionalProperties": false,
       "description": "How ONE stroke (chain) grows: its length, the weighted connection rules, how those weights become probabilities, whether it may revisit nodes/edges or close into a loop, and the spacing between its own nodes. Used by every Generative shape - there is no language-wide copy, so two shapes can follow different rules (long strokes and short ticks, say) and nothing is inherited silently. Ignored for Literal shapes."
+    },
+    "CombinationArrangementRules": {
+      "type": "object",
+      "properties": {
+        "placements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ComponentPlacementRule"
+          },
+          "description": "Placement rules by component glyph. Components without a rule are placed as before."
+        },
+        "allowCrossing": {
+          "type": "boolean",
+          "default": false
+        },
+        "spacing": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpacingConfig"
+            }
+          ]
+        },
+        "bias": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CombinationBiasConfig"
+            }
+          ]
+        },
+        "candidates": {
+          "type": "integer",
+          "default": 3
+        }
+      },
+      "additionalProperties": false,
+      "description": "The arrangement of a combination's components: everything a shape's arrangement has, plus per-component placement rules. Placing order is the recipe's order, and each component is checked against those placed before it, so list the components you fix first."
     },
     "CombinationBiasConfig": {
       "type": "object",
@@ -271,7 +302,7 @@
                     "minItems": 1
                   },
                   "arrangement": {
-                    "$ref": "#/definitions/ArrangementRules"
+                    "$ref": "#/definitions/CombinationArrangementRules"
                   }
                 },
                 "required": [
@@ -313,14 +344,121 @@
         "arrangement": {
           "allOf": [
             {
-              "$ref": "#/definitions/ArrangementRules"
+              "$ref": "#/definitions/CombinationArrangementRules"
             }
           ],
-          "description": "How a composite's components relate to each other: crossing (default: none - overlay composition is controlled stacking, they may only touch at shared nodes), spacing and bias. A recipe can override parts of it with its own \"arrangement\". Each placed component counts as one shape. Components search every translation exhaustively, so arrangement.candidates does not apply here."
+          "description": "How a composite's components relate to each other: crossing (default: none - overlay composition is controlled stacking, they may only touch at shared nodes), spacing bias and per-component placement rules (placements). A recipe can override parts of it with its own \"arrangement\". Each placed component counts as one shape. Components search every translation exhaustively, so arrangement.candidates does not apply here."
         }
       },
       "additionalProperties": false,
       "description": "Overlay-composition rules for combined glyphs (e.g. Anchorite-style stacking). A composite glyph's components are generated independently first, then translated (and optionally scaled/rotated) onto the composite's own grid. On placement failure, the least-used dependency (via GlyphUsageTracker) is regenerated first, escalating through the recipe's components up to MaxRetriesPerRecipe before the run fails with a named error."
+    },
+    "ComponentPlacementRule": {
+      "type": "object",
+      "properties": {
+        "glyph": {
+          "type": "string",
+          "description": "The component's glyph name. The rule applies wherever that glyph is a component of a recipe the arrangement covers (every instance, if a recipe lists it more than once).",
+          "default": ""
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "SetRandom",
+            "Prefer",
+            "Fixed"
+          ],
+          "default": "Prefer"
+        },
+        "sides": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Left",
+              "Right",
+              "Top",
+              "Bottom"
+            ]
+          },
+          "description": "Prefer only: one or two sides. Two means a corner, so [Top, Left] is the top left. Left with Right, or Top with Bottom, cancel out and are rejected."
+        },
+        "pick": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Any",
+                "Corner",
+                "Horizontal",
+                "Vertical"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "SetRandom only: what is drawn. Default Any."
+        },
+        "scope": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Language",
+                "Composite"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "SetRandom only: whether the draw is made once for the whole language (default) or again for every composite. See SetRandomScope."
+        },
+        "offset": {
+          "oneOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Fixed only: how far to move the component from where it sits in its own glyph, as { \"x\": 2, \"y\": 0 } or [2, 0]. Omitted = not moved at all (the plain overlay)."
+        },
+        "weight": {
+          "type": "number",
+          "description": "Prefer and SetRandom: how strongly the side pull counts against the arrangement's bias, when both are active (default 1; 0 turns the pull off).",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "Controls where one component (named by its glyph) goes inside a composite."
     },
     "ConnectionRuleConfig": {
       "type": "object",
@@ -330,28 +468,66 @@
           "enum": [
             "Orthogonal",
             "Diagonal",
-            "Both"
+            "Both",
+            "Any",
+            "Angle",
+            "Circle"
           ],
           "default": "Orthogonal"
         },
         "minLength": {
           "type": "integer",
-          "minimum": 1,
+          "minimum": 0,
           "default": 1
         },
         "maxLength": {
           "type": "integer",
-          "minimum": 1,
+          "minimum": 0,
           "default": 1
         },
         "weight": {
           "type": "number",
           "minimum": 0,
           "default": 1
+        },
+        "minAngle": {
+          "type": "number",
+          "description": "Smallest allowed turn, in degrees, measured between the previous edge and the new one at the current node: 180 = carry straight on, 90 = right angle, 0 = fold back. The first edge of a stroke has nothing to turn from, so it is not limited. Applies to every direction except Circle.",
+          "default": 0
+        },
+        "maxAngle": {
+          "type": "number",
+          "description": "Largest allowed turn, in degrees (see MinAngle).",
+          "default": 180
+        },
+        "anglePreset": {
+          "type": "string",
+          "enum": [
+            "None",
+            "Straight",
+            "Gentle",
+            "Right",
+            "Sharp"
+          ],
+          "description": "Shortcut for a minAngle/maxAngle pair; when set, it replaces them.",
+          "default": "None"
+        },
+        "backToStartChance": {
+          "type": "number",
+          "description": "Chance (0-100), each time this rule is the one picked, that the stroke instead goes back to its starting node and closes into a loop. Needs chain.allowClosedLoop and at least 3 nodes so far, and the closing edge must be free of crossings, otherwise the rule just makes its normal move. Replaces chain.closedLoopWeight.",
+          "default": 0
+        },
+        "curve": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/EdgeCurveConfig"
+            }
+          ],
+          "description": "How the edges this rule makes are bent when drawn."
         }
       },
       "additionalProperties": false,
-      "description": "One weighted connection template a chain can grow with: what direction, how far (in grid units, 1 = adjacent), and how likely it is to be picked relative to the language's other templates. A language with only one entry still works fine — it's just used 100% of the time since there's nothing to weigh it against."
+      "description": "One weighted connection template a chain can grow with: what direction, how far (in grid units, 1 = adjacent), how likely it is to be picked relative to the stroke's other templates, and how the edges it makes are drawn. A stroke with only one entry still works fine - it's just used 100% of the time since there's nothing to weigh it against."
     },
     "ContactSheetConfig": {
       "type": "object",
@@ -374,38 +550,13 @@
     "CurveConfig": {
       "type": "object",
       "properties": {
-        "mode": {
-          "type": "string",
-          "enum": [
-            "Derived",
-            "Explicit",
-            "Hybrid"
-          ],
-          "default": "Derived"
-        },
-        "straightLineBias": {
+        "edge": {
           "allOf": [
             {
-              "$ref": "#/definitions/PercentRange"
+              "$ref": "#/definitions/EdgeCurveConfig"
             }
           ],
-          "description": "Soft hint: probability any given connection is forced straight regardless of Mode. 0-100."
-        },
-        "tension": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/TensionConfig"
-            }
-          ],
-          "description": "Each handle draws its own value independently (see TensionConfig)."
-        },
-        "explicitJitterDegrees": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/FloatRange"
-            }
-          ],
-          "description": "Explicit/Hybrid modes: max angle (degrees) a node's in/out tangent may deviate from the derived tangent; drawn per node."
+          "description": "Curve settings for edges that no connection rule made (the edges of Literal shapes)."
         },
         "proximityGuard": {
           "allOf": [
@@ -421,7 +572,7 @@
         },
         "forceAllEdgesCurved": {
           "type": "boolean",
-          "description": "Plans EVERY edge as a curve: ignores StraightLineBias and the proximity guard (both would otherwise force edges straight), so \"curved\" really means curved everywhere. Whether an edge visibly bends still depends on tension: a 0..0 tension band gives a bezier that looks straight. Must not be combined with a non-zero StraightLineBias or an enabled guard (the loader rejects that, since they would be silently overridden). Default false.",
+          "description": "Plans EVERY edge as a curve: ignores every chanceToBeCurved and the proximity guard (both would otherwise force edges straight), so \"curved\" really means curved everywhere. Whether an edge visibly bends still depends on tension: a 0..0 tension band gives a bezier that looks straight. Must not be combined with a chanceToBeCurved below 100 or an enabled guard (the loader rejects that, since they would be silently overridden). Default false.",
           "default": false
         },
         "contextMode": {
@@ -436,7 +587,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "Rendering-time curve behavior. Kept independent of the underlying straight-edge grid topology (which is what intersection checks always operate on) — this only affects how the final glyph is drawn, never whether a connection is valid."
+      "description": "Rendering-time curve behavior that is NOT per edge. How an edge bends (chance, mode, tension, jitter) is set on the connection rule that made it - see EdgeCurveConfig. Kept independent of the underlying straight-edge grid topology (which is what intersection checks always operate on): this only affects how the final glyph is drawn, never whether a connection is valid."
     },
     "CurveProximityGuardConfig": {
       "type": "object",
@@ -457,7 +608,45 @@
         }
       },
       "additionalProperties": false,
-      "description": "Forces an edge straight based on geometry, independent of CurveMode/StraightLineBias - a safety net against a curve bulging into nearby ink (see CurvePlanner's remarks on this). Disabled by default since it changes how many edges end up curved vs. the language's other settings alone would produce."
+      "description": "Forces an edge straight based on geometry, independent of the edge's curve settings - a safety net against a curve bulging into nearby ink (see CurvePlanner's remarks on this). Disabled by default since it changes how many edges end up curved vs. the language's other settings alone would produce."
+    },
+    "EdgeCurveConfig": {
+      "type": "object",
+      "properties": {
+        "chanceToBeCurved": {
+          "type": "number",
+          "description": "Chance (0-100) that an edge made by this rule is drawn as a curve; otherwise it is a straight line. Rolled per edge. 100 = always curved (a 0..0 tension still looks straight). This replaces the old language-wide straightLineBias (chanceToBeCurved = 100 - straightLineBias).",
+          "default": 100
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Derived",
+            "Explicit",
+            "Hybrid"
+          ],
+          "description": "How the edge's end tangents are chosen. Derived: from the neighbouring nodes (smooth spline feel). Explicit: each end gets its own randomized tangent. Hybrid: Derived or Explicit per edge, at random.",
+          "default": "Derived"
+        },
+        "tension": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TensionConfig"
+            }
+          ],
+          "description": "Bezier handle length as a fraction of the edge length; each handle draws its own value."
+        },
+        "explicitJitterDegrees": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FloatRange"
+            }
+          ],
+          "description": "Explicit/Hybrid: max angle (degrees) an end tangent may deviate from the derived one."
+        }
+      },
+      "additionalProperties": false,
+      "description": "How ONE edge is bent when drawn. Each connection rule carries its own copy, so a rule can make long edges gentle curves and short ticks dead straight within the same stroke. Edges that come from no rule (Literal shapes) use curve.edge instead. Only affects drawing - never whether a connection is valid."
     },
     "FloatRange": {
       "type": "object",
@@ -630,14 +819,19 @@
           "description": "If true, tips that end at a junction (a node where another stroke is also present) are drawn without their caps, Ball terminals or start blobs, and the joins above fill the node instead. A tip that stands alone keeps all of them. With outer Overlap nothing fills the node, so pair this with Miter, Bevel or Round.",
           "default": false
         },
-        "straightenDegrees": {
+        "straightenInnerDegrees": {
           "type": "number",
-          "description": "0 = off. Otherwise, where two strokes meet at an angle within this many degrees of straight (180) and the notch between them has no other stroke in it, that notch is filled with a long chamfer (see straightenLength) so the edge reads as one straight line instead of a kink. Other strokes may leave the node elsewhere. It replaces the inner join for those notches and does nothing on the convex outside of the bend (that would mean cutting ink away).",
+          "description": "0 = off. Where two strokes meet within this many degrees of straight (180) and the NOTCH between them (the side that bends inwards, under 180 degrees) has no other stroke in it, that notch is filled with a long chamfer (see straightenLength) so the edge reads as one straight line instead of a kink. Other strokes may leave the node on the other side. Replaces the inner join for those notches.",
+          "default": 0
+        },
+        "straightenOuterDegrees": {
+          "type": "number",
+          "description": "0 = off. The same for the OUTSIDE of the bend (the side that bends outwards, over 180 degrees), e.g. the top of a T whose bar is slightly bent that way. Ink cannot be removed, so instead the edges are extended along one straight line through the corner and the thin wedges between that line and the real edges are filled; each wedge ends in a small step whose height grows with the angle and with straightenLength. Replaces the outer join for those gaps.",
           "default": 0
         },
         "straightenLength": {
           "type": "number",
-          "description": "Length of the straightening chamfer along each stroke's edge, in half-widths. Limited automatically so it never reaches past the neighbouring node.",
+          "description": "Length of the straightening fill along each stroke's edge, in half-widths. Limited automatically so it never reaches past the neighbouring node.",
           "default": 4
         },
         "outer": {
@@ -790,21 +984,6 @@
         "grid"
       ]
     },
-    "PercentRange": {
-      "type": "object",
-      "properties": {
-        "min": {
-          "type": "number",
-          "default": 0
-        },
-        "max": {
-          "type": "number",
-          "default": 0
-        }
-      },
-      "additionalProperties": false,
-      "description": "A percentage hint (0-100), resolved the same way as IntRange. Used as a soft bias (e.g. StraightLineBias), not a hard constraint."
-    },
     "PlacementConfig": {
       "type": "object",
       "properties": {
@@ -888,6 +1067,17 @@
           "type": "boolean",
           "description": "RandomValid only: start the shape on a node already in the glyph (chosen uniformly) instead of a random grid point, so shapes grow out of each other. Needs no crossing permission - edges that merely meet at a node don't count as crossing - but can't be combined with SubSymbolSpacing.MinNodeDistance > 0 (a shared node is distance 0).",
           "default": false
+        },
+        "side": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/SidePull"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "RandomValid only: pull the shape towards a side or corner of the glyph. null = no pull. It ranks the shape's best-of-N candidates (arrangement.candidates), so raise that for a stronger pull."
         }
       },
       "additionalProperties": false,
@@ -991,12 +1181,17 @@
         },
         "debugShowNodes": {
           "type": "boolean",
-          "description": "Debug option. When this or DebugColorComponents is on, the CLI writes an extra \"<glyph>.debug.png\" next to each normal image, drawn with the enabled overlays (the normal images stay clean; with both options off no debug files are written). Overlay for checking generation output: the whole lattice as faint dots with coordinates labelled every 5 cells, plus a dot on every node of the glyph - red for a free-form sub-symbol, blue for a guaranteed motif, gold where a node is used more than once (a revisit, or a node shared by shapes).",
+          "description": "Debug option. When any of the debug options is on, the CLI writes an extra \"<glyph>.debug.png\" next to each normal image, drawn with the enabled overlays (the normal images stay clean; with all of them off no debug files are written). Overlay for checking generation output: the whole lattice as faint dots with coordinates labelled every 5 cells, plus a dot on every node of the glyph - red for a free-form sub-symbol, blue for a guaranteed motif, gold where a node is used more than once (a revisit, or a node shared by shapes).",
           "default": false
         },
         "debugColorComponents": {
           "type": "boolean",
           "description": "Debug option (see DebugShowNodes): colour each combination component differently in the extra \".debug.png\" images.",
+          "default": false
+        },
+        "debugColorParts": {
+          "type": "boolean",
+          "description": "Debug option (see DebugShowNodes): in the extra \".debug.png\" images, colour the ink each kind of part ADDS on top of the stroke bodies - grey for caps (and Ball / Ink terminals), violet for corner joins, pink for junction joins (including straightening). The strokes themselves keep the foreground colour (or their component colour). Parts are painted over the strokes in the order they are built: corner joins, then junction joins, then caps.",
           "default": false
         }
       },
@@ -1165,6 +1360,56 @@
       "required": [
         "id"
       ]
+    },
+    "SidePull": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Prefer",
+            "SetRandom"
+          ],
+          "default": "Prefer"
+        },
+        "sides": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Left",
+              "Right",
+              "Top",
+              "Bottom"
+            ]
+          },
+          "description": "Prefer only: one or two sides; two means a corner. Left with Right, or Top with Bottom, cancel out."
+        },
+        "pick": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Any",
+                "Corner",
+                "Horizontal",
+                "Vertical"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "SetRandom only: what is drawn. Default Any."
+        },
+        "weight": {
+          "type": "number",
+          "description": "How strongly the pull counts against the arrangement's bias, when both are active (default 1; 0 turns it off).",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "Pulls a shape towards a side or corner of the glyph. Among the shape's legal placements (the best-of-N candidates of its arrangement) the one nearest the chosen side(s) is kept. A ranking only: it never relaxes a hard rule, and the pull is as strong as arrangement.candidates is high."
     },
     "SpacingConfig": {
       "type": "object",

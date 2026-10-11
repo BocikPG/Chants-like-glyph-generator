@@ -79,17 +79,62 @@
                 "direction": "Orthogonal",
                 "minLength": 1,
                 "maxLength": 4,
-                "weight": 3.0
+                "weight": 3.0,
+                "curve": {
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 2
+                      },
+                      {
+                        "min": 0.3,
+                        "max": 0.45,
+                        "weight": 3
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 15,
+                    "max": 35
+                  },
+                  "chanceToBeCurved": 55
+                },
+                "backToStartChance": 9.1
               },
               {
                 "direction": "Diagonal",
                 "minLength": 1,
                 "maxLength": 2,
-                "weight": 1.0
+                "weight": 1.0,
+                "curve": {
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 2
+                      },
+                      {
+                        "min": 0.3,
+                        "max": 0.45,
+                        "weight": 3
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 15,
+                    "max": 35
+                  },
+                  "chanceToBeCurved": 55
+                },
+                "backToStartChance": 23.1
               }
             ],
             "allowClosedLoop": true,
-            "closedLoopWeight": 0.3,
             "connectionWeighting": "PerRule",
             "allowNodeRevisit": false,
             "allowEdgeRevisit": false,
@@ -108,7 +153,11 @@
           "placement": {
             "mode": "RandomValid",
             "startOnExistingNode": true,
-            "maxPlacementAttempts": 40
+            "maxPlacementAttempts": 40,
+            "side": {
+              "mode": "SetRandom",
+              "pick": "Horizontal"
+            }
           },
           "arrangement": {
             "allowCrossing": true,
@@ -118,7 +167,7 @@
               "maxNodeDistance": 6,
               "maxDistanceMode": "NearestShape"
             },
-            "candidates": 4,
+            "candidates": 8,
             "bias": {
               "modes": [
                 "Squarest"
@@ -150,7 +199,23 @@
               "tick_base"
             ],
             "arrangement": {
-              "allowCrossing": false
+              "allowCrossing": false,
+              "placements": [
+                {
+                  "glyph": "star",
+                  "sides": [
+                    "Top",
+                    "Left"
+                  ]
+                },
+                {
+                  "glyph": "tick_base",
+                  "sides": [
+                    "Bottom",
+                    "Right"
+                  ]
+                }
+              ]
             }
           }
         },
@@ -195,40 +260,46 @@
               "Squarest": 2
             },
             "includeScaleAndRotation": false
-          }
+          },
+          "placements": [
+            {
+              "glyph": "ring_base",
+              "mode": "SetRandom",
+              "pick": "Vertical"
+            }
+          ]
         }
       },
       "curve": {
-        "mode": "Hybrid",
         "contextMode": "AllCurved",
-        "straightLineBias": {
-          "min": 30,
-          "max": 60
-        },
-        "tension": {
-          "options": [
-            {
-              "min": 0,
-              "max": 0,
-              "weight": 2
-            },
-            {
-              "min": 0.3,
-              "max": 0.45,
-              "weight": 3
-            }
-          ]
-        },
-        "explicitJitterDegrees": {
-          "min": 15,
-          "max": 35
-        },
         "proximityGuard": {
           "enabled": true,
           "minEdgeLength": 1.5,
           "minDistanceToOtherNodes": 1
         },
-        "recheckProximityInCombined": true
+        "recheckProximityInCombined": true,
+        "edge": {
+          "mode": "Hybrid",
+          "tension": {
+            "options": [
+              {
+                "min": 0,
+                "max": 0,
+                "weight": 2
+              },
+              {
+                "min": 0.3,
+                "max": 0.45,
+                "weight": 3
+              }
+            ]
+          },
+          "explicitJitterDegrees": {
+            "min": 15,
+            "max": 35
+          },
+          "chanceToBeCurved": 55
+        }
       },
       "render": {
         "framing": "Language",
@@ -294,10 +365,12 @@
               }
             ],
             "trimCaps": true,
-            "straightenDegrees": 20,
-            "straightenLength": 4
+            "straightenLength": 4,
+            "straightenInnerDegrees": 20,
+            "straightenOuterDegrees": 20
           }
-        }
+        },
+        "debugColorParts": true
       }
     }
   ]

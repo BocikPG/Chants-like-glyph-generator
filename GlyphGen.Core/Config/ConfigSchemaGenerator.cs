@@ -58,8 +58,8 @@ public static class ConfigSchemaGenerator
         ["ArrangementRules.Candidates"] = 1,
         ["QualityConfig.MaxRegenerationAttempts"] = 1,
         ["CombinationConfig.MaxRetriesPerRecipe"] = 1,
-        ["ConnectionRuleConfig.MinLength"] = 1,
-        ["ConnectionRuleConfig.MaxLength"] = 1,
+        ["ConnectionRuleConfig.MinLength"] = 0, // 0 is a dot for Circle rules; the validator requires 1 for the others
+        ["ConnectionRuleConfig.MaxLength"] = 0,
         ["ConnectionRuleConfig.Weight"] = 0,
         ["ScaleFactorConfig.Numerator"] = 1,
         ["ScaleFactorConfig.Denominator"] = 1,
@@ -317,7 +317,7 @@ public static class ConfigSchemaGenerator
                                 ["properties"] = new JsonObject
                                 {
                                     ["components"] = components.DeepClone(),
-                                    ["arrangement"] = Reference(typeof(ArrangementRules)),
+                                    ["arrangement"] = Reference(typeof(CombinationArrangementRules)),
                                 },
                                 ["required"] = new JsonArray("components"),
                                 ["additionalProperties"] = false,
