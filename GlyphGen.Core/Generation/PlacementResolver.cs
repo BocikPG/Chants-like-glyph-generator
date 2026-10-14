@@ -40,7 +40,7 @@ public sealed class PlacementResolver : IPlacementResolver
         // Works with crossing off too: GridEdge.Intersects treats edges that merely meet at a
         // shared node as not crossing, so a shape growing out of an existing node is legal.
         if (config.Mode == PlacementMode.RandomValid && config.StartOnExistingNode)
-            anchorNodes = CollectExistingNodes(existingGeometry);
+            anchorNodes = CollectNodes(config.StartOnShapes is { } only ? existingGeometry.EdgesOfShapes(only) : existingGeometry.ExistingEdges);
 
         bool positionVaries = config.Mode == PlacementMode.RandomValid;
         bool rotationVaries = config.AllowRotationOnPlace
@@ -82,11 +82,11 @@ public sealed class PlacementResolver : IPlacementResolver
         };
     }
 
-    private static List<GridPoint> CollectExistingNodes(IIntersectionContext existingGeometry)
+    private static List<GridPoint> CollectNodes(IEnumerable<GridEdge> edges)
     {
         var seen = new HashSet<GridPoint>();
         var nodes = new List<GridPoint>();
-        foreach (var edge in existingGeometry.ExistingEdges)
+        foreach (var edge in edges)
         {
             if (seen.Add(edge.From)) nodes.Add(edge.From);
             if (seen.Add(edge.To)) nodes.Add(edge.To);

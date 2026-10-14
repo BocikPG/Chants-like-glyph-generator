@@ -60,8 +60,10 @@ internal static class ConfigValidator
             c.Add("grid", $"width and height must each be at least 1 (got {l.Grid.Width}x{l.Grid.Height}).");
 
         ValidateGlyphsAndRecipes(l, c);
+        ValidateDerivations(l, c);
 
         ValidateShapes(l, c);
+        ValidateShapeGlyphFilters(l, c);
 
         ValidateCurve(l, c);
         ValidateCombinationSettings(l.Combination, c);
@@ -160,6 +162,159 @@ internal static class ConfigValidator
         ValidatePlacements(c, "combination.arrangement", l.Combination.Arrangement.Placements, known, null);
     }
 
+    // ---- derivations ---------------------------------------------------------------------------
+
+    private static readonly Dictionary<string, DerivationOp[]> StepOptions = new()
+    {
+        ["amount"] = new[] { DerivationOp.DeleteNodes, DerivationOp.DeleteEdges, DerivationOp.Keep, DerivationOp.Nudge },
+        ["target"] = new[] { DerivationOp.DeleteNodes, DerivationOp.Nudge },
+        ["mode"] = new[] { DerivationOp.DeleteNodes },
+        ["connectionRules"] = new[] { DerivationOp.DeleteNodes },
+        ["bridgeMaxMoves"] = new[] { DerivationOp.DeleteNodes },
+        ["removeOrphanNodes"] = new[] { DerivationOp.DeleteNodes, DerivationOp.DeleteEdges, DerivationOp.Keep },
+        ["keepAtLeast"] = new[] { DerivationOp.DeleteNodes, DerivationOp.DeleteEdges, DerivationOp.Keep },
+        ["keepConnected"] = new[] { DerivationOp.DeleteNodes, DerivationOp.DeleteEdges, DerivationOp.Keep },
+        ["shapes"] = new[] { DerivationOp.Add },
+        ["optional"] = new[] { DerivationOp.Add },
+        ["factors"] = new[] { DerivationOp.Scale },
+        ["axis"] = new[] { DerivationOp.Mirror },
+        ["degrees"] = new[] { DerivationOp.Rotate },
+        ["distance"] = new[] { DerivationOp.Nudge },
+    };
+
+    private static void ValidateDerivations(LanguageDefinition l, Ctx c)
+    {
+        var known = new HashSet<string>(l.BaseGlyphs.Concat(l.Glyphs).Select(g => g.Name), StringComparer.Ordinal);
+        var shapeIds = new HashSet<string>(l.Shapes.Select(s => s.Id), StringComparer.Ordinal);
+
+        foreach (var (name, d) in l.Derivations)
+        {
+            string where = $"derivations['{name}']";
+
+            if (!known.Contains(name)) c.Add(where, "is not listed in glyphs or baseGlyphs, so it would never be generated.");
+            if (l.Combination.Recipes.ContainsKey(name)) c.Add(where, "also has a combination recipe - a glyph is either derived or a composite.");
+
+            if (string.IsNullOrWhiteSpace(d.From)) c.Add(where + ".from", "must name the glyph to derive from.");
+            else if (!known.Contains(d.From)) c.Add(where + ".from", $"'{d.From}' is not listed in glyphs or baseGlyphs.");
+            else if (d.From == name) c.Add(where + ".from", "a glyph cannot be derived from itself.");
+
+            if (d.Steps.Count == 0) c.Add(where + ".steps", "needs at least one step.");
+            Number(c, where + ".maxSimilarityToSource", d.MaxSimilarityToSource, 0, 1);
+
+            for (int i = 0; i < d.Steps.Count; i++)
+                ValidateStep(c, $"{where}.steps[{i}]", d.Steps[i], shapeIds, l.Shapes);
+        }
+
+        // Circles: a derivation's source may itself be derived or a composite, but not (through any chain of those) itself.
+        string? DependsOn(string glyph, string target, HashSet<string> seen)
+        {
+            if (!seen.Add(glyph)) return null;
+            var next = new List<string>();
+            if (l.Derivations.TryGetValue(glyph, out var d)) next.Add(d.From);
+            if (l.Combination.Recipes.TryGetValue(glyph, out var r)) next.AddRange(r.Components);
+            foreach (var n in next)
+                if (n == target || DependsOn(n, target, seen) is not null) return n;
+            return null;
+        }
+
+        foreach (var name in l.Derivations.Keys)
+            if (DependsOn(name, name, new HashSet<string>()) is not null)
+                c.Add($"derivations['{name}']", "depends on itself through derivations and/or recipes (a circle).");
+    }
+
+    private static void ValidateStep(Ctx c, string where, DerivationStep step, HashSet<string> shapeIds, List<ShapeDefinition> allShapes)
+    {
+        Enum(c, where + ".op", step.Op);
+        Number(c, where + ".chance", step.Chance, 0, 100);
+
+        if (step.OnlyIf is { } gate)
+        {
+            foreach (var (label, value) in new[] { ("minEdges", gate.MinEdges), ("maxEdges", gate.MaxEdges), ("minNodes", gate.MinNodes), ("maxNodes", gate.MaxNodes) })
+                if (value is < 0) c.Add($"{where}.onlyIf.{label}", $"must be at least 0 (got {value}).");
+            if (gate.MinEdges > gate.MaxEdges) c.Add(where + ".onlyIf", $"maxEdges ({gate.MaxEdges}) is smaller than minEdges ({gate.MinEdges}).");
+            if (gate.MinNodes > gate.MaxNodes) c.Add(where + ".onlyIf", $"maxNodes ({gate.MaxNodes}) is smaller than minNodes ({gate.MinNodes}).");
+        }
+
+        var present = new Dictionary<string, bool>
+        {
+            ["amount"] = step.Amount is not null, ["target"] = step.Target is not null, ["mode"] = step.Mode is not null,
+            ["connectionRules"] = step.ConnectionRules is not null, ["bridgeMaxMoves"] = step.BridgeMaxMoves is not null,
+            ["removeOrphanNodes"] = step.RemoveOrphanNodes is not null, ["keepAtLeast"] = step.KeepAtLeast is not null,
+            ["keepConnected"] = step.KeepConnected is not null, ["shapes"] = step.Shapes is not null,
+            ["optional"] = step.Optional is not null, ["factors"] = step.Factors is not null, ["axis"] = step.Axis is not null,
+            ["degrees"] = step.Degrees is not null, ["distance"] = step.Distance is not null,
+        };
+        foreach (var (option, isSet) in present)
+            if (isSet && Array.IndexOf(StepOptions[option], step.Op) < 0)
+                c.Add(where + "." + option, $"does not apply to {step.Op} (it applies to {string.Join(", ", StepOptions[option])}).");
+
+        if (StepOptions["amount"].Contains(step.Op))
+        {
+            var amount = step.Amount;
+            if (amount is null || (amount.Percent is null) == (amount.Count is null))
+                c.Add(where + ".amount", "needs exactly one of 'percent' and 'count'.");
+            else if (amount.Percent is { } percent) Percent(c, where + ".amount.percent", percent);
+            else IntRange(c, where + ".amount.count", amount.Count!, 0);
+        }
+
+        if (step.Target is { } target) Enum(c, where + ".target", target);
+        if (step.Axis is { } axis) Enum(c, where + ".axis", axis);
+        if (step.Mode is { } mode) Enum(c, where + ".mode", mode);
+        if (step.KeepAtLeast is < 0) c.Add(where + ".keepAtLeast", $"must be at least 0 (got {step.KeepAtLeast}).");
+        if (step.Distance is < 1) c.Add(where + ".distance", $"must be at least 1 (got {step.Distance}).");
+        if (step.BridgeMaxMoves is < 1) c.Add(where + ".bridgeMaxMoves", $"must be at least 1 (got {step.BridgeMaxMoves}).");
+
+        if (step.Op == DerivationOp.DeleteNodes)
+        {
+            bool bridge = step.Mode == DeleteNodeMode.Bridge;
+            if (bridge && (step.ConnectionRules is null || step.ConnectionRules.Count == 0))
+                c.Add(where + ".connectionRules", "Mode Bridge needs at least one rule to grow the replacement path from.");
+            else if (!bridge && step.ConnectionRules is not null)
+                c.Add(where + ".connectionRules", "only applies to Mode Bridge.");
+            if (!bridge && step.BridgeMaxMoves is not null) c.Add(where + ".bridgeMaxMoves", "only applies to Mode Bridge.");
+            if (bridge && step.ConnectionRules is { Count: > 0 })
+                ValidateRules(c, where + ".connectionRules", step.ConnectionRules, required: true);
+        }
+
+        if (step.Op == DerivationOp.Add)
+        {
+            if (step.Shapes is null || step.Shapes.Count == 0) c.Add(where + ".shapes", "needs at least one shape id.");
+            else
+                for (int k = 0; k < step.Shapes.Count; k++)
+                {
+                    string id = step.Shapes[k];
+                    if (!shapeIds.Contains(id)) { c.Add(where + ".shapes", $"'{id}' is not the id of a shape."); continue; }
+                    var copyOf = allShapes.First(x => x.Id == id).CopyOf;
+                    if (copyOf is not null && !step.Shapes.Take(k).Contains(copyOf.Shape))
+                        c.Add(where + ".shapes", $"'{id}' copies '{copyOf.Shape}', which must be listed before it in the same step.");
+                }
+        }
+
+        if (step.Op == DerivationOp.Scale)
+        {
+            if (step.Factors is null || step.Factors.Count == 0) c.Add(where + ".factors", "needs at least one ratio.");
+            else
+            {
+                double total = 0;
+                for (int i = 0; i < step.Factors.Count; i++)
+                {
+                    var f = step.Factors[i];
+                    if (f.Numerator <= 0) c.Add($"{where}.factors[{i}]", $"numerator must be positive (got {f.Numerator}).");
+                    if (f.Denominator <= 0) c.Add($"{where}.factors[{i}]", $"denominator must be positive (got {f.Denominator}).");
+                    if (Number(c, $"{where}.factors[{i}].weight", f.Weight, 0, double.MaxValue)) total += f.Weight;
+                }
+                if (total <= 0) c.Add(where + ".factors", "every ratio has weight 0, so none could ever be chosen.");
+            }
+        }
+
+        if (step.Op == DerivationOp.Rotate && step.Degrees is not null)
+        {
+            if (step.Degrees.Count == 0) c.Add(where + ".degrees", "must not be empty (leave it out for 90, 180 and 270).");
+            foreach (int d in step.Degrees)
+                if (d is not (90 or 180 or 270)) c.Add(where + ".degrees", $"{d} is not supported; use 90, 180 or 270.");
+        }
+    }
+
     private static void ValidateCombinationSettings(CombinationConfig combination, Ctx c)
     {
         if (combination.MaxRetriesPerRecipe < 1)
@@ -229,10 +384,70 @@ internal static class ConfigValidator
         if (total <= 0) c.Add(path, "every rule has weight 0, so none could ever be chosen.");
     }
 
+    /// <summary>onlyForGlyphs / excludeGlyphs on shapes: known plain glyphs, and every plain glyph keeps at least one shape.</summary>
+    private static void ValidateShapeGlyphFilters(LanguageDefinition l, Ctx c)
+    {
+        var composites = new HashSet<string>(l.Combination.Recipes.Keys, StringComparer.Ordinal);
+        var plain = l.BaseGlyphs.Concat(l.Glyphs).Select(g => g.Name)
+            .Where(n => !composites.Contains(n) && !l.Derivations.ContainsKey(n)).ToList();
+        var known = new HashSet<string>(l.BaseGlyphs.Concat(l.Glyphs).Select(g => g.Name), StringComparer.Ordinal);
+
+        bool anyFilter = false;
+        for (int i = 0; i < l.Shapes.Count; i++)
+        {
+            var shape = l.Shapes[i];
+            string where = $"shapes[{i}] ('{shape.Id}')";
+            foreach (var (field, names) in new[] { ("onlyForGlyphs", shape.OnlyForGlyphs), ("excludeGlyphs", shape.ExcludeGlyphs) })
+            {
+                foreach (var name in names ?? new List<string>())
+                {
+                    if (!known.Contains(name)) c.Add(where + "." + field, $"'{name}' is not listed in glyphs or baseGlyphs.");
+                    else if (composites.Contains(name)) c.Add(where + "." + field, $"'{name}' is a composite built from a recipe, so no shape applies to it - remove it.");
+                    else if (l.Derivations.ContainsKey(name)) c.Add(where + "." + field, $"'{name}' is derived from another glyph, so no shape applies to it (a derivation's Add step picks its own shapes) - remove it.");
+                }
+            }
+            if (shape.HasGlyphFilter) anyFilter = true;
+        }
+
+        if (!anyFilter) return;
+
+        // A copy is drawn only when everything it copies from is drawn too.
+        bool Drawn(ShapeDefinition shape, string glyph)
+        {
+            for (int guard = 0; guard <= l.Shapes.Count; guard++)
+            {
+                if (!shape.AppliesTo(glyph)) return false;
+                if (shape.CopyOf is not { } up) return true;
+                var origin = l.Shapes.FirstOrDefault(x => x.Id == up.Shape);
+                if (origin is null) return true; // reported elsewhere
+                shape = origin;
+            }
+            return true;
+        }
+
+        for (int i = 0; i < l.Shapes.Count; i++)
+        {
+            var shape = l.Shapes[i];
+            if (shape.CopyOf is not null && shape.OnlyForGlyphs is { } only)
+            {
+                var origin = l.Shapes.FirstOrDefault(x => x.Id == shape.CopyOf.Shape);
+                var lost = only.Where(g => origin is not null && !origin.AppliesTo(g)).ToList();
+                if (lost.Count > 0)
+                    c.Add($"shapes[{i}] ('{shape.Id}').onlyForGlyphs", $"lists {string.Join(", ", lost.Select(x => $"'{x}'"))}, where the shape it copies ('{origin!.Id}') is not drawn, so the copy never would be.");
+            }
+        }
+
+        if (l.Shapes.Count == 0) return;
+        foreach (var glyph in plain)
+            if (!l.Shapes.Any(s => Drawn(s, glyph)))
+                c.Add($"glyph '{glyph}'", "no shape is drawn for it: shapes' onlyForGlyphs/excludeGlyphs leave it with nothing to be built from.");
+    }
+
     private static void ValidateShapes(LanguageDefinition l, Ctx c)
     {
         var composites = new HashSet<string>(l.Combination.Recipes.Keys, StringComparer.Ordinal);
-        bool needsShapes = l.BaseGlyphs.Any() || l.Glyphs.Any(g => !composites.Contains(g.Name));
+        bool needsShapes = l.BaseGlyphs.Any(g => !l.Derivations.ContainsKey(g.Name))
+            || l.Glyphs.Any(g => !composites.Contains(g.Name) && !l.Derivations.ContainsKey(g.Name));
         if (l.Shapes.Count == 0 && needsShapes)
             c.Add("shapes", "needs at least one shape - without one every plain glyph would be empty.");
 
@@ -251,6 +466,15 @@ internal static class ConfigValidator
 
             if (shape.SeedLabel is not null && !labels.Add(shape.SeedLabel))
                 c.Add(where + ".seedLabel", $"'{shape.SeedLabel}' is used by more than one shape.");
+
+            Number(c, where + ".chance", shape.Chance, 0, 100);
+
+            if (shape.CopyOf is not null)
+            {
+                ValidateCopy(l, c, where, shape, i);
+                ValidateArrangement(c, where + ".arrangement", shape.Arrangement, forShape: true);
+                continue;
+            }
 
             Enum(c, where + ".kind", shape.Kind);
 
@@ -283,9 +507,82 @@ internal static class ConfigValidator
                     break;
             }
 
-            ValidatePlacement(l, c, where + ".placement", shape.Placement, rotationApplies: shape.Kind == ShapeKind.Literal, shape.Arrangement);
+            ValidatePlacement(l, c, where + ".placement", shape.Placement, rotationApplies: shape.Kind == ShapeKind.Literal, shape.Arrangement, shapeIndex: i);
             ValidateArrangement(c, where + ".arrangement", shape.Arrangement, forShape: true);
         }
+    }
+
+    private static void ValidateCopy(LanguageDefinition l, Ctx c, string where, ShapeDefinition shape, int index)
+    {
+        var copy = shape.CopyOf!;
+        string path = where + ".copyOf";
+
+        if (shape.Count is not null) c.Add(where + ".count", "copyOf makes one copy per instance of the original, so a count has no effect - remove it.");
+        if (shape.Nodes is not null) c.Add(where + ".nodes", "a copy has no nodes of its own - remove them.");
+        if (shape.Chain.ConnectionRules.Count > 0) c.Add(where + ".chain", "a copy is not grown by chain rules - remove them.");
+
+        var options = GlyphGenJsonOptions.Default;
+        if (System.Text.Json.JsonSerializer.Serialize(shape.Placement, options) != System.Text.Json.JsonSerializer.Serialize(new PlacementConfig(), options))
+            c.Add(where + ".placement", "a copy is positioned by its flip, anchor, gap and shift - remove the placement.");
+
+        if (string.IsNullOrWhiteSpace(copy.Shape))
+            c.Add(path + ".shape", "must name the shape to copy.");
+        else if (copy.Shape == shape.Id)
+            c.Add(path + ".shape", "a shape cannot copy itself.");
+        else
+        {
+            int origin = l.Shapes.FindIndex(s => s.Id == copy.Shape);
+            if (origin < 0) c.Add(path + ".shape", $"'{copy.Shape}' is not the id of a shape.");
+            else if (origin > index) c.Add(path + ".shape", $"'{copy.Shape}' is listed after this shape - the original must come first.");
+        }
+
+        if (copy.SelfSpacingIgnoresOriginal && !copy.RespectSelfSpacing)
+            c.Add(path + ".selfSpacingIgnoresOriginal", "only applies together with respectSelfSpacing: true.");
+
+        if (copy.RespectSelfSpacing && !string.IsNullOrWhiteSpace(copy.Shape))
+        {
+            var root = l.Shapes.FirstOrDefault(s => s.Id == copy.Shape);
+            for (int guard = 0; guard < l.Shapes.Count && root?.CopyOf is { } up; guard++)
+                root = l.Shapes.FirstOrDefault(s => s.Id == up.Shape);
+            if (root is not null && !root.Chain.SelfSpacing.Any(r => r is { MinDistance: > 0 } or { MaxDistance: > 0 }))
+                c.Add(path + ".respectSelfSpacing", $"the original ('{root.Id}') has no chain.selfSpacing rule with a minDistance or maxDistance, so there is nothing to apply - add one there or turn this off.");
+        }
+
+        Enum(c, path + ".flip", copy.Flip);
+        Enum(c, path + ".auto.by", copy.Auto.By);
+        Enum(c, path + ".auto.toward", copy.Auto.Toward);
+        Enum(c, path + ".auto.axis", copy.Auto.Axis);
+        if (copy.Auto.Axis != CopyAxis.Perpendicular && (copy.Flip != CopyFlip.Auto || copy.Auto.By != CopyAutoBy.LongestStraight))
+            c.Add(path + ".auto.axis", "only applies to flip Auto with by LongestStraight.");
+        Enum(c, path + ".anchor", copy.Anchor);
+
+        if (copy.Auto.Shapes is not null)
+        {
+            if (copy.Flip != CopyFlip.Auto) c.Add(path + ".auto.shapes", "only applies when flip is Auto.");
+            foreach (var id in copy.Auto.Shapes)
+            {
+                int at = l.Shapes.FindIndex(s => s.Id == id);
+                if (at < 0) c.Add(path + ".auto.shapes", $"'{id}' is not the id of a shape.");
+                else if (at >= index) c.Add(path + ".auto.shapes", $"'{id}' is not listed before this shape, so there is nothing of it to look at yet.");
+            }
+        }
+
+        if (copy.Flips is not null)
+        {
+            if (copy.Flip != CopyFlip.Random) c.Add(path + ".flips", "only applies when flip is Random.");
+            if (copy.Flips.Count == 0) c.Add(path + ".flips", "needs at least one flip (or leave it out for Horizontal, Vertical and Rotate180).");
+            foreach (var f in copy.Flips)
+            {
+                Enum(c, path + ".flips", f);
+                if (f is CopyFlip.Random or CopyFlip.Auto) c.Add(path + ".flips", $"{f} cannot be one of the flips to choose from.");
+            }
+        }
+
+        if (copy.RegenerateBase < 0) c.Add(path + ".regenerateBase", $"must be 0 or more (got {copy.RegenerateBase}).");
+        if (copy.RedrawGlyph < 0) c.Add(path + ".redrawGlyph", $"must be 0 or more (got {copy.RedrawGlyph}).");
+
+        if (copy.Gap.Max < copy.Gap.Min) c.Add(path + ".gap", $"max ({copy.Gap.Max}) is smaller than min ({copy.Gap.Min}).");
+        IntRange(c, path + ".shift", copy.Shift, 0, "the sign is drawn at random");
     }
 
     /// <summary>Placement rules: the glyph must exist (and, in a recipe's own arrangement, be one of its
@@ -398,7 +695,7 @@ internal static class ConfigValidator
 
     // ---- placement ---------------------------------------------------------------------------
 
-    private static void ValidatePlacement(LanguageDefinition l, Ctx c, string path, PlacementConfig p, bool rotationApplies, ArrangementRules arrangement)
+    private static void ValidatePlacement(LanguageDefinition l, Ctx c, string path, PlacementConfig p, bool rotationApplies, ArrangementRules arrangement, int shapeIndex = -1)
     {
         Enum(c, path + ".mode", p.Mode);
 
@@ -437,6 +734,20 @@ internal static class ConfigValidator
         else if (p.FixedOrigin is not null)
         {
             c.Add(path + ".fixedOrigin", $"is set but mode is {p.Mode}, so it would be ignored (use mode Fixed).");
+        }
+
+        if (p.StartOnShapes is not null)
+        {
+            if (!p.StartOnExistingNode)
+                c.Add(path + ".startOnShapes", "only applies together with startOnExistingNode: true.");
+            if (p.StartOnShapes.Count == 0)
+                c.Add(path + ".startOnShapes", "is empty, so there would be nothing to start on - list shape ids, or remove it for every shape.");
+            foreach (var id in p.StartOnShapes)
+            {
+                int at = l.Shapes.FindIndex(x => x.Id == id);
+                if (at < 0) c.Add(path + ".startOnShapes", $"'{id}' is not the id of a shape.");
+                else if (shapeIndex >= 0 && at >= shapeIndex) c.Add(path + ".startOnShapes", $"'{id}' is not listed before this shape, so it is not drawn yet when this shape is placed.");
+            }
         }
 
         if (p.StartOnExistingNode)
@@ -501,6 +812,19 @@ internal static class ConfigValidator
     private static void ValidateRender(RenderConfig render, Ctx c)
     {
         Enum(c, "render.framing", render.Framing);
+        if (!double.IsFinite(render.RotateDegrees))
+            c.Add("render.rotateDegrees", $"must be a finite number of degrees (got {render.RotateDegrees}).");
+        for (int i = 0; i < render.RotateOptions.Count; i++)
+        {
+            var option = render.RotateOptions[i];
+            string where = $"render.rotateOptions[{i}]";
+            if (option is null) { c.Add(where, "must not be null."); continue; }
+            if (!double.IsFinite(option.Min) || !double.IsFinite(option.Max)) c.Add(where, "min and max must be finite numbers of degrees.");
+            else if (option.Max < option.Min) c.Add(where, $"max ({option.Max}) is smaller than min ({option.Min}).");
+            Number(c, where + ".weight", option.Weight, 0, double.MaxValue);
+        }
+        if (render.RotateOptions.Count > 0 && render.RotateOptions.All(o => o is not null && !(o.Weight > 0)))
+            c.Add("render.rotateOptions", "every weight is 0, so no option could ever be drawn.");
 
         if (render.ContactSheet.Columns < 1)
             c.Add("render.contactSheet.columns", $"must be at least 1 (got {render.ContactSheet.Columns}).");
@@ -521,6 +845,7 @@ internal static class ConfigValidator
             const string p = "render.typeface.rectangular";
             Width(c, p + ".width", r.Width);
             Enum(c, p + ".cap", r.Cap);
+            Enum(c, p + ".capLevel", r.CapLevel);
         }
 
         if (t.ThickEnds is { } e)
@@ -544,6 +869,10 @@ internal static class ConfigValidator
             Width(c, p + ".thinWidth", b.ThinWidth);
             FloatRange(c, p + ".nibAngleDegrees", b.NibAngleDegrees.Min, b.NibAngleDegrees.Max, -360, 360);
             if (!double.IsFinite(b.TaperSharpness) || b.TaperSharpness <= 0) c.Add(p + ".taperSharpness", $"must be above 0 (got {b.TaperSharpness}).");
+            Number(c, p + ".nibRoundness", b.NibRoundness, 0, 1);
+            Number(c, p + ".nibAngleWobble", b.NibAngleWobble, 0, 90);
+            Number(c, p + ".nibPressure", b.NibPressure, 0, 1);
+            Number(c, p + ".nibLeadIn", b.NibLeadIn, 0, 0.5);
             Number(c, p + ".pressureVariation", b.PressureVariation, 0, 1);
             Number(c, p + ".edgeWobble", b.EdgeWobble, 0, double.MaxValue);
             Number(c, p + ".raggedness", b.Raggedness, 0, double.MaxValue);
@@ -584,6 +913,7 @@ internal static class ConfigValidator
     private static void ValidateJoinSide(Ctx c, string path, JoinSideConfig side)
     {
         Enum(c, path + ".style", side.Style);
+        Enum(c, path + ".axis", side.Axis);
         MiterLimit(c, path + ".miterLimit", side.MiterLimit);
         if (!double.IsFinite(side.Size) || side.Size < 0)
             c.Add(path + ".size", $"must be a finite number >= 0 (got {side.Size}).");

@@ -192,7 +192,7 @@ public sealed class ChainGenerator : IChainGenerator
     }
 
     /// <summary>The (dx, dy, length) of every straight move a direction allows, lengths min..max.</summary>
-    private static IEnumerable<(int Dx, int Dy, int Length)> LineVectors(ConnectionDirection direction, int min, int max)
+    internal static IEnumerable<(int Dx, int Dy, int Length)> LineVectors(ConnectionDirection direction, int min, int max)
     {
         if (direction is ConnectionDirection.Any or ConnectionDirection.Angle)
         {

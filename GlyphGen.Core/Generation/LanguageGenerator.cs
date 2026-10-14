@@ -38,20 +38,27 @@ public sealed class LanguageGenerator : ILanguageGenerator
         var usageTracker = new GlyphUsageTracker();
         var composites = new HashSet<string>(language.Combination.Recipes.Keys);
 
-        foreach (var glyphDef in language.BaseGlyphs)
+        // Every glyph is generated after the glyphs it is built from (a recipe's components, a derivation's
+        // source), pulling those in first when they come later in the lists. Without derivations nothing moves.
+        var defs = language.BaseGlyphs.Concat(language.Glyphs).GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First());
+        var visiting = new HashSet<string>();
+
+        void Ensure(GlyphDefinition glyphDef)
         {
+            if (generated.ContainsKey(glyphDef.Name) || !visiting.Add(glyphDef.Name)) return;
+
+            var dependencies = new List<string>();
+            if (language.Derivations.TryGetValue(glyphDef.Name, out var derivation)) dependencies.Add(derivation.From);
+            if (language.Combination.Recipes.TryGetValue(glyphDef.Name, out var recipe)) dependencies.AddRange(recipe.Components);
+            foreach (var name in dependencies)
+                if (defs.TryGetValue(name, out var dependency)) Ensure(dependency);
+
             GenerateInto(language, grid, languageSeed, glyphDef, generated, accepted, acceptedComposites, usageTracker);
         }
 
-        foreach (var glyphDef in language.Glyphs.Where(g => !composites.Contains(g.Name)))
-        {
-            GenerateInto(language, grid, languageSeed, glyphDef, generated, accepted, acceptedComposites, usageTracker);
-        }
-
-        foreach (var glyphDef in language.Glyphs.Where(g => composites.Contains(g.Name)))
-        {
-            GenerateInto(language, grid, languageSeed, glyphDef, generated, accepted, acceptedComposites, usageTracker);
-        }
+        foreach (var glyphDef in language.BaseGlyphs) Ensure(glyphDef);
+        foreach (var glyphDef in language.Glyphs.Where(g => !composites.Contains(g.Name))) Ensure(glyphDef);
+        foreach (var glyphDef in language.Glyphs.Where(g => composites.Contains(g.Name))) Ensure(glyphDef);
 
         return language.BaseGlyphs.Concat(language.Glyphs).Select(g => generated[g.Name]).ToList();
     }
@@ -95,9 +102,18 @@ public sealed class LanguageGenerator : ILanguageGenerator
             var candidate = _glyphGenerator.GenerateGlyph(language, glyphDef, grid, seed, generated, usageTracker, variation: attempt, languageSeed: languageSeed);
 
             bool trivialLine = rejectStraightLine && GlyphQualityChecker.IsTrivialStraightLine(candidate);
-            var similar = trivialLine
-                ? null
-                : GlyphQualityChecker.FindTooSimilar(candidate, pool, maxSimilarity);
+
+            // A derived glyph resembles its source by design: it is held to the (looser) maxSimilarityToSource
+            // against that one glyph, and to the normal limit against every other.
+            (Glyph Other, double Similarity)? similar = null;
+            if (!trivialLine)
+            {
+                bool derived = language.Derivations.TryGetValue(glyphDef.Name, out var derivation) && generated.ContainsKey(derivation.From);
+                similar = GlyphQualityChecker.FindTooSimilar(
+                    candidate, derived ? pool.Where(g => g.Name != derivation!.From) : pool, maxSimilarity);
+                if (similar is null && derived)
+                    similar = GlyphQualityChecker.FindTooSimilar(candidate, new[] { generated[derivation!.From] }, derivation!.MaxSimilarityToSource);
+            }
 
             if (trivialLine || similar is not null)
             {
@@ -118,11 +134,18 @@ public sealed class LanguageGenerator : ILanguageGenerator
             + (rejections.Count > shown ? $"; ... and {rejections.Count - shown} more" : "");
 
         bool mostlySimilar = rejections.Count(r => r.StartsWith("too similar")) * 2 >= rejections.Count;
+        bool derivedGlyph = language.Derivations.TryGetValue(glyphDef.Name, out var derivedFrom);
+        bool similarToSource = derivedGlyph && rejections.Any(r => r.Contains($"'{derivedFrom!.From}'"));
+        string moreAttempts = maxAttempts <= 3 ? $" quality.maxRegenerationAttempts is only {maxAttempts}: raising it gives the generator more tries." : "";
         string hint = isComposite
-            ? "Try raising quality.compositeMaxSimilarity, or giving the recipes different components or more placement freedom (scale/rotation, a larger grid)."
+            ? "Try raising quality.compositeMaxSimilarity, or giving the recipes different components or more placement freedom (scale/rotation, a larger grid)." + moreAttempts
+            : similarToSource
+                ? $"A derived glyph must differ from its source: raise derivations['{glyphDef.Name}'].maxSimilarityToSource, or make its steps change more (delete more, add a shape, mirror or rotate)." + moreAttempts
+            : derivedGlyph && mostlySimilar
+                ? "Derived glyphs are held to quality.maxSimilarity against every glyph except their source: raise it, or make the steps change the source more." + moreAttempts
             : mostlySimilar
-                ? "Try raising quality.maxSimilarity, widening subSymbolCount/subSymbolLength, or using a larger grid."
-                : "Try raising subSymbolLength/subSymbolCount, or set quality.rejectStraightLineOnly to false.";
+                ? "Try raising quality.maxSimilarity, widening the shapes' chain.length or count ranges, adding connectionRules or shapes, or using a larger grid." + moreAttempts
+                : "Try longer chains (chain.length) or a higher count on the shapes, or set quality.rejectStraightLineOnly to false." + moreAttempts;
 
         string what = isComposite ? "a composite sufficiently distinct from the other composites" : "a sufficiently distinct, non-trivial glyph";
 

@@ -39,7 +39,26 @@ public sealed class LanguageRenderer
         SKColor.Parse("#F58231"), SKColor.Parse("#911EB4"), SKColor.Parse("#008080"),
     };
 
-    private sealed record GlyphPlan(Glyph Glyph, PlannedGlyph Planned, ulong Seed, double WidthScale, Bounds? GlyphBounds);
+    private sealed record GlyphPlan(Glyph Glyph, PlannedGlyph Planned, ulong Seed, double WidthScale, Bounds? GlyphBounds, double RotateDegrees);
+
+    /// <summary>The angle a glyph is drawn at. A derived glyph that only scaled, mirrored, rotated or nudged its source
+    /// takes the source's angle (followed back to the first glyph that is not such a derivation), so the pair stays aligned.</summary>
+    private static double RotationFor(Glyph glyph, IReadOnlyDictionary<string, Glyph> byName, RenderConfig render, ulong languageSeed)
+    {
+        var seen = new HashSet<string>();
+        var origin = glyph;
+        while (origin.Derived is { FollowsSourceRotation: true } d && seen.Add(origin.Name) && byName.TryGetValue(d.Source, out var src))
+            origin = src;
+
+        double rotate = render.RotateDegrees;
+        if (render.RotateOptions.Count > 0)
+        {
+            var rotateRng = new DeterministicRandom(SplitMix64.DeriveSeed(SeedTree.ForGlyph(languageSeed, origin.Name), "rotate"));
+            var option = render.RotateOptions[rotateRng.WeightedIndex(render.RotateOptions.Select(o => o.Weight).ToList())];
+            rotate += option.Min + rotateRng.NextDouble() * (option.Max - option.Min);
+        }
+        return rotate;
+    }
 
     public IReadOnlyList<RenderedGlyph> Render(LanguageDefinition language, IReadOnlyList<Glyph> glyphs, ulong rootSeed)
     {
@@ -58,10 +77,15 @@ public sealed class LanguageRenderer
         var plans = new List<GlyphPlan>();
         Bounds? languageBounds = null;
 
+        var byName = glyphs.GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First());
         foreach (var glyph in glyphs)
         {
             ulong glyphSeed = SeedTree.ForGlyph(languageSeed, glyph.Name);
             var planned = curvePlanner.Plan(glyph);
+            double rotate = RotationFor(glyph, byName, render, languageSeed);
+
+            if (rotate % 360.0 != 0.0)
+                planned = planned.Rotated(rotate, new Vec2((glyph.GridWidth - 1) / 2.0, (glyph.GridHeight - 1) / 2.0));
 
             var widthRng = new DeterministicRandom(SplitMix64.DeriveSeed(glyphSeed, "width"));
             double widthScale = 1.0 + jitter * (widthRng.NextDouble() * 2 - 1);
@@ -70,13 +94,17 @@ public sealed class LanguageRenderer
             if (bounds.HasValue)
                 languageBounds = languageBounds.HasValue ? Bounds.Union(languageBounds.Value, bounds.Value) : bounds.Value;
 
-            plans.Add(new GlyphPlan(glyph, planned, glyphSeed, widthScale, bounds));
+            plans.Add(new GlyphPlan(glyph, planned, glyphSeed, widthScale, bounds, rotate));
         }
 
         double pad = margin + typeface.MaxInkExtentPx * (1.0 + jitter) + 1.0;
 
         SKColor foreground = ParseColor(render.Foreground, SKColors.Black);
         SKColor background = ParseColor(render.Background, SKColors.Transparent);
+
+        // Debug colouring by shape: each shape's place in the shapes list.
+        var shapeIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var shape in language.Shapes) shapeIndex.TryAdd(shape.Id, shapeIndex.Count);
 
         // Pass 2: lay out and draw.
         var results = new List<RenderedGlyph>();
@@ -87,7 +115,7 @@ public sealed class LanguageRenderer
             var langBounds = languageBounds ?? gridBounds;
 
             var transform = LayoutTransform.Compute(render.Framing, gridBounds, glyphBounds, langBounds, size, pad);
-            byte[] png = DrawGlyph(plan, transform, typeface, render, size, foreground, background);
+            byte[] png = DrawGlyph(plan, transform, typeface, render, size, foreground, background, shapeIndex);
 
             results.Add(new RenderedGlyph { LanguageName = language.Name, GlyphName = plan.Glyph.Name, Png = png });
         }
@@ -97,11 +125,13 @@ public sealed class LanguageRenderer
 
     private static byte[] DrawGlyph(
         GlyphPlan plan, LayoutTransform transform, ITypeface typeface, RenderConfig render,
-        int size, SKColor foreground, SKColor background)
+        int size, SKColor foreground, SKColor background, IReadOnlyDictionary<string, int> shapeIndex)
     {
         // Ink polygons per layer (a layer is the glyph's own chains, or one combination component).
         var layerPolygons = new List<List<Vec2[]>>();
         var layerSinks = new List<JoinSink>();
+        var layerColors = new List<Dictionary<Vec2[], SKColor>>();
+        bool byShape = render.DebugColorShapes;
         int chainIndex = 0;
 
         foreach (var layer in plan.Planned.Layers)
@@ -110,14 +140,19 @@ public sealed class LanguageRenderer
             // Every stroke of this layer records its nodes here; joins are built per node afterwards,
             // so a bend, a meeting of strokes and a crossing all go through the same code.
             var joinSink = new JoinSink();
+            var colors = new Dictionary<Vec2[], SKColor>(ReferenceEqualityComparer.Instance);
 
             foreach (var chain in layer.Chains)
             {
+                int firstPolygon = polygons.Count;
+                var shapeColor = byShape ? ShapeColor(chain.ShapeTag, shapeIndex) : (SKColor?)null;
+
                 if (chain.Kind == PlannedChainKind.Dot)
                 {
                     // A dot is just a disc, thick as the stroke; it takes no part in joins.
                     StrokeOutlineBuilder.AddDisc(transform.Apply(chain.Edges[0].P0),
                         typeface.DotRadiusPx * plan.WidthScale, polygons);
+                    if (shapeColor is { } dotColor) for (int k = firstPolygon; k < polygons.Count; k++) colors[polygons[k]] = dotColor;
                     chainIndex++;
                     continue;
                 }
@@ -134,20 +169,27 @@ public sealed class LanguageRenderer
                     StrokeId = strokeId,
                 };
                 typeface.AppendOutline(path, context, polygons);
+                if (shapeColor is { } strokeColor) for (int k = firstPolygon; k < polygons.Count; k++) colors[polygons[k]] = strokeColor;
             }
 
             JoinBuilder.BuildNodes(joinSink, render.Joins, polygons);
 
             layerPolygons.Add(polygons);
             layerSinks.Add(joinSink);
+            layerColors.Add(colors);
         }
 
         using var bitmap = new SKBitmap(size, size, SKColorType.Rgba8888, SKAlphaType.Premul);
         using var canvas = new SKCanvas(bitmap);
         canvas.Clear(background);
 
-        bool separateLayers = render.DebugColorComponents && layerPolygons.Count > 1;
-        if (render.DebugColorParts)
+        bool separateLayers = render.DebugColorComponents && layerPolygons.Count > 1 && !byShape;
+        if (byShape)
+        {
+            for (int i = 0; i < layerPolygons.Count; i++)
+                FillByShape(canvas, layerPolygons[i], layerColors[i], layerSinks[i].Kinds, foreground, render.DebugColorParts);
+        }
+        else if (render.DebugColorParts)
         {
             // Debug only: strokes in their colour, then the ink that joins and caps add, in their own colours.
             for (int i = 0; i < layerPolygons.Count; i++)
@@ -170,6 +212,13 @@ public sealed class LanguageRenderer
 
         if (render.DebugShowNodes)
         {
+            // The strokes were turned when they were planned; the overlays (lattice, labels, node dots) turn the same way.
+            double turn = plan.RotateDegrees * Math.PI / 180.0, cos = Math.Cos(turn), sin = Math.Sin(turn);
+            double midX = (plan.Glyph.GridWidth - 1) / 2.0, midY = (plan.Glyph.GridHeight - 1) / 2.0;
+            Vec2 Turn(double x, double y) => new(
+                midX + cos * (x - midX) - sin * (y - midY),
+                midY + sin * (x - midX) + cos * (y - midY));
+
             // Full lattice, faint, drawn first - lets you line up a PNG position with the
             // ASCII grid coordinates from the console output.
             using var latticeDot = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = new SKColor(0, 0, 0, 60) };
@@ -177,7 +226,7 @@ public sealed class LanguageRenderer
             for (int gx = 0; gx < plan.Glyph.GridWidth; gx++)
                 for (int gy = 0; gy < plan.Glyph.GridHeight; gy++)
                 {
-                    var p = transform.Apply(new Vec2(gx, gy));
+                    var p = transform.Apply(Turn(gx, gy));
                     canvas.DrawCircle((float)p.X, (float)p.Y, latticeRadius, latticeDot);
                 }
 
@@ -192,7 +241,7 @@ public sealed class LanguageRenderer
                 for (int gx = 0; gx < plan.Glyph.GridWidth; gx += 5)
                     for (int gy = 0; gy < plan.Glyph.GridHeight; gy += 5)
                     {
-                        var p = transform.Apply(new Vec2(gx, gy));
+                        var p = transform.Apply(Turn(gx, gy));
                         canvas.DrawText($"{gx},{gy}", (float)p.X + 3, (float)p.Y - 3, font, labelPaint);
                     }
             }
@@ -221,7 +270,7 @@ public sealed class LanguageRenderer
                 {
                     // Chosen per node: only the points that really occur twice are yellow.
                     var paint = occurrences[node] >= 2 ? stackedDot : chainPaint;
-                    var p = transform.Apply(new Vec2(node.X, node.Y));
+                    var p = transform.Apply(Turn(node.X, node.Y));
                     canvas.DrawCircle((float)p.X, (float)p.Y, radius, paint);
                 }
             }
@@ -230,6 +279,35 @@ public sealed class LanguageRenderer
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
+    }
+
+    /// <summary>Debug: polygons grouped by their shape's colour, one fill per colour. Polygons nobody claimed (joins between strokes)
+    /// keep the foreground colour. With the parts view on, each group is drawn as stroke bodies plus the coloured parts.</summary>
+    private static void FillByShape(
+        SKCanvas canvas, List<Vec2[]> polygons, Dictionary<Vec2[], SKColor> colors,
+        IReadOnlyDictionary<Vec2[], InkKind> kinds, SKColor foreground, bool parts)
+    {
+        foreach (var group in polygons.GroupBy(p => colors.TryGetValue(p, out var c) ? c : foreground))
+        {
+            var list = group.ToList();
+            if (parts) FillParts(canvas, list, kinds, group.Key);
+            else FillPolygons(canvas, list, group.Key);
+        }
+    }
+
+    /// <summary>A colour for "shapeId#instance": the hue belongs to the shape (spread around the colour wheel in list order, by the
+    /// golden angle so neighbours differ), and the instances of that shape step through lightness and drift a little in hue.</summary>
+    private static SKColor ShapeColor(string? tag, IReadOnlyDictionary<string, int> shapeIndex)
+    {
+        if (tag is null) return SKColors.Gray;
+        int at = tag.LastIndexOf('#');
+        string id = at < 0 ? tag : tag[..at];
+        int instance = at >= 0 && int.TryParse(tag[(at + 1)..], out var n) ? n : 0;
+        int index = shapeIndex.TryGetValue(id, out var found) ? found : shapeIndex.Count;
+
+        float hue = (float)((index * 137.508 + 15.0) % 360.0) + (instance % 5 - 2) * 7f;
+        float[] lightness = { 46f, 62f, 32f, 72f, 54f, 38f };
+        return SKColor.FromHsl((hue % 360f + 360f) % 360f, 78f, lightness[instance % lightness.Length]);
     }
 
     private static readonly SKColor CapColor = SKColors.Gray;

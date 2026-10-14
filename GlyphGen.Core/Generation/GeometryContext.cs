@@ -18,6 +18,7 @@ namespace GlyphGen.Core.Generation;
 public sealed class GeometryContext : IIntersectionContext
 {
     private readonly List<GridEdge> _edges = new();
+    private readonly List<string?> _edgeShapes = new(); // the shape id that drew each of _edges (null = unknown)
     private readonly List<GridEdge> _protectedEdges = new(); // edges of shapes that forbid being crossed
     private readonly List<List<GridPoint>> _nodeGroups = new();
 
@@ -29,6 +30,12 @@ public sealed class GeometryContext : IIntersectionContext
     public bool AllowCrossing { get; set; }
 
     public IEnumerable<GridEdge> ExistingEdges => _edges;
+
+    public IEnumerable<GridEdge> EdgesOfShapes(IReadOnlyCollection<string> shapeIds)
+    {
+        for (int i = 0; i < _edges.Count; i++)
+            if (_edgeShapes[i] is { } id && shapeIds.Contains(id)) yield return _edges[i];
+    }
 
     /// <summary>All edges when the shape being placed forbids crossing; otherwise only those of
     /// shapes that forbid being crossed. Both sides must allow a crossing.</summary>
@@ -46,11 +53,24 @@ public sealed class GeometryContext : IIntersectionContext
     public int GridWidth { get; set; }
     public int GridHeight { get; set; }
 
+    /// <summary>Moves everything committed so far by whole lattice steps (the glyph is being shifted as a whole).</summary>
+    public void Translate(int dx, int dy)
+    {
+        for (int i = 0; i < _edges.Count; i++) _edges[i] = Moved(_edges[i], dx, dy);
+        for (int i = 0; i < _protectedEdges.Count; i++) _protectedEdges[i] = Moved(_protectedEdges[i], dx, dy);
+        foreach (var group in _nodeGroups)
+            for (int i = 0; i < group.Count; i++) group[i] = group[i].Translate(dx, dy);
+    }
+
+    private static GridEdge Moved(GridEdge e, int dx, int dy) => e.WithPoints(e.From.Translate(dx, dy), e.To.Translate(dx, dy));
+
     /// <summary>Commits a placed shape. allowsCrossing is that shape's own permission to be
     /// crossed (and to cross); when false, later shapes can never cross its edges.</summary>
     public void Commit(SubSymbolChain chain, bool allowsCrossing)
     {
         _edges.AddRange(chain.Edges);
+        string? shapeId = chain.ShapeTag is { } tag ? tag[..Math.Max(0, tag.LastIndexOf('#'))] : null;
+        for (int i = 0; i < chain.Edges.Count; i++) _edgeShapes.Add(shapeId);
         if (!allowsCrossing) _protectedEdges.AddRange(chain.Edges);
         _nodeGroups.Add(new List<GridPoint>(chain.Nodes));
     }
@@ -67,6 +87,7 @@ public sealed class GeometryContext : IIntersectionContext
         foreach (var chain in chains)
         {
             _edges.AddRange(chain.Edges);
+            for (int i = 0; i < chain.Edges.Count; i++) _edgeShapes.Add(null);
             if (!allowsCrossing) _protectedEdges.AddRange(chain.Edges);
             group.AddRange(chain.Nodes);
         }

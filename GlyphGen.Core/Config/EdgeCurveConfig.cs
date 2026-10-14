@@ -9,9 +9,9 @@ namespace GlyphGen.Core.Config;
 public sealed class EdgeCurveConfig
 {
     /// <summary>Chance (0-100) that an edge made by this rule is drawn as a curve; otherwise it is a
-    /// straight line. Rolled per edge. 100 = always curved (a 0..0 tension still looks straight).
+    /// straight line. Rolled per edge. Default 0 = every edge straight; 100 = always curved (a 0..0 tension still looks straight).
     /// This replaces the old language-wide straightLineBias (chanceToBeCurved = 100 - straightLineBias).</summary>
-    public double ChanceToBeCurved { get; set; } = 100.0;
+    public double ChanceToBeCurved { get; set; } = 0.0;
 
     /// <summary>How the edge's end tangents are chosen. Derived: from the neighbouring nodes (smooth
     /// spline feel). Explicit: each end gets its own randomized tangent. Hybrid: Derived or Explicit

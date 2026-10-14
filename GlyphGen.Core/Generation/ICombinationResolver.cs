@@ -44,5 +44,6 @@ public interface ICombinationResolver
         Func<string, int, Glyph> regenerateComponent,
         CombinationArrangementRules arrangement,
         int variation = 0,
-        ulong languageSeed = 0);
+        ulong languageSeed = 0,
+        Action<string>? explainFailure = null);
 }

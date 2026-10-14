@@ -17,4 +17,8 @@ public sealed class SubSymbolChain
     /// <summary>Set when this chain came from a guaranteedMotifs entry; null for free-form
     /// language-level sub-symbols.</summary>
     public string? MotifId { get; set; }
+
+    /// <summary>Which shape drew this chain and which instance of it: "id#instance" (a copy carries its own shape id and
+    /// its original's instance number). Only for debug colouring; null for chains that came from elsewhere.</summary>
+    public string? ShapeTag { get; set; }
 }

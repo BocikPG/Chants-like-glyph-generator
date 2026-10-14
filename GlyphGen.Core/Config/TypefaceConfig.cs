@@ -15,9 +15,15 @@ public enum FramingMode
 public enum TypefaceKind { Rectangular, ThickEnds, Brush }
 /// <summary>How a join is drawn. Outer side: Miter = sharp point, Bevel = flat cut, Round = arc,
 /// Overlap = nothing added (plain overlapping strokes). Inner side: Bevel = flat chamfer across the
-/// notch, Round = fillet; Miter and Overlap both leave the notch as it is.</summary>
-public enum JoinStyle { Miter, Bevel, Round, Overlap }
-public enum CapStyle { Butt, Square, Round }
+/// notch, Round = fillet; Miter and Overlap both leave the notch as it is. Level (outer only): the miter
+/// point cut flat along an axis, at the level of the outer corner that reaches furthest; the inner side leaves the notch as it is.</summary>
+public enum JoinStyle { Miter, Bevel, Round, Overlap, Level }
+/// <summary>Level: a free end cut flat along an axis (see LevelAxis): the corner that reaches less far is extended to the
+/// level of the other. Does nothing on a stroke that already ends square to that axis.</summary>
+public enum CapStyle { Butt, Square, Round, Level }
+/// <summary>The line a Level cap or join is cut along. Auto = across the stroke's dominant direction (a cap) or the
+/// join's outward direction (a join), so horizontal and vertical strokes are left alone.</summary>
+public enum LevelAxis { Auto, Horizontal, Vertical }
 public enum WidthProfile { Linear, Smooth, Sharp }
 public enum FlareAppliesTo { ChainEnds, EveryEdge, ChainEndsAndCorners }
 public enum TerminalStyle { Flat, Round, Ball }
@@ -33,6 +39,12 @@ public sealed class RectangularTypefaceConfig
     public FloatRange Width { get; set; } = new() { Min = 0.05, Max = 0.05 };
 
     public CapStyle Cap { get; set; } = CapStyle.Butt;
+
+    /// <summary>With cap Level: which line the end is cut along. Horizontal = flat on the node's row (like text on a
+    /// baseline), Vertical = along its column, Auto = across the stroke's dominant direction, so a stroke steeper than 45
+    /// degrees is cut horizontally and a flatter one vertically. Straight horizontal and vertical strokes are never changed.</summary>
+    public LevelAxis CapLevel { get; set; } = LevelAxis.Auto;
+
 }
 
 public sealed class ThickEndsTypefaceConfig
@@ -67,6 +79,15 @@ public sealed class BrushTypefaceConfig
     // BroadNib (angle measured on screen, clockwise from the +x axis)
     public FloatRange NibAngleDegrees { get; set; } = new() { Min = 40, Max = 40 };
     public FloatRange ThinWidth { get; set; } = new() { Min = 0.012, Max = 0.012 };
+    /// <summary>0 = a flat, square-ended nib; 1 = fully rounded ends (a capsule, like a brush pen). In between rounds the corners.</summary>
+    public double NibRoundness { get; set; } = 0.0;
+    /// <summary>How far (degrees, +-) the hand lets the nib angle drift along a stroke, slowly and seeded per stroke.</summary>
+    public double NibAngleWobble { get; set; } = 0.0;
+    /// <summary>0-1: how much the nib length (pressure) varies along a stroke.</summary>
+    public double NibPressure { get; set; } = 0.0;
+    /// <summary>0-0.5: fraction of an open stroke's length, at each end, over which the nib eases in from a light touch
+    /// to full length, like a hand setting the pen down and lifting it.</summary>
+    public double NibLeadIn { get; set; } = 0.0;
 
     // Ink
     public double PressureVariation { get; set; } = 0.35;

@@ -56,7 +56,7 @@ public static class JoinResolver
         double factor = 1.0;
         void Consider(JoinSideConfig? side)
         {
-            if (side is { Style: JoinStyle.Miter })
+            if (side is { Style: JoinStyle.Miter or JoinStyle.Level })
                 factor = Math.Max(factor, Math.Min(Math.Max(1.0, side.MiterLimit), 2.62));
         }
 
@@ -221,6 +221,43 @@ public static class JoinBuilder
                 break;
             }
 
+            case JoinStyle.Level:
+            {
+                // The miter point, cut flat along an axis at the level of the outer corner that reaches furthest.
+                double cross = a.Dir.Cross(b.Dir);
+                if (Math.Abs(cross) > Eps)
+                {
+                    double t = (pb - pa).Cross(b.Dir) / cross;
+                    Vec2 m = pa + a.Dir * t;
+                    Vec2 outward = m - p;
+                    double reach = outward.Length;
+                    if ((m - p).Dot((pa - p) + (pb - p)) > 0 && reach > 1e-9)
+                    {
+                        Vec2 axis = side.Axis switch
+                        {
+                            LevelAxis.Horizontal => new Vec2(0, 1),
+                            LevelAxis.Vertical => new Vec2(1, 0),
+                            _ => Math.Abs(outward.X) > Math.Abs(outward.Y) ? new Vec2(1, 0) : new Vec2(0, 1),
+                        };
+                        double along = axis.Dot(outward);
+                        if (Math.Abs(along) >= 0.3 * reach)
+                        {
+                            if (along < 0) axis = new Vec2(-axis.X, -axis.Y);
+                            double level = Math.Max(axis.Dot(pa), axis.Dot(pb));
+                            var clipped = StrokeOutlineBuilder.ClipBelow(new[] { p, pa, m, pb }, axis, level);
+                            if (clipped.Length >= 3)
+                            {
+                                StrokeOutlineBuilder.Emit(output, clipped);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                StrokeOutlineBuilder.Emit(output, new[] { p, pa, pb });
+                break;
+            }
+
             case JoinStyle.Round:
             {
                 double a0 = Math.Atan2(pa.Y - p.Y, pa.X - p.X);
@@ -299,7 +336,7 @@ public static class JoinBuilder
     private static void AddInner(JoinArm a, JoinArm b, double gap, JoinSideConfig side, List<Vec2[]> output)
     {
         // Miter and Overlap both leave the notch as the two bodies make it.
-        if (side.Style is JoinStyle.Overlap or JoinStyle.Miter || side.Size <= 0) return;
+        if (side.Style is JoinStyle.Overlap or JoinStyle.Miter or JoinStyle.Level || side.Size <= 0) return;
 
         // The notch is bounded by a's +Perp edge and b's -Perp edge. Both are followed as the real
         // outlines, so the fill meets the borders even where a stroke curves away from its tangent.

@@ -22,6 +22,13 @@ public sealed class Glyph
     /// <summary>Populated only for composite glyphs built via combination.recipes.</summary>
     public List<PlacedComponent> Components { get; } = new();
 
+    /// <summary>Set when this glyph was derived from another one (see DerivationConfig).</summary>
+    public DerivedFrom? Derived { get; set; }
+
+    /// <summary>Chains that are flipped copies of other chains of this glyph, in the order they were made
+    /// (a copy of a copy comes after its original).</summary>
+    public List<ChainCopy> Copies { get; } = new();
+
     public bool IsComposite => Components.Count > 0;
 
     /// <summary>

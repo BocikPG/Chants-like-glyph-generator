@@ -17,7 +17,7 @@ public static class TypefaceFactory
             case TypefaceKind.Rectangular:
             {
                 var c = config.Rectangular ?? new RectangularTypefaceConfig();
-                return new RectangularTypeface(c.Width.Resolve(rng) * canvasPx, c.Cap, joins);
+                return new RectangularTypeface(c.Width.Resolve(rng) * canvasPx, c.Cap, joins, c.CapLevel);
             }
 
             case TypefaceKind.ThickEnds:

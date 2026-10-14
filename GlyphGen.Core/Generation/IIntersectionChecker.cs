@@ -20,6 +20,10 @@ public interface IIntersectionContext
     /// does not allow crossing; otherwise only the edges of shapes that themselves forbid being
     /// crossed - a crossing needs both shapes' permission.</summary>
     IEnumerable<GridEdge> BlockingEdges { get; }
+
+    /// <summary>The existing edges that were drawn by the given shapes (ids). Contexts that do not know which shape
+    /// drew what return everything.</summary>
+    IEnumerable<GridEdge> EdgesOfShapes(IReadOnlyCollection<string> shapeIds) => ExistingEdges;
 }
 
 /// <summary>

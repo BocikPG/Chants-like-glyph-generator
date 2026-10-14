@@ -87,6 +87,11 @@ public sealed class PlacementConfig
     /// be combined with SubSymbolSpacing.MinNodeDistance &gt; 0 (a shared node is distance 0).</summary>
     public bool StartOnExistingNode { get; set; } = false;
 
+    /// <summary>With startOnExistingNode: only the nodes of these shapes (ids of EARLIER shapes) count as places to
+    /// start on. null (default) = every node already in the glyph. When none of the listed shapes was drawn in this
+    /// glyph, there is nothing to attach to and the shape is placed like the first one, at a random point.</summary>
+    public List<string>? StartOnShapes { get; set; }
+
     /// <summary>RandomValid only: pull the shape towards a side or corner of the glyph. null = no pull. It ranks
     /// the shape's best-of-N candidates (arrangement.candidates), so raise that for a stronger pull.</summary>
     public SidePull? Side { get; set; }

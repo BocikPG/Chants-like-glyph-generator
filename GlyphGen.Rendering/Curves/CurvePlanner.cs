@@ -68,7 +68,7 @@ public static class CurvePlanner
         void Flush()
         {
             if (run.Count == 0) return;
-            var planned = PlanRun(run, closed, chain.MotifId, curve, allPoints, rng);
+            var planned = PlanRun(run, closed, chain.MotifId, curve, allPoints, rng, chain.ShapeTag);
             if (planned is not null) result.Add(planned);
             run.Clear();
         }
@@ -77,18 +77,18 @@ public static class CurvePlanner
         {
             if (!edge.IsCircle) { run.Add(edge); continue; }
             Flush();
-            result.Add(PlanCircle(edge, chain.MotifId));
+            result.Add(PlanCircle(edge, chain.MotifId, chain.ShapeTag));
         }
         Flush();
 
         return result;
     }
 
-    private static PlannedChain PlanCircle(GridEdge edge, string? motifId)
+    private static PlannedChain PlanCircle(GridEdge edge, string? motifId, string? shapeTag)
     {
         var a = new Vec2(edge.From.X, edge.From.Y);
         var b = new Vec2(edge.To.X, edge.To.Y);
-        var planned = new PlannedChain { MotifId = motifId };
+        var planned = new PlannedChain { MotifId = motifId, ShapeTag = shapeTag };
 
         if (edge.IsDot)
         {
@@ -125,7 +125,7 @@ public static class CurvePlanner
 
     private static PlannedChain? PlanRun(
         List<GridEdge> edges, bool closed, string? motifId, CurveConfig curve,
-        List<Vec2> allPoints, DeterministicRandom rng)
+        List<Vec2> allPoints, DeterministicRandom rng, string? shapeTag = null)
     {
         var pts = new List<Vec2>();
         var styles = new List<EdgeCurveConfig>();
@@ -147,7 +147,7 @@ public static class CurvePlanner
         closed = closed && pts.Count >= 3;
 
         int n = pts.Count;
-        var result = new PlannedChain { Closed = closed, MotifId = motifId };
+        var result = new PlannedChain { Closed = closed, MotifId = motifId, ShapeTag = shapeTag };
         int edgeCount = closed ? n : n - 1;
 
         for (int i = 0; i < edgeCount && i < styles.Count; i++)

@@ -22,12 +22,14 @@ GlyphGen.Cli --migrate old.json [new.json]
 2. [Root config](#2-root-config)
 3. [Language: basics](#3-language-basics)
 4. [Shapes](#4-shapes)
+    - [Copy shapes](#copy-shapes-copyof)
 5. [Chain rules](#5-chain-rules)
 6. [Placement](#6-placement)
 7. [Arrangement](#7-arrangement)
 8. [Size bias by usage](#8-size-bias-by-usage)
 9. [Quality gate](#9-quality-gate)
 10. [Combination (composites)](#10-combination-composites)
+    - [Derived glyphs](#10b-derived-glyphs)
 11. [Curves](#11-curves)
 12. [Rendering](#12-rendering)
 13. [Output files](#13-output-files)
@@ -136,6 +138,9 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
 | `nodes` | none | Literal shapes only: integer `[x, y]` pairs relative to the placement origin, joined in order as a polyline. Rotated about `(0,0)` if rotation applies, then translated to the origin. At least 2 points. |
 | `placement` | see section 6 | Where the shape goes. |
 | `arrangement` | see section 7 | How it relates to the other shapes. |
+| `chance` | `100` | Chance (0-100) that the shape is drawn in a glyph at all, rolled once per glyph and covering every instance (a `count` still applies when it is drawn). `100` always draws. A copy shape (below) whose original was skipped is skipped too. |
+| `onlyForGlyphs` | all glyphs | List of glyph names (from `glyphs`/`baseGlyphs`): the shape is drawn **only** in these plain glyphs. Omitted = every plain glyph. A copy (`copyOf`) is drawn only where its original is, so a copy may narrow further but cannot add glyphs (listing one where the original is not drawn is an error). |
+| `excludeGlyphs` | none | Glyph names this shape is never drawn in, applied after `onlyForGlyphs`. A shape left out of a glyph takes no random draws, so that glyph's other strokes and all unfiltered glyphs come out exactly as before. Errors: an unknown name, a composite (recipe) or derived glyph (not built from `shapes`; a derivation's `Add` step picks its own), or a plain glyph left with no shape at all. |
 | `seedLabel` | none | Advanced: names the shape's random streams (default: `shape-<id>`). Only needed to make a migrated config reproduce its old glyphs; leave it out in new configs. |
 
 **Guaranteed motifs and free-form strokes are the same thing.** A guaranteed motif is a shape without `count`; free-form strokes are shapes with one. Differences that follow from that: a shape **without** `count` is drawn blue in debug renders and is **not** affected by `usageSizeBias` (section 8); a shape **with** `count` is drawn in the free-stroke colour and is affected. A `count` range may include `0` (the shape is then sometimes absent). You can have any number of both kinds, e.g. long strokes and short ticks with different rules.
@@ -145,6 +150,50 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
 Each instance is a separate placement. If one cannot be placed within its attempt budget, generation fails with an error naming the shape (and, for counted shapes, which instance).
 
 A language with plain or base glyphs needs at least one shape. A language whose glyphs are all composites needs none.
+
+### Copy shapes (`copyOf`)
+
+A shape can be a **copy of an earlier shape** instead of being drawn: add one more entry to `shapes` and give it `copyOf`. For every instance of the original that the glyph got, the copy entry makes one flipped, moved copy of it. Copies are mirror images of strokes that are already there, so a whole language can share one kind of symmetry.
+
+```json
+"shapes": [
+  { "id": "strokes", "count": { "min": 2, "max": 3 }, "chain": { ... } },
+  { "id": "twin",
+    "copyOf": {
+      "shape": "strokes",
+      "flip": "Auto", "auto": { "by": "LongestStraight" },
+      "gap": { "min": 1, "max": 2 }, "shift": { "min": 0, "max": 1 },
+      "anchor": "OriginStart", "preferNoCrossing": true
+    },
+    "arrangement": { "allowCrossing": false } }
+]
+```
+
+The original must be listed **before** the copy (shapes are processed in order, so the copies are made after all instances of the original). A copy can itself be copied (four-way symmetry: copy once `Horizontal`, copy that `Vertical`). The copy entry takes no `chain`, `nodes`, `placement` or `count`; its `arrangement` (`allowCrossing`, `spacing`, `bias`) decides which positions are acceptable. An original that was not drawn (a `count` of 0) leaves nothing to copy.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `shape` | required | Id of the shape to copy. |
+| `flip` | `Auto` | `None` (only move), `Horizontal` (mirror left-right), `Vertical` (top-bottom), `Rotate180`, `Diagonal`, `AntiDiagonal`, `Random` (draw from `flips`) or `Auto` (a rule, below). The flip happens around the original chain's **start node**. |
+| `flips` | Horizontal, Vertical, Rotate180 | `Random` only: the flips to draw from. |
+| `auto.by` | `LongestStraight` | `Auto` only. `LongestStraight`: finds the longest run of consecutive edges that continue in one straight horizontal, vertical or diagonal line, and flips **across** it (a horizontal run gives a left-right mirror, and so on). `CenterWeight`: compares the average of the original's nodes with the board's middle and mirrors along the axis where they differ most, pushing the copy toward the middle. Ties are broken at random. |
+| `auto.axis` | `Perpendicular` | `LongestStraight` only: where the mirror line runs relative to the longest run. `Perpendicular` (the original behaviour) mirrors across the run, so a horizontal run gives a left-right mirror and the copy continues it backwards. `Parallel` mirrors along it, so a horizontal run gives a top-bottom mirror and the copy lies beside the run; give it a `gap` of 1 or more, or the copy lies on top of the run. `Random` draws one of the two for each copy. |
+| `auto.shapes` | none | Ids of earlier shapes the `Auto` rule looks at (all their instances in the glyph) instead of only the chain being copied: the longest straight run among their strokes, or the average of all their nodes. A listed shape that was not drawn adds nothing; if none was drawn the chain being copied is used. |
+| `auto.toward` | `Middle` | `CenterWeight` only: `Edge` pushes the copy away from the middle instead. |
+| `gap` | 0 to 0 | Steps the copy is moved **apart** from the original, in the direction the flip throws it (or the direction `CenterWeight` aims). `0` = the copy starts on the anchor itself, so the two share that node; positive = apart; negative = pushed back over the original (they overlap or cross). Drawn from the range for each copy. |
+| `shift` | 0 to 0 | Steps the copy is slid sideways (across the gap direction), up or down at random. |
+| `anchor` | `OriginStart` | Where the copy's start node goes before gap and shift: the original's own start, `ExistingNode` (a node already on the glyph) or `ExistingEdge` (a lattice point on a line already there). Existing points are tried in random order. |
+| `preferNoCrossing` | `true` | All gap/shift/anchor combinations are tried in random order and the first that crosses nothing is taken. If every one crosses, the least-crossing one is kept **only** when the copy's `arrangement.allowCrossing` is true; otherwise generation fails like any shape that cannot be placed. With `false` the first position that obeys the hard rules is taken. |
+| `moveGlyphToFit` | `true` | When no position keeps the copy on the grid but one would if the strokes already drawn sat elsewhere, the **whole glyph so far moves over** (copy included, by the smallest whole-step move) to where it fits. Positions that cross nothing are preferred. `false` fails instead. Not used by copies in a derivation step. |
+| `regenerateBase` | `3` | First retry. If no position works for the copy, the base shape (the first shape in the chain of copies that is not itself a copy) is redrawn with fresh random numbers and the copy tried again, up to this many times. Everything placed after the base is rebuilt around the new draw. `0` turns it off. Only helps when the base is generated, not a literal. |
+| `redrawGlyph` | `3` | Second retry, after the base redraws are spent: the whole glyph is redrawn from a fresh seed, up to this many times, before generation fails with the error (which then says how many retries were spent). `0` turns it off. Neither retry applies to copies in a derivation step. Glyphs where no copy fails are drawn exactly as before. |
+| `mirrorCurves` | `true` | The copy's curves are the original's curves flipped, so the two are exact mirror images. `false` gives the copy curves of its own. |
+| `respectSelfSpacing` | `false` | Applies the **original's** `chain.selfSpacing` rules between the copy and the original, as if the copy were more nodes of the same stroke: every node of the copy is measured against every node of the chain it copies (a node the two share is exempt, except in `AllNodes` mode; `Existing` and `Adjacent` both mean "every node of the original" here). Positions that break a rule are skipped like any other rejected position; the error then counts them (`broke the original's chain.selfSpacing`). A copy of a copy uses the rules of the first original. The copy's own nodes need no check, a flip keeps their distances. An error if the original has no `selfSpacing` rule with a `minDistance` or `maxDistance`. |
+| `selfSpacingIgnoresOriginal` | `false` | With `respectSelfSpacing`: for `Existing` and `AllNodes` rules the **original chain is left out** and the copy is measured against every other node already in the glyph instead, so it may sit right next to its original but still keeps the rules' distances from everything else (other instances of the original's shape count as everything else). `Adjacent` rules still compare with the original. With nothing else in the glyph those rules always pass. An error without `respectSelfSpacing`. |
+
+If a copy cannot be placed the error lists the flip that was chosen, the anchor and gap/shift ranges, how many positions were tried, and how many were rejected for leaving the grid (and, when the glyph could be moved, how large the glyph and copy are together), breaking `arrangement.spacing`, or crossing existing strokes, followed by a hint for the most common cause.
+
+Notes. The hard rules still apply: the copy must fit the grid (circles and dots too) and obey `arrangement.spacing`, and with `allowCrossing: false` it may not cross anything. Note a copy with `gap: 0` shares its start node with the original, so a `minNodeDistance` spacing rule would reject it. Under `bias`, up to `candidates` acceptable positions are compared and the best-scoring kept. In a derivation's `Add` step a copy shape must be listed after its original in the same step, and its curves are drawn fresh. Every random choice uses its own stream, so adding a copy shape does not change the glyphs of the other shapes.
 
 ---
 
@@ -283,6 +332,7 @@ Each shape has its own `placement` block.
 | `rotations` | `null` | Literal shapes only. `null`: use `combination.rotation.allowed` when `combination.allowRotate` is on (the original coupling). A list: use exactly these angles. `[]`: never rotate. Only 0, 90, 180, 270. |
 | `maxPlacementAttempts` | `20` | Attempts per instance (>= 1). Only used when something varies between attempts (random position, rotation, or a generated shape); otherwise one attempt. Generative shapes always vary. |
 | `startOnExistingNode` | `false` | New shapes start on a node already in the glyph. See below. |
+| `startOnShapes` | all shapes | With `startOnExistingNode`: a list of ids of **earlier** shapes; only their nodes count as places to start on (copies and instances included, by shape id). Default: every node already in the glyph. If none of the listed shapes was drawn in this glyph (a `chance` roll, `onlyForGlyphs`), there is nothing to attach to and the shape is placed at a random point, like the very first shape. Errors: used without `startOnExistingNode`, an empty list, an unknown id, or a shape not listed before this one. |
 | `side` | none | Pull the shape towards a side or corner (`RandomValid` only). See "Side pull" below. |
 
 Each attempt resolves an origin, asks the shape to build itself there, then checks grid bounds, crossing and spacing. The first attempt that passes wins (with a bias active, up to `arrangement.candidates` such placements are collected, see section 7).
@@ -529,6 +579,71 @@ Note what a side means: the pull is toward that side of the **grid** (the neares
 
 ---
 
+## 10b. Derived glyphs
+
+Block: `derivations` (language level), a map from glyph name to a recipe for editing **another glyph**. The source is generated first, then the steps edit a copy of its strokes; the source itself is left as it was.
+
+```json
+"derivations": {
+  "Cemetery": {
+    "from": "death_base",
+    "maxSimilarityToSource": 0.85,
+    "steps": [
+      { "op": "DeleteNodes", "mode": "Bridge", "target": "Inner",
+        "amount": { "percent": { "min": 10, "max": 30 } },
+        "connectionRules": [ { "direction": "Any", "minLength": 1, "maxLength": 3 } ],
+        "keepConnected": true },
+      { "op": "DeleteEdges", "amount": { "count": { "min": 1, "max": 2 } }, "removeOrphanNodes": true },
+      { "op": "Add", "shapes": ["tick"], "optional": true },
+      { "op": "Scale", "factors": [ { "numerator": 2, "denominator": 3 } ] }
+    ]
+  }
+}
+```
+
+- The name must be listed in `glyphs` or `baseGlyphs` and must not also have a recipe. It is generated **after** its source wherever the two are listed; the source may be a plain, base, composite or itself derived glyph (a composite is flattened into plain strokes). Circular dependencies are rejected.
+- A derived glyph can be a component of a recipe, or the source of another derivation.
+- `finalOutputRotation` (default `FollowMoves`) decides whether the derived glyph is drawn at its source's `render.rotateOptions` angle instead of its own. Only steps that actually ran count (one skipped by `chance` or `onlyIf` does not): `Own` never follows; `FollowMoves` follows when only `Scale`, `Mirror`, `Rotate` or `Nudge` ran; `FollowRemovals` also follows after `DeleteNodes`, `DeleteEdges` and `Keep` (what is left is a part of the source); `FollowAlways` follows whatever ran, `Add` included.
+- Everything random comes from the glyph's seed and the step's position, so the same seed gives the same result; a quality retry draws a different edit.
+- **Curves are kept.** An edge that survives untouched (not moved, and not new) gets the source's exact curve back, scaled/mirrored/rotated with the glyph. New or moved edges get a fresh curve from the connection rule that made them.
+- **Quality gate.** The derived glyph is compared with every glyph **except** its source using `quality.maxSimilarity`, and with the source using `maxSimilarityToSource` (0-1, default `0.9`; `1` turns it off). So it can never be a copy. Similarity is measured on the node positions (shifted to the top left), so deleting edges but keeping their nodes (`removeOrphanNodes: false`) leaves it identical in that measure.
+
+| Option | Default | Notes |
+|---|---|---|
+| `from` | (required) | The glyph to start from. |
+| `steps[]` | (required) | Run in order, each described below. |
+| `maxSimilarityToSource` | `0.9` | See above. |
+
+### Steps
+
+Every step has `op`, and optionally `onlyIf` and `chance`. Options that don't belong to the op are rejected.
+
+- **`onlyIf`** is a gate: `{ "minEdges": 4, "maxEdges": 9, "minNodes": 5, "maxNodes": 12 }`, every limit optional, all that are set must hold. It looks at the glyph **as it is when the step comes up**, after the earlier steps, so a step can depend on what came before it (for instance, only delete more if enough is left). Nodes are the distinct points, lone ones included; a circle or dot counts as one edge. A step whose gate is closed does nothing and uses no random numbers.
+- **`chance`** (0-100, default 100) is the chance that the step runs at all. It is rolled only if the gate is open.
+
+**Amounts.** `DeleteNodes`, `DeleteEdges`, `Keep` and `Nudge` take `amount`: exactly one of `percent` `{min,max}` (of **all** nodes, or all edges, existing when the step starts, rounded) or `count` `{min,max}` (a fixed number, drawn inclusive).
+
+| `op` | Options | What it does |
+|---|---|---|
+| `DeleteNodes` | `amount`, `target`, `mode`, `connectionRules`, `bridgeMaxMoves`, `removeOrphanNodes`, `keepAtLeast`, `keepConnected` | Removes nodes and the edges touching them. |
+| `DeleteEdges` | `amount`, `removeOrphanNodes`, `keepAtLeast`, `keepConnected` | Removes edges. |
+| `Keep` | same as `DeleteEdges` | The opposite: `amount` is how many edges **stay**; the rest go. |
+| `Add` | `shapes`, `optional` | Adds strokes from entries of `shapes` (by `id`), placed with their own count, chain, placement and arrangement against what is left. Added strokes cross the existing ones only if the shape's `arrangement.allowCrossing` is true. A shape that can't be placed fails the glyph unless `optional` is true. |
+| `Scale` | `factors` | Scales the whole glyph about its middle by one of the weighted ratios `{numerator, denominator, weight}`. Nodes snap to the grid (so nodes can merge, and a straight edge collapsing to a point is dropped). A ratio that would not fit the grid is not picked; if none fits the step is skipped. |
+| `Mirror` | `axis` | `Horizontal` (left becomes right, default), `Vertical` or `Random`. |
+| `Rotate` | `degrees` | One of 90, 180, 270 (default all three), then slid back into the grid; skipped if it cannot fit. |
+| `Nudge` | `amount`, `target`, `distance` | Moves nodes by up to `distance` (default 1) on each axis, never onto another node or into a crossing. Moved edges lose their source curve. |
+
+**`target`** (DeleteNodes, Nudge): `Any` (default), `Ends` (free tips, one edge end), `Inner` (two edge ends: the middle of a stroke) or `Junction` (three or more edge ends meet).
+
+**`mode`** (DeleteNodes): `Cut` (default) removes the node and its edges, so a stroke through it splits in two. `Bridge` reconnects the two neighbours of an `Inner` node with a **new path grown from the step's `connectionRules`** (same fields as `chain.connectionRules`; Circle rules, angle limits and loop chances are ignored here): at most `bridgeMaxMoves` moves (default 3), shortest first, crossing nothing and avoiding the glyph's other nodes. If no path exists, or the node is a tip or junction, it is cut instead.
+
+**Safety options.** `keepAtLeast` (default 1): never end with fewer edges than this; a pick that would is skipped. `keepConnected` (default false): skip any pick that would split the glyph into more connected pieces than before the step. `removeOrphanNodes` (default true): nodes left with no edge are removed; with false they stay as lone nodes (invisible when drawn, shown by the debug view, and still counted by later steps and by similarity).
+
+Circles and dots are single edges: deleting either end node, or the edge, removes the whole circle.
+
+---
+
 ## 11. Curves
 
 How an edge bends is set **per connection rule**, in the rule's `curve` block, so one stroke can mix gentle curves and dead-straight ticks. The top-level `curve` block only holds what is not per edge: `edge` (the settings for edges that no rule made, i.e. Literal shapes), the proximity guard, `forceAllEdgesCurved` and `contextMode`.
@@ -560,7 +675,7 @@ Per rule (`connectionRules[].curve`, and `curve.edge`):
 
 | Option | Notes |
 |---|---|
-| `chanceToBeCurved` | Default `100`. Percentage 0-100: the chance that an edge made by this rule is a curve rather than a straight line, rolled per edge. (This replaces the old language-wide `straightLineBias`: `chanceToBeCurved = 100 - straightLineBias`.) 100 still looks straight if the tension is 0. |
+| `chanceToBeCurved` | Default `0` (every edge straight). Percentage 0-100: the chance that an edge made by this rule is a curve rather than a straight line, rolled per edge. (This replaces the old language-wide `straightLineBias`: `chanceToBeCurved = 100 - straightLineBias`.) Set it above 0 to get curves; 100 still looks straight if the tension is 0. |
 | `mode` | Default `Derived` (tangents from the neighbouring nodes, smooth); `Explicit` (the two handles of the edge deviate independently, kinks possible); `Hybrid` (each edge randomly Derived or Explicit). |
 | `tension.range` `{min,max}` | Default `0.25..0.35`. Used **only when `options` is empty**: one continuous range, sampled uniformly. |
 | `tension.options[]` | Default empty. Weighted bands `{min, max, weight}` (weight default `1`); one band is picked per handle, then a value is sampled inside it. This is what allows bimodal looks such as "70% dead straight (`0..0`), 30% strongly curved (`0.4..0.5`)". When non-empty it replaces `range`. The final value is clamped to `0..0.5` and is the handle length as a fraction of the edge length. |
@@ -611,6 +726,7 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
   "debugShowNodes": false,
   "debugColorComponents": false,
   "debugColorParts": false,
+  "debugColorShapes": false,
   "typeface": {
     "kind": "Rectangular",
     "perGlyphJitter": 0.0,
@@ -629,10 +745,13 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
 | Option | Notes |
 |---|---|
 | `framing` | How glyphs are scaled and positioned on the canvas (default `Grid`): `Grid` = the whole grid maps to the canvas, so a glyph's size and position on the grid carry through; `Glyph` = crop to each glyph's own bounding box and centre it (relative sizes are lost); `Language` = crop to the combined bounding box of every glyph in the language, one shared scale for all; `GlyphCentered` = the grid's scale, but each glyph re-centred on the canvas. |
+| `rotateOptions` | Per-glyph random turn **added to** `rotateDegrees`: a list of `{ "min", "max", "weight" }` ranges in degrees. Each glyph draws one option by weight (default 1, 0 = never), then an angle uniformly from its range. The draw comes from the glyph's own seed, so a glyph always turns the same way, in normal and debug images alike. Example: `[ { "min": -8, "max": 8, "weight": 4 }, { "min": 85, "max": 95, "weight": 1 } ]` mostly tilts a little and now and then lays a glyph on its side. A derived glyph can take its source's angle (followed back through such derivations) so the two stay turned alike; the derivation's `finalOutputRotation` decides when (see Derivations). Empty (default) = none. |
+| `rotateDegrees` | Turns every glyph by this many degrees, **clockwise**, around the middle of its grid (default `0`); the canvas stays as it is. Any angle works and curves turn exactly. The framing then fits the turned glyphs: with `Grid` framing the grid's square is what turns, so its corners can reach past the canvas margin; `Glyph` and `Language` framing rescale to fit the turned shapes. Applies to the normal and the debug images (lattice, labels and node dots turn too). |
 | `foreground`, `background` | `#RRGGBB` or `#AARRGGBB`. Defaults: foreground `#000000`, background `#00000000` (transparent). Unparseable values fall back to black / transparent. |
 | `debugShowNodes` | Draws the faint lattice with coordinate labels every 5 cells, plus node dots: red = free-form sub-symbol, blue = motif, **gold = a node used more than once** (a revisit or a node shared by shapes). |
 | `debugColorComponents` | Fills each combination component in its own colour. |
 | `debugColorParts` | Colours the ink each kind of part adds: **grey** caps (and Ball / Ink terminals), **violet** corner joins, **pink** junction joins (including straightening). Strokes keep the foreground (or component) colour. Each part shows only where it goes beyond the strokes, painted over them in build order: corner joins, junction joins, caps. A cap removed by `trimCaps` is not drawn, so it is not shown. |
+| `debugColorShapes` | Gives every shape its own colour in the `.debug.png` images, in the order of the shapes list. Instances of one shape (a shape with a `count`, or a copy of each instance) share a hue and differ in lightness, so they can be told apart. Joins between strokes keep the foreground colour; chains with no shape (derived strokes from before this option, circles' joins) are grey. Takes the place of `debugColorComponents` when both are on, and combines with `debugColorParts` (parts are then drawn over each shape's colour). |
 | `typeface.kind` | `Rectangular` (default), `ThickEnds` or `Brush`. Selects which sub-block below is used; a missing sub-block means that typeface's defaults. |
 | `typeface.perGlyphJitter` | `0` (default) = every glyph uses the identical typeface; `0.1` = each glyph's widths vary by up to +-10%. Clamped to 0-0.9. |
 
@@ -684,6 +803,7 @@ A bend has one gap of each kind; a T, a Y or a crossing only has notches. Which 
 | `Miter` | Sharp pointed corner. Falls back to a bevel when the tip would be longer than `miterLimit` x half-width (minimum 1). | Same as `Overlap`. |
 | `Bevel` | Corner cut flat. | A flat chamfer across the notch, `size` half-widths long. |
 | `Round` | Rounded corner (a full reversal gets a round cap). | A fillet in the notch with a radius of `size` half-widths. |
+| `Level` | The miter point **cut flat** along an axis (`axis`: `Auto`, `Horizontal` or `Vertical`) at the level of the outer corner that reaches furthest, so a V pointing down gets a flat bottom and a corner pointing right a vertical edge. `Auto` cuts across the corner's outward direction. Falls back to a bevel when the corner points too far from the axis to be cut. | Same as `Overlap`. |
 | `Overlap` | Nothing added: plain overlapping strokes. | Nothing added: the notch stays sharp. |
 
 The inner `size` is measured in half-widths of the stroke (`1` = half the stroke width) and is limited automatically so the chamfer or fillet never reaches past the neighbouring node. The inner join only ever **adds** ink; it cannot cut away the notch. It follows the strokes' real edges, so it still meets the borders when a stroke curves away from the node.
@@ -701,7 +821,7 @@ Whether the top of a T is "inner" or "outer" depends on which way the bar bends,
 
 ### Caps
 
-Caps (`Rectangular` only; the other typefaces choose their own end shapes): `Butt` ends flat at the node, `Square` extends half a width past it, `Round` ends in a half disc. Caps are drawn at open tips, under any junction join, unless `junction.trimCaps` removes them at junctions.
+Caps (`Rectangular` only; the other typefaces choose their own end shapes): `Butt` ends flat at the node, `Square` extends half a width past it, `Round` ends in a half disc, `Level` cuts the end flat along an axis: the corner that reaches less far is **extended along the stroke** until it reaches as far as the other, so the end sits on one level (row or column). Straight horizontal and vertical strokes are left as they are (their end is already level), and a stroke too shallow to the axis (more than about 45 degrees off) is not changed. Caps are drawn at open tips, under any junction join, unless `junction.trimCaps` removes them at junctions.
 
 ### Typefaces
 
@@ -712,7 +832,8 @@ One typeface per **language**, resolved once from the seed, so every glyph reads
 | Option | Default | Notes |
 |---|---|---|
 | `width` | `0.05` | Stroke width. |
-| `cap` | `Butt` | `Butt`, `Square` or `Round`. |
+| `cap` | `Butt` | `Butt`, `Square`, `Round` or `Level`. |
+| `capLevel` | `Auto` | With `Level`: the line the end is cut along. `Horizontal` = flat on the node's row, `Vertical` = along its column, `Auto` = across the stroke's dominant direction (a stroke steeper than 45 degrees is cut horizontally, a flatter one vertically; exactly 45 degrees horizontally). |
 
 **`ThickEnds`** (`typeface.thickEnds`): a body of one width flaring to another at chosen nodes. If `endWidth` is smaller than `width`, the ends pinch instead of flaring.
 
@@ -731,7 +852,7 @@ One typeface per **language**, resolved once from the seed, so every glyph reads
 | Mode | How it draws | Options it reads |
 |---|---|---|
 | `Taper` | Pointed at both ends, swelling in the middle: width follows `sin(pi x s) ^ taperSharpness` where `s` is the fraction along the whole **chain**. Closed loops are uniform at full width. Round caps if the tip is over half a pixel, otherwise butt. | `width`, `tipWidth`, `taperSharpness` |
-| `BroadNib` | Calligraphy pen: width depends on stroke direction against a fixed nib angle, `width x abs(sin(direction - nibAngle))`, never thinner than `thinWidth`. Butt caps. | `width` (nib length), `nibAngleDegrees`, `thinWidth` |
+| `BroadNib` | Calligraphy pen: a flat nib (length `width`, thickness `thinWidth`) is held at `nibAngleDegrees` and **swept along the stroke**, so the ink is what a real pen leaves: thick across the nib, a hairline along it, changing smoothly through curves and corners with no joins (`render.joins` is ignored). Optional hand-written feel through the `nib…` options. | `width` (nib length), `nibAngleDegrees`, `thinWidth`, `nibRoundness`, `nibAngleWobble`, `nibPressure`, `nibLeadIn` |
 | `Ink` | Pressure profile along the stroke, per-side seeded edge wobble, optional dry-brush ragged edges, round caps, and a blob at the start of each open stroke. Seeded per chain, so it is repeatable. | `width`, `pressureVariation`, `edgeWobble`, `raggedness`, `startBlobScale` |
 
 | Option | Default | Notes |
@@ -741,7 +862,11 @@ One typeface per **language**, resolved once from the seed, so every glyph reads
 | `tipWidth` | `0` | `Taper`: width at the tips. |
 | `taperSharpness` | `1.0` | `Taper`: above 1 = pointier, below 1 = fuller (minimum 0.05). |
 | `nibAngleDegrees` | `40` | `BroadNib`: angle on screen, clockwise from the +x axis. |
-| `thinWidth` | `0.012` | `BroadNib`: width of the thin strokes. |
+| `thinWidth` | `0.012` | `BroadNib`: nib thickness, i.e. the width of the thin strokes. |
+| `nibRoundness` | `0` | `BroadNib`: 0 = flat, square-ended nib; 1 = fully rounded ends (a capsule, like a brush pen). |
+| `nibAngleWobble` | `0` | `BroadNib`: degrees (0-90) the hand lets the nib angle drift, slowly and seeded per stroke (a closed stroke meets itself at the seam). |
+| `nibPressure` | `0` | `BroadNib`: 0-1, how much the nib length (pressure) varies along a stroke. |
+| `nibLeadIn` | `0` | `BroadNib`: 0-0.5, fraction of an open stroke's length at each end over which the nib eases in from a light touch (30%) to full length. |
 | `pressureVariation` | `0.35` | `Ink`: how much the width varies along a stroke (0-1). |
 | `edgeWobble` | `0.15` | `Ink`: wobble of each edge. |
 | `raggedness` | `0` | `Ink`: roughness of the edges. |
@@ -752,6 +877,7 @@ Example of the other kinds:
 ```json
 "typeface": { "kind": "ThickEnds", "thickEnds": { "width": { "min": 0.03, "max": 0.03 }, "endWidth": { "min": 0.07, "max": 0.07 }, "terminal": "Ball" } }
 "typeface": { "kind": "Brush", "brush": { "mode": "BroadNib", "nibAngleDegrees": { "min": 40, "max": 40 } } }
+"typeface": { "kind": "Brush", "brush": { "mode": "BroadNib", "nibRoundness": 0.7, "nibAngleWobble": 5, "nibPressure": 0.25, "nibLeadIn": 0.15 } }   // handwriting feel
 ```
 
 The CLI always writes an extra `.debug.png` per glyph with node dots and component colours on, whatever these two debug flags say.
@@ -781,6 +907,8 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 
 ## 14. Config validation
 
+Errors aim to say what to change. A value of the wrong kind (a misspelled name, text where a number belongs) is reported with its path, line and column, what was written, and what is allowed. When generation fails, the message lists what rejected the placements: for a copy shape, a composite recipe component (per component: positions tried, left the grid, crossed, broke a side rule or spacing), a derivation (which step removed the last edge), or the quality gate (a hint that fits the cause, including `maxSimilarityToSource` for derived glyphs).
+
 `RootConfigLoader` works in three steps and reports **all** problems of the failing step at once (`Invalid config: - ...`):
 
 1. **Structure** (on the raw JSON): unknown properties (with a "did you mean" hint), unexpected `null`s, the per-language `grid`, and **options from the old layout** (each error names where the option lives now, and points at `--migrate`).
@@ -792,7 +920,10 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 | Grid | No top-level `grid`; every language has its own; width and height >= 1. |
 | Glyph names | Non-empty; unique across `glyphs` and `baseGlyphs`. |
 | Recipes | A base glyph can't be a recipe key; a recipe needs components; every component must be listed in `glyphs` or `baseGlyphs`; a composite built from a composite must come after it in `glyphs` (which also rules out cycles). |
-| `shapes` | At least one when there are plain/base glyphs. Each `id` non-empty and unique; `seedLabel` unique. `count` >= 0 with `max` >= `min`. Literal: `nodes` present, >= 2 points, no repeated consecutive point. Generative: no `nodes`; `chain.length` >= 2; at least one valid `connectionRules` entry (valid direction, `minLength` >= 1 (0 for `Circle`), `maxLength` >= `minLength`, weights >= 0 and not all 0, angles within 0-180 with `maxAngle` >= `minAngle`, no preset together with explicit angles, `Angle` has a limit, `Circle` has none, `backToStartChance` and `chanceToBeCurved` within 0-100, valid `curve` block); each `selfSpacing` rule valid. |
+| `derivations` | Each name listed in `glyphs`/`baseGlyphs`, with no recipe; `from` listed and not itself, no circles through derivations and recipes; at least one step; each step's options valid for its op (exactly one of `percent`/`count`, ids in `shapes` exist, Bridge has rules, ratios positive, rotations 90/180/270); `maxSimilarityToSource` 0-1. |
+| `shapes` | At least one when there are plain/base glyphs (derived glyphs don't count). Each `id` non-empty and unique; `seedLabel` unique. `count` >= 0 with `max` >= `min`. Literal: `nodes` present, >= 2 points, no repeated consecutive point. Generative: no `nodes`; `chain.length` >= 2; at least one valid `connectionRules` entry (valid direction, `minLength` >= 1 (0 for `Circle`), `maxLength` >= `minLength`, weights >= 0 and not all 0, angles within 0-180 with `maxAngle` >= `minAngle`, no preset together with explicit angles, `Angle` has a limit, `Circle` has none, `backToStartChance` and `chanceToBeCurved` within 0-100, valid `curve` block); each `selfSpacing` rule valid. |
+| `chance` | Number from 0 to 100. |
+| `copyOf` | `shape` names an earlier shape (not itself); known `flip`/`auto`/`anchor`; `flips` only with `Random`, not empty, `auto.shapes` only with `Auto` and naming earlier shapes, no `Random`/`Auto` inside; `gap` max >= min; `regenerateBase` and `redrawGlyph` >= 0; `shift` >= 0; no `count`, `nodes`, `chain` rules or `placement` on a copy entry; in a derivation step the original is listed first. |
 | `placement` | Known `mode`; `Fixed` needs a `fixedOrigin` on the grid, other modes must not have one; `maxPlacementAttempts` >= 1; `rotations` only on Literal shapes, with `allowRotationOnPlace` on, using only 0/90/180/270; `startOnExistingNode` only with `RandomValid` and not with `arrangement.spacing.minNodeDistance` > 0. |
 | `arrangement` | Spacing distances finite and >= 0, `maxNodeDistance` >= `minNodeDistance`, valid `maxDistanceMode`; known bias modes, no `Tallest`+`Shortest` or `Widest`+`Narrowest`, bias weights valid; `candidates` >= 1; `includeScaleAndRotation` not on a shape. Checked for every shape, for `combination.arrangement` and for each recipe override. |
 | `placement.side` | Only with `mode: RandomValid`; `Prefer` needs one or two sides, none cancelling, and no `pick`; `SetRandom` takes no `sides`; `weight` >= 0. |

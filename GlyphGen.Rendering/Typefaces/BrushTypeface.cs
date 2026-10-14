@@ -6,7 +6,7 @@ namespace GlyphGen.Rendering.Typefaces;
 /// <summary>
 /// Brush-like strokes in three modes:
 ///   Taper    - pointed at both ends, swelling in the middle (over the whole chain's length).
-///   BroadNib - calligraphy pen: width depends on stroke direction relative to a fixed nib angle.
+///   BroadNib - calligraphy pen: a flat nib held at a fixed angle is swept along the stroke (see AppendBroadNib).
 ///   Ink      - pressure profile, seeded edge wobble, optional dry-brush ragged edges and a blob
 ///              where each stroke starts.
 /// </summary>
@@ -35,8 +35,10 @@ public sealed class BrushTypeface : ITypeface
     {
         BrushMode.Ink => 2.0,
         BrushMode.Taper => 3.0,
-        _ => 0.0, // BroadNib: width is constant along a straight edge
+        _ => BroadNibVaries ? 3.0 : 0.0, // BroadNib: constant along a straight edge unless the hand varies it
     };
+
+    private bool BroadNibVaries => _cfg.NibPressure > 0 || _cfg.NibAngleWobble > 0 || _cfg.NibLeadIn > 0;
 
     public double DotRadiusPx => _halfWidth;
     public double MaxInkExtentPx
@@ -44,6 +46,8 @@ public sealed class BrushTypeface : ITypeface
         get
         {
             double h = _halfWidth;
+            if (_cfg.Mode == BrushMode.BroadNib)
+                return Math.Sqrt(_halfWidth * _halfWidth + _thinHalf * _thinHalf); // the nib's far corner, whatever its angle; a sweep has no joins
             if (_cfg.Mode == BrushMode.Ink)
             {
                 h *= 1.0 + Math.Max(0, _cfg.EdgeWobble) + Math.Max(0, _cfg.Raggedness) * 0.5;
@@ -101,28 +105,118 @@ public sealed class BrushTypeface : ITypeface
         StrokeOutlineBuilder.Build(path, start, end, _joins, cap, output, ctx.JoinSink, ctx.StrokeId);
     }
 
+    /// <summary>
+    /// A flat nib (length = width, thickness = thinWidth) held at the nib angle and SWEPT along the path: every segment
+    /// contributes the convex hull of the nib at its two ends, so the stroke is exactly what a real pen leaves. Width
+    /// follows the direction continuously (thick across the nib, hairline along it), curves change thickness smoothly
+    /// and corners need no joins: the nib simply turns without turning. The hand adds a slow drift of the nib angle
+    /// (nibAngleWobble), pressure (nibPressure) and an eased start and end (nibLeadIn). Every piece is convex and
+    /// oriented the same way, so the pieces union cleanly under a non-zero fill.
+    /// </summary>
     private void AppendBroadNib(StrokePath path, StrokeContext ctx, List<Vec2[]> output)
     {
         var pts = path.Points;
-        int segCount = pts.Count - 1;
+        int m = pts.Count;
 
-        var start = new WidthSample[segCount];
-        var end = new WidthSample[segCount];
+        var cum = path.CumulativeLengths();
+        double total = cum[m - 1];
+        var pressureNoise = new ValueNoise(ctx.PathSeed ^ 0xA1A1A1A1UL);
+        var angleNoise = new ValueNoise(ctx.PathSeed ^ 0xE5E5E5E5UL);
+        double wobble = Math.Clamp(_cfg.NibAngleWobble, 0, 90) * Math.PI / 180.0;
+        double pressure = Math.Clamp(_cfg.NibPressure, 0, 1);
+        double leadIn = Math.Clamp(_cfg.NibLeadIn, 0, 0.5);
+        double roundness = Math.Clamp(_cfg.NibRoundness, 0, 1);
+        double halfLength = _halfWidth * ctx.WidthScale;
+        double halfThick = Math.Min(_thinHalf, halfLength);
 
-        for (int i = 0; i < segCount; i++)
+        // The nib at every path point, as offsets from that point.
+        var nibs = new Vec2[m][];
+        for (int i = 0; i < m; i++)
         {
-            Vec2 d = pts[i + 1] - pts[i];
-            double angle = Math.Atan2(d.Y, d.X);
+            double s = cum[i];
+            double scale = 1.0 - pressure * Drift(pressureNoise, s, 70.0, total, path.Closed);
 
-            // A flat nib of length W laid at the nib angle leaves a stroke whose width is
-            // W * |sin(direction - nibAngle)|; never thinner than the nib's thin edge.
-            double full = Math.Max(_thinHalf * 2, _halfWidth * 2 * ctx.WidthScale * Math.Abs(Math.Sin(angle - _nibRadians)));
-            var w = WidthSample.Uniform(full / 2);
-            start[i] = w;
-            end[i] = w;
+            if (leadIn > 0 && !path.Closed && total > 1e-9)
+            {
+                double edge = Math.Min(s, total - s) / (total * leadIn);
+                double eased = WidthProfiles.Apply(WidthProfile.Smooth, edge);
+                scale *= 0.3 + 0.7 * eased;
+            }
+
+            double angle = _nibRadians + wobble * (Drift(angleNoise, s, 110.0, total, path.Closed) * 2 - 1);
+            nibs[i] = NibOffsets(halfLength * scale, halfThick, roundness, angle);
         }
 
-        StrokeOutlineBuilder.Build(path, start, end, _joins, CapStyle.Butt, output, ctx.JoinSink, ctx.StrokeId);
+        for (int i = 0; i < m - 1; i++)
+        {
+            var cloud = new List<Vec2>(nibs[i].Length * 2);
+            foreach (var o in nibs[i]) cloud.Add(pts[i] + o);
+            foreach (var o in nibs[i + 1]) cloud.Add(pts[i + 1] + o);
+
+            var hull = ConvexHull(cloud);
+            if (hull.Length >= 3) StrokeOutlineBuilder.Emit(output, hull);
+        }
+    }
+
+    /// <summary>Slow noise along a stroke in [0,1]. On a closed stroke it is blended so the end meets the start exactly (no step at the seam).</summary>
+    private static double Drift(ValueNoise noise, double s, double wavelength, double total, bool closed)
+    {
+        double v = noise.Sample(s / wavelength);
+        if (!closed || total < 1e-9) return v;
+        double t = s / total;
+        return v * (1 - t) + noise.Sample((s - total) / wavelength) * t;
+    }
+
+    /// <summary>The nib's outline around its centre: a rectangle half-length x half-thickness turned to the angle, its
+    /// corners rounded by roundness (1 = a capsule). Convexity is restored by the hull of the sweep.</summary>
+    private static Vec2[] NibOffsets(double halfLength, double halfThick, double roundness, double angle)
+    {
+        double radius = Math.Min(halfThick, halfLength) * roundness;
+        double cx = halfLength - radius, cy = halfThick - radius;
+        double cos = Math.Cos(angle), sin = Math.Sin(angle);
+
+        Vec2 Turn(double x, double y) => new(x * cos - y * sin, x * sin + y * cos);
+
+        if (radius < 1e-6)
+            return new[] { Turn(-cx, -cy), Turn(cx, -cy), Turn(cx, cy), Turn(-cx, cy) };
+
+        const int arc = 6; // points per quarter turn
+        var list = new List<Vec2>();
+        var corners = new (double X, double Y, double From)[]
+        {
+            (cx, cy, 0.0), (-cx, cy, Math.PI / 2), (-cx, -cy, Math.PI), (cx, -cy, 3 * Math.PI / 2),
+        };
+        foreach (var (x, y, from) in corners)
+            for (int k = 0; k <= arc; k++)
+            {
+                double a = from + (Math.PI / 2) * k / arc;
+                list.Add(Turn(x + radius * Math.Cos(a), y + radius * Math.Sin(a)));
+            }
+        return list.ToArray();
+    }
+
+    /// <summary>Convex hull (monotone chain).</summary>
+    private static Vec2[] ConvexHull(List<Vec2> points)
+    {
+        points.Sort((a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y.CompareTo(b.Y));
+        int n = points.Count;
+        if (n < 3) return points.ToArray();
+
+        var hull = new Vec2[2 * n];
+        int k = 0;
+        static double Cross(Vec2 o, Vec2 a, Vec2 b) => (a.X - o.X) * (b.Y - o.Y) - (a.Y - o.Y) * (b.X - o.X);
+
+        for (int i = 0; i < n; i++)
+        {
+            while (k >= 2 && Cross(hull[k - 2], hull[k - 1], points[i]) <= 1e-9) k--;
+            hull[k++] = points[i];
+        }
+        for (int i = n - 2, lower = k + 1; i >= 0; i--)
+        {
+            while (k >= lower && Cross(hull[k - 2], hull[k - 1], points[i]) <= 1e-9) k--;
+            hull[k++] = points[i];
+        }
+        return hull.AsSpan(0, Math.Max(0, k - 1)).ToArray();
     }
 
     private void AppendInk(StrokePath path, StrokeContext ctx, List<Vec2[]> output)

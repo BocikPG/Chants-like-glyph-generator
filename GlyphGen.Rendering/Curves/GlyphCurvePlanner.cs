@@ -66,9 +66,11 @@ public sealed class GlyphCurvePlanner
         try
         {
             ulong seed = SplitMix64.DeriveSeed(SeedTree.ForGlyph(_languageSeed, glyph.Name), "curves");
-            var result = glyph.Components.Count == 0
-                ? CurvePlanner.Plan(glyph, _curve, seed)
-                : PlanComposite(glyph, seed);
+            var result = glyph.Components.Count > 0
+                ? PlanComposite(glyph, seed)
+                : glyph.Derived is not null
+                    ? PlanDerived(glyph, seed)
+                    : PlanPlain(glyph, seed);
 
             _natural[glyph.Name] = result;
             return result;
@@ -78,6 +80,91 @@ public sealed class GlyphCurvePlanner
             _inProgress.Remove(glyph.Name);
         }
     }
+
+    /// <summary>A derived glyph is planned like a plain one, then every straight edge that survived from its source
+    /// gets the source's own curve back (mapped through the glyph-wide scale/mirror/rotate that was applied, with the
+    /// ends snapped to the edge's real nodes). New or moved edges keep the fresh plan.</summary>
+    private PlannedGlyph PlanDerived(Glyph glyph, ulong seed)
+    {
+        var fresh = CurvePlanner.Plan(glyph, _curve, seed);
+        var derived = glyph.Derived!;
+        if (!_glyphs.TryGetValue(derived.Source, out var source) || _inProgress.Contains(source.Name)) return fresh;
+
+        var sourceEdges = new Dictionary<(int, int, int, int), PlannedEdge>();
+        foreach (var layer in GetNatural(source).Layers)
+            foreach (var chain in layer.Chains.Where(c => c.Kind == PlannedChainKind.Stroke))
+                foreach (var e in chain.Edges)
+                    sourceEdges.TryAdd(EdgeKey(e.P0, e.P3), e);
+
+        Vec2 A(Vec2 v) => new(
+            derived.M11 * v.X + derived.M12 * v.Y + derived.Tx,
+            derived.M21 * v.X + derived.M22 * v.Y + derived.Ty);
+
+        ApplyLinks(fresh, derived.Links, sourceEdges, A);
+
+        return fresh;
+    }
+
+    /// <summary>A plain glyph's plan; the chains that are flipped copies of another chain of the same glyph (shapes with
+    /// copyOf) take the original's curves, flipped with them, in the order the copies were made.</summary>
+    private PlannedGlyph PlanPlain(Glyph glyph, ulong seed)
+    {
+        var plan = CurvePlanner.Plan(glyph, _curve, seed);
+        foreach (var copy in glyph.Copies)
+        {
+            var edges = new Dictionary<(int, int, int, int), PlannedEdge>();
+            foreach (var layer in plan.Layers)
+                foreach (var chain in layer.Chains.Where(c => c.Kind == PlannedChainKind.Stroke))
+                    foreach (var e in chain.Edges)
+                        edges.TryAdd(EdgeKey(e.P0, e.P3), e);
+
+            Vec2 A(Vec2 v) => new(copy.M11 * v.X + copy.M12 * v.Y + copy.Tx, copy.M21 * v.X + copy.M22 * v.Y + copy.Ty);
+            ApplyLinks(plan, copy.Links, edges, A, skipSelf: true);
+        }
+
+        return plan;
+    }
+
+    /// <summary>Every straight edge of the plan that has a link takes its linked edge's curve, carried through the map
+    /// with its ends snapped to the edge's own nodes.</summary>
+    private static void ApplyLinks(
+        PlannedGlyph target,
+        IReadOnlyDictionary<(int, int, int, int), (int, int, int, int)> links,
+        Dictionary<(int, int, int, int), PlannedEdge> sourceEdges,
+        Func<Vec2, Vec2> A,
+        bool skipSelf = false)
+    {
+        foreach (var layer in target.Layers)
+            foreach (var chain in layer.Chains.Where(c => c.Kind == PlannedChainKind.Stroke))
+                for (int i = 0; i < chain.Edges.Count; i++)
+                {
+                    var edge = chain.Edges[i];
+                    var key = EdgeKey(edge.P0, edge.P3);
+                    if (!links.TryGetValue(key, out var link) || (skipSelf && link == key)) continue;
+                    if (!sourceEdges.TryGetValue(link, out var src)) continue;
+
+                    if (src.IsLine)
+                    {
+                        chain.Edges[i] = new PlannedEdge { P0 = edge.P0, C1 = edge.P0, C2 = edge.P3, P3 = edge.P3, IsLine = true };
+                        continue;
+                    }
+
+                    // Which end of the source edge is which: the mapped source start lies on the nearer end.
+                    var mappedStart = A(src.P0);
+                    bool forward = (mappedStart - edge.P0).Length <= (mappedStart - edge.P3).Length;
+                    var d0 = forward ? edge.P0 : edge.P3;
+                    var d3 = forward ? edge.P3 : edge.P0;
+
+                    var c1 = A(src.C1) + (d0 - mappedStart);
+                    var c2 = A(src.C2) + (d3 - A(src.P3));
+                    chain.Edges[i] = forward
+                        ? new PlannedEdge { P0 = d0, C1 = c1, C2 = c2, P3 = d3, IsLine = false }
+                        : new PlannedEdge { P0 = d3, C1 = c2, C2 = c1, P3 = d0, IsLine = false };
+                }
+    }
+
+    private static (int, int, int, int) EdgeKey(Vec2 a, Vec2 b) =>
+        GlyphGen.Core.Model.DerivedFrom.Key((int)Math.Round(a.X), (int)Math.Round(a.Y), (int)Math.Round(b.X), (int)Math.Round(b.Y));
 
     private PlannedGlyph PlanComposite(Glyph glyph, ulong seed)
     {
@@ -198,7 +285,7 @@ public sealed class GlyphCurvePlanner
 
     private static PlannedChain MapChain(PlannedChain chain, Func<Vec2, Vec2> map)
     {
-        var result = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId, Kind = chain.Kind };
+        var result = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId, ShapeTag = chain.ShapeTag, Kind = chain.Kind };
         foreach (var e in chain.Edges)
         {
             result.Edges.Add(new PlannedEdge
@@ -217,7 +304,7 @@ public sealed class GlyphCurvePlanner
             var newLayer = new PlannedLayer { Label = layer.Label };
             foreach (var chain in layer.Chains)
             {
-                var newChain = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId, Kind = chain.Kind };
+                var newChain = new PlannedChain { Closed = chain.Closed, MotifId = chain.MotifId, ShapeTag = chain.ShapeTag, Kind = chain.Kind };
                 foreach (var e in chain.Edges)
                     newChain.Edges.Add(chain.Kind != PlannedChainKind.Stroke
                         ? e // circles and dots are not "bent lines": flattening would wreck them

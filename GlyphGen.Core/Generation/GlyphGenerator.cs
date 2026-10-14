@@ -9,7 +9,7 @@ namespace GlyphGen.Core.Generation;
 /// Thrown when a glyph cannot be generated within its configured constraints/attempt budgets -
 /// a shape could not be placed, or a composite recipe could not be satisfied.
 /// </summary>
-public sealed class GlyphGenerationException : Exception
+public class GlyphGenerationException : Exception
 {
     public GlyphGenerationException(string message) : base(message) { }
 }
@@ -56,7 +56,7 @@ public sealed class PlacementDiagnostics
 /// instance is validated against a shared GeometryContext using its own placement, chain rules
 /// and arrangement.
 /// </summary>
-public sealed class GlyphGenerator : IGlyphGenerator
+public sealed partial class GlyphGenerator : IGlyphGenerator
 {
     private readonly IChainGenerator _chainGenerator;
     private readonly IPlacementResolver _placementResolver;
@@ -94,6 +94,24 @@ public sealed class GlyphGenerator : IGlyphGenerator
         int variation,
         ulong languageSeed = 0)
     {
+        if (language.Derivations.TryGetValue(glyphDef.Name, out var derivation))
+        {
+            if (!inProgress.Add(glyphDef.Name))
+            {
+                throw new GlyphGenerationException(
+                    $"[{language.Name}] Circular derivation involving '{glyphDef.Name}'.");
+            }
+
+            try
+            {
+                return GenerateDerived(language, glyphDef, derivation, grid, glyphSeed, generated);
+            }
+            finally
+            {
+                inProgress.Remove(glyphDef.Name);
+            }
+        }
+
         if (language.Combination.Recipes.TryGetValue(glyphDef.Name, out var recipe))
         {
             if (!inProgress.Add(glyphDef.Name))
@@ -115,6 +133,56 @@ public sealed class GlyphGenerator : IGlyphGenerator
             }
         }
 
+        // A copy shape that cannot be placed first redraws its base shape (copyOf.regenerateBase times), then the whole
+        // glyph from a fresh seed (copyOf.redrawGlyph times). Nothing is retried when no copy fails, so such glyphs
+        // come out exactly as they always did.
+        int maxRedraws = language.Shapes.Where(x => x.CopyOf is not null).Select(x => x.CopyOf!.RedrawGlyph).DefaultIfEmpty(0).Max();
+        int baseRedraws = 0, glyphRedraws = 0;
+        CopyPlacementException? last = null;
+
+        for (int redraw = 0; redraw <= maxRedraws; redraw++)
+        {
+            ulong seed = redraw == 0 ? glyphSeed : SplitMix64.DeriveSeed(glyphSeed, $"redraw-{redraw}");
+            var salts = new Dictionary<string, int>(StringComparer.Ordinal);
+            if (redraw > 0) glyphRedraws++;
+
+            while (true)
+            {
+                try
+                {
+                    return BuildPlainGlyph(language, glyphDef, grid, seed, salts);
+                }
+                catch (CopyPlacementException ex)
+                {
+                    last = ex;
+                    string root = RootShapeId(language, ex.Shape);
+                    int used = salts.GetValueOrDefault(root);
+                    if (used >= ex.Shape.CopyOf!.RegenerateBase) break; // base redraws spent: redraw the whole glyph
+                    salts[root] = used + 1;
+                    baseRedraws++;
+                }
+            }
+        }
+
+        throw new GlyphGenerationException(
+            last!.Message + (baseRedraws + glyphRedraws == 0 ? "" :
+                $" Retried before giving up: the base shape was redrawn {baseRedraws} time(s) and the whole glyph {glyphRedraws} time(s) " +
+                "(copyOf.regenerateBase and copyOf.redrawGlyph set how many are allowed)."));
+    }
+
+    /// <summary>The shape a chain of copies ultimately comes from: the first one that is not itself a copy.</summary>
+    private static string RootShapeId(LanguageDefinition language, ShapeDefinition shape)
+    {
+        var current = shape;
+        for (int guard = 0; guard < language.Shapes.Count && current.CopyOf is { } c; guard++)
+            current = language.Shapes.FirstOrDefault(x => x.Id == c.Shape) ?? current;
+        return current.Id;
+    }
+
+    /// <summary>One go at building a plain glyph. salts: shapes whose random streams are re-keyed (a base shape being redrawn).</summary>
+    private Glyph BuildPlainGlyph(
+        LanguageDefinition language, GlyphDefinition glyphDef, LatticeGrid grid, ulong glyphSeed, Dictionary<string, int> salts)
+    {
         var rng = new DeterministicRandom(glyphSeed);
         var glyph = new Glyph
         {
@@ -136,8 +204,30 @@ public sealed class GlyphGenerator : IGlyphGenerator
         double countExtraDraws = language.UsageSizeBias.AffectSubSymbolCount ? usageDraws : 0.0;
         double lengthExtraDraws = language.UsageSizeBias.AffectSubSymbolLength ? usageDraws : 0.0;
 
+        var placedByShape = new Dictionary<string, List<SubSymbolChain>>(StringComparer.Ordinal);
+
         foreach (var shape in language.Shapes)
         {
+            // A shape that is not for this glyph draws nothing (and so its copies make none); it takes no random draw,
+            // so glyphs without a filter come out exactly as before.
+            if (!shape.AppliesTo(glyphDef.Name) || !shape.IsDrawn(rng))
+            {
+                placedByShape[shape.Id] = new List<SubSymbolChain>();
+                continue;
+            }
+
+            if (shape.CopyOf is { } copyOf)
+            {
+                // An origin with a count of zero leaves nothing to copy, and so no copies.
+                var origins = placedByShape.GetValueOrDefault(copyOf.Shape) ?? new List<SubSymbolChain>();
+
+                var made = MakeCopies(language, shape, origins, grid, rng, geometry, glyphDef.Name, optional: false, world: glyph,
+                    chainsOfShape: id => placedByShape.GetValueOrDefault(id));
+
+                placedByShape[shape.Id] = made.Select(m => m.Copy).ToList();
+                continue;
+            }
+
             // No count = exactly one instance and NO roll (a roll would consume a draw from the
             // glyph's random stream and shift everything placed after it).
             int count = shape.Count is null ? 1 : ResolveLowBiased(shape.Count, rng, countExtraDraws);
@@ -146,15 +236,20 @@ public sealed class GlyphGenerator : IGlyphGenerator
             {
                 var diagnostics = new PlacementDiagnostics();
                 double lengthExtra = shape.Count is null ? 0.0 : lengthExtraDraws;
-                var placed = GenerateShape(language, shape, grid, rng, geometry, i, lengthExtra, diagnostics)
+                var placed = GenerateShape(language, shape, grid, rng, geometry, i, lengthExtra, diagnostics, salts.GetValueOrDefault(shape.Id))
                     ?? throw new GlyphGenerationException(
                         $"[{language.Name}] Shape '{shape.Id}'" +
                         (shape.Count is null ? "" : $" (instance {i + 1}/{count})") +
                         $" for glyph '{glyphDef.Name}' could not be placed within its configured " +
                         $"attempt budget. {diagnostics.Describe()}");
 
+                placed.ShapeTag = $"{shape.Id}#{i}";
                 geometry.Commit(placed, shape.Arrangement.AllowCrossing);
                 glyph.Chains.Add(placed);
+
+                if (!placedByShape.TryGetValue(shape.Id, out var instances))
+                    placedByShape[shape.Id] = instances = new List<SubSymbolChain>();
+                instances.Add(placed);
             }
         }
 
@@ -173,9 +268,10 @@ public sealed class GlyphGenerator : IGlyphGenerator
         GeometryContext geometry,
         int instanceIndex,
         double lengthExtraDraws,
-        PlacementDiagnostics diagnostics)
+        PlacementDiagnostics diagnostics,
+        int redo = 0)
     {
-        var rng = glyphRng.Derive(shape.StreamLabel(instanceIndex));
+        var rng = glyphRng.Derive(shape.StreamLabel(instanceIndex) + (redo > 0 ? $"-redo{redo}" : ""));
         var rotationOptions = RotationOptionsFor(language, shape.Placement);
         bool shapeVariesPerAttempt = shape.Kind == ShapeKind.Generative;
 
@@ -367,11 +463,13 @@ public sealed class GlyphGenerator : IGlyphGenerator
         Glyph RegenerateComponent(string name, int attemptIndex)
         {
             var componentDef = language.Glyphs.FirstOrDefault(g => g.Name == name)
+                ?? language.BaseGlyphs.FirstOrDefault(g => g.Name == name)
                 ?? new GlyphDefinition { Name = name };
             ulong seed = SplitMix64.DeriveSeed(glyphSeed, $"regen-{name}-{attemptIndex}");
             return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
         }
 
+        string explanation = "";
         var composite = _combinationResolver.TryCombine(
             glyphDef.Name,
             recipe.Components,
@@ -383,7 +481,8 @@ public sealed class GlyphGenerator : IGlyphGenerator
             RegenerateComponent,
             recipe.EffectiveArrangement ?? language.Combination.Arrangement,
             variation,
-            languageSeed);
+            languageSeed,
+            text => explanation = text);
 
         if (composite is null)
         {
@@ -393,6 +492,7 @@ public sealed class GlyphGenerator : IGlyphGenerator
             throw new GlyphGenerationException(
                 $"[{language.Name}] Could not satisfy combination recipe for '{glyphDef.Name}' " +
                 $"after {language.Combination.MaxRetriesPerRecipe} attempts." +
+                (explanation.Length > 0 ? " " + explanation : "") +
                 (used.Placements.Any(p => p.Mode != ComponentPlacementMode.Fixed && recipe.Components.Contains(p.Glyph))
                     ? " Side rules are hard: each ruled component's middle must be on its side of the others' middles, " +
                       "so conflicting rules (or too little room on a small grid) make a recipe unbuildable."

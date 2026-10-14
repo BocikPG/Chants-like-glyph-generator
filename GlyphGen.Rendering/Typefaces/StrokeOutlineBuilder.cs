@@ -20,6 +20,25 @@ public readonly record struct WidthSample(double Left, double Right)
 /// </summary>
 public static class StrokeOutlineBuilder
 {
+    /// <summary>The polygon clipped to the half-plane axis . x &lt;= level (Sutherland-Hodgman: a convex polygon stays convex).</summary>
+    internal static Vec2[] ClipBelow(Vec2[] poly, Vec2 axis, double level)
+    {
+        var result = new List<Vec2>(poly.Length + 2);
+        for (int i = 0; i < poly.Length; i++)
+        {
+            Vec2 a = poly[i], b = poly[(i + 1) % poly.Length];
+            double da = axis.Dot(a) - level, db = axis.Dot(b) - level;
+            bool aIn = da <= 1e-9, bIn = db <= 1e-9;
+            if (aIn) result.Add(a);
+            if (aIn != bIn)
+            {
+                double t = da / (da - db);
+                result.Add(new Vec2(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t));
+            }
+        }
+        return result.ToArray();
+    }
+
     /// <summary>
     /// Emits the segment bodies and the end caps. Joins are NOT built here for grid nodes: when a sink is
     /// given, each node's arms (and the tips') are recorded there and the renderer builds the joins per
@@ -34,7 +53,8 @@ public static class StrokeOutlineBuilder
         CapStyle cap,
         List<Vec2[]> output,
         JoinSink? sink = null,
-        int strokeId = 0)
+        int strokeId = 0,
+        LevelAxis capLevel = LevelAxis.Auto)
     {
         var pts = path.Points;
         int segCount = pts.Count - 1;
@@ -171,8 +191,8 @@ public static class StrokeOutlineBuilder
             var s = segStart[0];
             var startCap = new List<Vec2[]>();
             var endCap = new List<Vec2[]>();
-            AddCap(pts[0], -dirs[0], new WidthSample(s.Right, s.Left), cap, startCap);
-            AddCap(pts[^1], dirs[segCount - 1], segEnd[segCount - 1], cap, endCap);
+            AddCap(pts[0], -dirs[0], new WidthSample(s.Right, s.Left), cap, startCap, capLevel);
+            AddCap(pts[^1], dirs[segCount - 1], segEnd[segCount - 1], cap, endCap, capLevel);
             EmitTip(sink, pts[0], startCap, output);
             EmitTip(sink, pts[^1], endCap, output);
 
@@ -216,11 +236,37 @@ public static class StrokeOutlineBuilder
         Emit(output, poly);
     }
 
-    private static void AddCap(Vec2 p, Vec2 outward, WidthSample w, CapStyle cap, List<Vec2[]> output)
+    private static void AddCap(Vec2 p, Vec2 outward, WidthSample w, CapStyle cap, List<Vec2[]> output, LevelAxis level = LevelAxis.Auto)
     {
         if (cap == CapStyle.Butt) return;
 
         Vec2 n = outward.Perp;
+
+        if (cap == CapStyle.Level)
+        {
+            // The end face is cut flat along an axis: the corner that reaches less far along that axis is extended along
+            // the stroke until it reaches as far as the other, so the new face lies on the axis' level.
+            Vec2 axis = level switch
+            {
+                LevelAxis.Horizontal => new Vec2(0, 1),
+                LevelAxis.Vertical => new Vec2(1, 0),
+                _ => Math.Abs(outward.X) > Math.Abs(outward.Y) ? new Vec2(1, 0) : new Vec2(0, 1),
+            };
+            double along = axis.Dot(outward);
+            if (Math.Abs(along) < 0.70) return; // too shallow to level: the extension would be huge (and a square end is already level)
+            if (along < 0) axis = new Vec2(-axis.X, -axis.Y);
+            along = Math.Abs(along);
+
+            Vec2 left = p + n * w.Left, right = p - n * w.Right;
+            double hl = axis.Dot(left), hr = axis.Dot(right);
+            if (Math.Abs(hl - hr) < 1e-6) return;
+
+            bool leftIsFar = hl > hr;
+            Vec2 far = leftIsFar ? left : right, near = leftIsFar ? right : left;
+            Vec2 extended = near + outward * (Math.Abs(hl - hr) / along);
+            Emit(output, new[] { near, extended, far });
+            return;
+        }
 
         if (cap == CapStyle.Square)
         {

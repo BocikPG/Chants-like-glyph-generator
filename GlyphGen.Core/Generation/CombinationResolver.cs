@@ -47,8 +47,10 @@ public sealed class CombinationResolver : ICombinationResolver
         Func<string, int, Glyph> regenerateComponent,
         CombinationArrangementRules arrangement,
         int variation = 0,
-        ulong languageSeed = 0)
+        ulong languageSeed = 0,
+        Action<string>? explainFailure = null)
     {
+        var report = new Dictionary<string, ComponentTally>();
         var working = new Dictionary<string, Glyph>();
         foreach (var name in componentNames)
         {
@@ -104,9 +106,11 @@ public sealed class CombinationResolver : ICombinationResolver
                 var name = componentNames[index];
                 sides.TryGetValue(name, out var pull);
                 geometry.CurrentSides = pull.Sides;
-                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, arrangement, pull.Sides, pull.Weight, variation);
+                if (!report.TryGetValue(name, out var tally)) report[name] = tally = new ComponentTally();
+                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, arrangement, pull.Sides, pull.Weight, variation, tally);
                 if (placed is null)
                 {
+                    tally.Failures++;
                     allPlaced = false;
                     break;
                 }
@@ -153,6 +157,7 @@ public sealed class CombinationResolver : ICombinationResolver
             }
         }
 
+        explainFailure?.Invoke(ComponentTally.Describe(report, config.MaxRetriesPerRecipe, arrangement, grid));
         return null;
     }
 
@@ -166,7 +171,8 @@ public sealed class CombinationResolver : ICombinationResolver
         CombinationArrangementRules arrangement,
         List<GlyphSide>? preferSides,
         double sideWeight,
-        int variation)
+        int variation,
+        ComponentTally tally)
     {
         var sourceChains = GlyphGeometryUtils.GetAllChains(source).ToList();
 
@@ -176,15 +182,15 @@ public sealed class CombinationResolver : ICombinationResolver
         if (rule is { Mode: ComponentPlacementMode.Fixed })
         {
             return TryBuildPlacement(
-                sourceChains, 1, 1, 0, rule.Offset ?? new GridPoint(0, 0), sourceName, grid, geometry, arrangement);
+                sourceChains, 1, 1, 0, rule.Offset ?? new GridPoint(0, 0), sourceName, grid, geometry, arrangement, tally);
         }
 
         if (arrangement.Bias is { IsActive: true } || preferSides is { Count: > 0 })
-            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, arrangement, preferSides, sideWeight, variation);
+            return TryPlaceBiased(sourceChains, sourceName, config, grid, rng, geometry, arrangement, preferSides, sideWeight, variation, tally);
 
         // Phase 1: identity scale/rotation, exhaustive-but-shuffled search across every
         // position the shape could legally occupy.
-        var identity = TryAllTranslations(sourceChains, 1, 1, 0, sourceName, grid, rng.Derive("identity"), geometry, arrangement, variation);
+        var identity = TryAllTranslations(sourceChains, 1, 1, 0, sourceName, grid, rng.Derive("identity"), geometry, arrangement, variation, tally);
         if (identity is not null) return identity;
 
         if (!config.AllowScale && !config.AllowRotate) return null;
@@ -196,7 +202,7 @@ public sealed class CombinationResolver : ICombinationResolver
             if (!IsLatticeSafeScale(sourceChains, num, den)) continue;
 
             var comboRng = rng.Derive($"combo-{num}-{den}-{rot}");
-            var result = TryAllTranslations(sourceChains, num, den, rot, sourceName, grid, comboRng, geometry, arrangement, variation);
+            var result = TryAllTranslations(sourceChains, num, den, rot, sourceName, grid, comboRng, geometry, arrangement, variation, tally);
             if (result is not null) return result;
         }
 
@@ -263,14 +269,16 @@ public sealed class CombinationResolver : ICombinationResolver
         string sourceName,
         LatticeGrid grid,
         GeometryContext geometry,
-        CombinationArrangementRules arrangement)
+        CombinationArrangementRules arrangement,
+        ComponentTally? tally = null)
     {
         var transformedChains = TransformChains(sourceChains, numerator, denominator, rotationDegrees, translation);
 
-        if (!AllNodesInBounds(transformedChains, grid)) return null; // safety net; range math should already guarantee this
-        if (!FitsGeometry(transformedChains, geometry)) return null;
-        if (!SatisfiesSides(transformedChains, geometry)) return null;
-        if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, arrangement.Spacing)) return null;
+        if (tally is not null) tally.Tried++;
+        if (!AllNodesInBounds(transformedChains, grid)) { if (tally is not null) tally.OffGrid++; return null; } // safety net; range math should already guarantee this
+        if (!FitsGeometry(transformedChains, geometry)) { if (tally is not null) tally.Crossing++; return null; }
+        if (!SatisfiesSides(transformedChains, geometry)) { if (tally is not null) tally.Sides++; return null; }
+        if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, arrangement.Spacing)) { if (tally is not null) tally.Spacing++; return null; }
 
         var placed = new PlacedComponent
         {
@@ -342,7 +350,8 @@ public sealed class CombinationResolver : ICombinationResolver
         CombinationArrangementRules arrangement,
         List<GlyphSide>? preferSides,
         double sideWeight,
-        int variation)
+        int variation,
+        ComponentTally tally)
     {
         var bias = arrangement.Bias;
         var existing = BiasScoring.BoundsOfGroups(geometry.NodeGroups);
@@ -396,7 +405,7 @@ public sealed class CombinationResolver : ICombinationResolver
             foreach (var c in candidates.OrderBy(c => c.Score))
             {
                 var placed = TryBuildPlacement(
-                    sourceChains, c.Numerator, c.Denominator, c.Rotation, c.Translation, sourceName, grid, geometry, arrangement);
+                    sourceChains, c.Numerator, c.Denominator, c.Rotation, c.Translation, sourceName, grid, geometry, arrangement, tally);
                 if (placed is not null) return placed;
             }
             return null;
@@ -447,7 +456,8 @@ public sealed class CombinationResolver : ICombinationResolver
         DeterministicRandom rng,
         GeometryContext geometry,
         CombinationArrangementRules arrangement,
-        int variation)
+        int variation,
+        ComponentTally tally)
     {
         var origin = new GridPoint(0, 0);
 
@@ -462,7 +472,7 @@ public sealed class CombinationResolver : ICombinationResolver
         foreach (var translation in EnumerateShuffledTranslations(preTranslated, grid, rng, preferIdentity: variation == 0))
         {
             var placed = TryBuildPlacement(
-                sourceChains, numerator, denominator, rotationDegrees, translation, sourceName, grid, geometry, arrangement);
+                sourceChains, numerator, denominator, rotationDegrees, translation, sourceName, grid, geometry, arrangement, tally);
             if (placed is not null) return placed;
         }
 
@@ -551,7 +561,7 @@ public sealed class CombinationResolver : ICombinationResolver
 
         foreach (var chain in source)
         {
-            var transformed = new SubSymbolChain { IsClosedLoop = chain.IsClosedLoop, MotifId = chain.MotifId };
+            var transformed = new SubSymbolChain { IsClosedLoop = chain.IsClosedLoop, MotifId = chain.MotifId, ShapeTag = chain.ShapeTag };
             transformed.Nodes.AddRange(chain.Nodes.Select(Transform));
             foreach (var edge in chain.Edges)
                 transformed.Edges.Add(edge.WithPoints(Transform(edge.From), Transform(edge.To)));
@@ -581,5 +591,43 @@ public sealed class CombinationResolver : ICombinationResolver
                     if (edge.Intersects(existing)) return false;
 
         return true;
+    }
+}
+/// <summary>Why the placements of one recipe component failed, over every attempt: how many candidate placements were
+/// tried and which rule rejected each (counted once, under the first rule it broke).</summary>
+internal sealed class ComponentTally
+{
+    public int Failures, Tried, OffGrid, Crossing, Sides, Spacing;
+
+    public static string Describe(
+        Dictionary<string, ComponentTally> report, int attempts, CombinationArrangementRules arrangement, LatticeGrid grid)
+    {
+        var failing = report.Where(kv => kv.Value.Failures > 0).OrderByDescending(kv => kv.Value.Failures).ToList();
+        if (failing.Count == 0) return "";
+
+        var lines = new List<string>();
+        foreach (var (name, t) in failing.Take(3))
+        {
+            var reasons = new List<string>();
+            if (t.OffGrid > 0) reasons.Add($"{t.OffGrid} left the grid");
+            if (t.Crossing > 0) reasons.Add($"{t.Crossing} crossed another component");
+            if (t.Sides > 0) reasons.Add($"{t.Sides} broke a side rule");
+            if (t.Spacing > 0) reasons.Add($"{t.Spacing} broke arrangement.spacing");
+
+            bool fixedRule = arrangement.Placements.Any(r => r.Glyph == name && r.Mode == ComponentPlacementMode.Fixed);
+            lines.Add($"'{name}' could not be placed in {t.Failures} of {attempts} attempt(s)" +
+                (fixedRule ? " (it has a Fixed placement: one position per attempt)" : "") +
+                $"; of {t.Tried} placement(s) tried, " + (reasons.Count == 0 ? "none were available" : string.Join(", ", reasons)) + ".");
+        }
+
+        var worst = failing[0].Value;
+        int top = new[] { worst.OffGrid, worst.Crossing, worst.Sides, worst.Spacing }.Max();
+        string hint =
+            top == 0 ? ""
+          : worst.Crossing == top ? " Components cross each other by default: allow arrangement.allowCrossing, or give the recipe components that are smaller or sparser."
+          : worst.Sides == top ? " The side rules are hard: check that the sides do not contradict each other and leave room on a grid of " + grid.Width + " x " + grid.Height + "."
+          : worst.Spacing == top ? " Spacing rejects most placements: relax arrangement.spacing."
+          : " The components are too big for the grid at the sizes allowed: turn on combination.allowScale with smaller allowedScales, or use a larger grid.";
+        return string.Join(" ", lines) + hint;
     }
 }

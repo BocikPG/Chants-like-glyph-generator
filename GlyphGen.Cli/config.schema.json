@@ -108,6 +108,26 @@
             }
           ]
         },
+        "nibRoundness": {
+          "type": "number",
+          "description": "0 = a flat, square-ended nib; 1 = fully rounded ends (a capsule, like a brush pen). In between rounds the corners.",
+          "default": 0
+        },
+        "nibAngleWobble": {
+          "type": "number",
+          "description": "How far (degrees, +-) the hand lets the nib angle drift along a stroke, slowly and seeded per stroke.",
+          "default": 0
+        },
+        "nibPressure": {
+          "type": "number",
+          "description": "0-1: how much the nib length (pressure) varies along a stroke.",
+          "default": 0
+        },
+        "nibLeadIn": {
+          "type": "number",
+          "description": "0-0.5: fraction of an open stroke's length, at each end, over which the nib eases in from a light touch to full length, like a hand setting the pen down and lifting it.",
+          "default": 0
+        },
         "pressureVariation": {
           "type": "number",
           "default": 0.35
@@ -547,6 +567,161 @@
       "additionalProperties": false,
       "description": "Settings for the contact sheet(s): one PNG laying a language's glyphs out in a grid."
     },
+    "CopyAutoConfig": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "type": "string",
+          "enum": [
+            "LongestStraight",
+            "CenterWeight"
+          ],
+          "description": "What to look at.",
+          "default": "LongestStraight"
+        },
+        "axis": {
+          "type": "string",
+          "enum": [
+            "Perpendicular",
+            "Parallel",
+            "Random"
+          ],
+          "description": "LongestStraight only: whether the mirror line runs perpendicular to the longest run (default), parallel to it, or either at random. With Parallel the copy lies beside the run, so it needs a gap of 1 or more to clear it.",
+          "default": "Perpendicular"
+        },
+        "toward": {
+          "type": "string",
+          "enum": [
+            "Middle",
+            "Edge"
+          ],
+          "description": "CenterWeight only: push the copy toward the middle (default) or toward the edge.",
+          "default": "Middle"
+        },
+        "shapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of earlier shapes the rule looks at (all their instances in the glyph) instead of only the chain being copied. Longest straight run: the longest one among those shapes' strokes. CenterWeight: the average of all their nodes. Leave out (or empty) to look at the chain being copied alone. A listed shape that was not drawn adds nothing; if none was drawn, the chain being copied is used."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The rule behind flip: Auto."
+    },
+    "CopyConfig": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "type": "string",
+          "description": "Id of the shape to copy. It must be listed before this one.",
+          "default": ""
+        },
+        "flip": {
+          "type": "string",
+          "enum": [
+            "None",
+            "Horizontal",
+            "Vertical",
+            "Rotate180",
+            "Diagonal",
+            "AntiDiagonal",
+            "Random",
+            "Auto"
+          ],
+          "description": "How the copy is turned over; see CopyFlip.",
+          "default": "Auto"
+        },
+        "flips": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "None",
+              "Horizontal",
+              "Vertical",
+              "Rotate180",
+              "Diagonal",
+              "AntiDiagonal",
+              "Random",
+              "Auto"
+            ]
+          },
+          "description": "Flip: Random only - the flips to draw from. Default: Horizontal, Vertical, Rotate180."
+        },
+        "auto": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CopyAutoConfig"
+            }
+          ],
+          "description": "Flip: Auto only - the rule that picks the flip."
+        },
+        "gap": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            }
+          ],
+          "description": "Steps the copy is moved away from the origin, along the direction it was flipped toward: 0 puts the copy's start on the anchor itself (the two share that node), 1 or more moves them apart, a negative number pushes the copy back over the origin so the two overlap or cross. Drawn from this range for each copy. Default 0 to 0."
+        },
+        "shift": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            }
+          ],
+          "description": "Steps the copy is slid sideways (across the gap direction), up or down at random. Drawn from this range, then given a random sign. Default 0 to 0."
+        },
+        "anchor": {
+          "type": "string",
+          "enum": [
+            "OriginStart",
+            "ExistingNode",
+            "ExistingEdge"
+          ],
+          "description": "Where the copy's start node goes before gap and shift.",
+          "default": "OriginStart"
+        },
+        "preferNoCrossing": {
+          "type": "boolean",
+          "description": "Try every flip position the config allows in random order and take one that crosses nothing already drawn. If none exists the best attempt is kept, but only when the destination's arrangement.allowCrossing is true; otherwise the copy fails like any shape that cannot be placed. Turn off to take the first position that obeys the hard rules.",
+          "default": true
+        },
+        "moveGlyphToFit": {
+          "type": "boolean",
+          "description": "When no position keeps the copy on the grid (but one would, if the strokes already drawn sat somewhere else), the whole glyph so far is moved over, together with the copy, to where it fits. Turn off to fail instead. Not available to copies added by a derivation step, whose glyph keeps its source's position.",
+          "default": true
+        },
+        "regenerateBase": {
+          "type": "integer",
+          "description": "First retry: when no position works for the copy, redraw the base shape (the first shape in this chain of copies that is not itself a copy) with fresh random numbers and try again, up to this many times. Everything placed after the base is rebuilt around the new draw. 0 turns it off. Only helps when the base is generated, not a literal.",
+          "default": 3
+        },
+        "redrawGlyph": {
+          "type": "integer",
+          "description": "Second retry, after the base redraws are spent: redraw the whole glyph from a fresh seed, up to this many times, before giving up with the error. 0 turns it off. Neither retry applies to copies added by a derivation step.",
+          "default": 3
+        },
+        "mirrorCurves": {
+          "type": "boolean",
+          "description": "The copy's curves are the origin's curves, flipped with it, so the two look like mirror images. Turn off to give the copy curves of its own. (Copies added by a derivation step always draw their own curves.)",
+          "default": true
+        },
+        "respectSelfSpacing": {
+          "type": "boolean",
+          "description": "Apply the original shape's chain.selfSpacing rules between the copy and the original, as if the copy were more nodes of the same stroke: every node of the copy is measured against every node of the chain it copies (a node the two share is exempt, except in AllNodes mode). Existing and Adjacent both mean \"every node of the original\" here. The copy's own nodes need no check, a flip keeps their distances. Default false.",
+          "default": false
+        },
+        "selfSpacingIgnoresOriginal": {
+          "type": "boolean",
+          "description": "With respectSelfSpacing: for Existing and AllNodes rules, leave the original chain out and measure the copy against every OTHER node already in the glyph instead (the original's own nodes do not count, so the copy may sit as close to it as arrangement allows). Adjacent rules still compare with the original. Default false.",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Turns a shape into a copy of another shape (put it on the destination entry in the shapes list; the origin entry must come earlier in the list). Instead of being drawn, the destination becomes one copy of every instance of the origin, flipped around the origin chain's start node and then moved by the anchor, gap and shift. A copy can itself be copied. The destination takes no chain, nodes, placement or count of its own; its arrangement (allowCrossing, spacing, bias) decides which copy positions are acceptable."
+    },
     "CurveConfig": {
       "type": "object",
       "properties": {
@@ -610,13 +785,302 @@
       "additionalProperties": false,
       "description": "Forces an edge straight based on geometry, independent of the edge's curve settings - a safety net against a curve bulging into nearby ink (see CurvePlanner's remarks on this). Disabled by default since it changes how many edges end up curved vs. the language's other settings alone would produce."
     },
+    "DerivationAmount": {
+      "type": "object",
+      "properties": {
+        "percent": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PercentRange"
+            }
+          ],
+          "description": "Percentage (0-100) of all nodes (node steps) or all edges (edge steps) that exist when the step runs, rounded to a whole number. Resolved uniformly in the range."
+        },
+        "count": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IntRange"
+            }
+          ],
+          "description": "A fixed number of nodes/edges, drawn uniformly (inclusive) from the range."
+        }
+      },
+      "additionalProperties": false,
+      "description": "How much a step affects: a percentage of what exists, or a fixed number, each as a range. Set exactly one of Percent and Count."
+    },
+    "DerivationCondition": {
+      "type": "object",
+      "properties": {
+        "minEdges": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxEdges": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minNodes": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxNodes": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "A gate on a step: it only runs when the glyph, as it is when the step comes up (after the earlier steps), has a number of edges and nodes within these limits. Every limit that is set must hold; none set = no gate. Nodes are the distinct points, including lone ones; a circle or dot is one edge."
+    },
+    "DerivationConfig": {
+      "type": "object",
+      "properties": {
+        "finalOutputRotation": {
+          "type": "string",
+          "enum": [
+            "Own",
+            "FollowMoves",
+            "FollowRemovals",
+            "FollowAlways"
+          ],
+          "description": "When the derived glyph is drawn at its source's render.rotateOptions angle instead of drawing its own. Only steps that actually ran count (one skipped by chance or onlyIf does not).",
+          "default": "FollowMoves"
+        },
+        "from": {
+          "type": "string",
+          "description": "The glyph (a name from glyphs or baseGlyphs; plain, composite or itself derived) to start from.",
+          "default": ""
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DerivationStep"
+          },
+          "description": "The edits, run in order."
+        },
+        "maxSimilarityToSource": {
+          "type": "number",
+          "description": "Quality gate against the source only: the derived glyph may resemble it by at most this much (0-1, same measure as quality.maxSimilarity), so it can't be a copy. 1 turns it off. Against every OTHER glyph the normal quality.maxSimilarity applies. Default 0.9.",
+          "default": 0.9
+        }
+      },
+      "additionalProperties": false,
+      "description": "A glyph made from another glyph: the source is generated first, then the steps edit a copy of its strokes (a composite source is flattened to plain strokes). The source itself is left as it was. Edges that survive untouched keep the source's exact curves."
+    },
+    "DerivationStep": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "DeleteNodes",
+            "DeleteEdges",
+            "Keep",
+            "Add",
+            "Scale",
+            "Mirror",
+            "Rotate",
+            "Nudge"
+          ],
+          "default": "DeleteNodes"
+        },
+        "onlyIf": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DerivationCondition"
+            }
+          ],
+          "description": "Only run the step if the glyph has enough / not too many edges and nodes at that point (see DerivationCondition). Checked before chance. A skipped step changes nothing and uses no random numbers."
+        },
+        "chance": {
+          "type": "number",
+          "description": "Chance (0-100) that the step runs at all. Default 100.",
+          "default": 100
+        },
+        "amount": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DerivationAmount"
+            }
+          ],
+          "description": "DeleteNodes, DeleteEdges, Keep, Nudge: how many. For Keep it is how many edges stay."
+        },
+        "target": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Any",
+                "Ends",
+                "Inner",
+                "Junction"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "DeleteNodes, Nudge: which nodes may be picked. Default Any."
+        },
+        "mode": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Cut",
+                "Bridge"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "DeleteNodes: Cut (default) or Bridge."
+        },
+        "connectionRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConnectionRuleConfig"
+          },
+          "description": "DeleteNodes with Mode Bridge: the moves a replacement path may be built from. Same options as chain.connectionRules (Circle rules are ignored)."
+        },
+        "bridgeMaxMoves": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "DeleteNodes with Mode Bridge: most moves a replacement path may have. Default 3."
+        },
+        "removeOrphanNodes": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "DeleteNodes, DeleteEdges, Keep: also remove nodes left with no edge. Default true. If false they stay as lone nodes (invisible when drawn, but they still count as nodes for later steps, for similarity, and in the debug view)."
+        },
+        "keepAtLeast": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "DeleteNodes, DeleteEdges, Keep: never end with fewer edges than this (picks that would are skipped). Default 1."
+        },
+        "keepConnected": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "DeleteNodes, DeleteEdges, Keep: skip any pick that would split the glyph into more connected pieces than it had before the step. Default false."
+        },
+        "shapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Add: ids of entries of the language's shapes, each placed as it would be in a plain glyph (its count, chain, placement and arrangement), against the strokes that are left. Added strokes may cross the existing ones only if the shape's arrangement.allowCrossing says so."
+        },
+        "optional": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Add: if a shape cannot be placed, skip it instead of failing. Default false."
+        },
+        "factors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScaleFactorConfig"
+          },
+          "description": "Scale: weighted ratios, one is picked. A ratio that would not fit the grid is not picked."
+        },
+        "axis": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Horizontal",
+                "Vertical",
+                "Random"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Mirror: default Horizontal."
+        },
+        "degrees": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "Rotate: the allowed rotations (90, 180, 270); one is picked. Default all three."
+        },
+        "distance": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Nudge: how far a node may move on each axis. Default 1."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One step of a derivation. A single class for every op, so only the options that belong to the op are allowed (the loader rejects the others)."
+    },
     "EdgeCurveConfig": {
       "type": "object",
       "properties": {
         "chanceToBeCurved": {
           "type": "number",
-          "description": "Chance (0-100) that an edge made by this rule is drawn as a curve; otherwise it is a straight line. Rolled per edge. 100 = always curved (a 0..0 tension still looks straight). This replaces the old language-wide straightLineBias (chanceToBeCurved = 100 - straightLineBias).",
-          "default": 100
+          "description": "Chance (0-100) that an edge made by this rule is drawn as a curve; otherwise it is a straight line. Rolled per edge. Default 0 = every edge straight; 100 = always curved (a 0..0 tension still looks straight). This replaces the old language-wide straightLineBias (chanceToBeCurved = 100 - straightLineBias).",
+          "default": 0
         },
         "mode": {
           "type": "string",
@@ -770,7 +1234,8 @@
             "Miter",
             "Bevel",
             "Round",
-            "Overlap"
+            "Overlap",
+            "Level"
           ],
           "default": "Miter"
         },
@@ -783,6 +1248,16 @@
           "type": "number",
           "description": "Inner Bevel / Round only: chamfer length or fillet radius, in half-widths of the stroke (1 = as large as half the stroke width). Limited automatically so it never reaches past the neighbouring node.",
           "default": 0.5
+        },
+        "axis": {
+          "type": "string",
+          "enum": [
+            "Auto",
+            "Horizontal",
+            "Vertical"
+          ],
+          "description": "Outer Level only: the line the corner is cut along. Auto = across the corner's outward direction, so a V pointing down is cut flat on the bottom and a corner pointing right is cut along its column.",
+          "default": "Auto"
         }
       },
       "additionalProperties": false,
@@ -961,6 +1436,13 @@
             }
           ]
         },
+        "derivations": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/DerivationConfig"
+          },
+          "description": "Glyphs made by editing another glyph, by glyph name. A name listed here is not generated from shapes and has no recipe. See DerivationConfig."
+        },
         "quality": {
           "allOf": [
             {
@@ -983,6 +1465,21 @@
         "name",
         "grid"
       ]
+    },
+    "PercentRange": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "number",
+          "default": 0
+        },
+        "max": {
+          "type": "number",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "A percentage hint (0-100), resolved the same way as IntRange. Used as a soft bias (e.g. StraightLineBias), not a hard constraint."
     },
     "PlacementConfig": {
       "type": "object",
@@ -1068,6 +1565,13 @@
           "description": "RandomValid only: start the shape on a node already in the glyph (chosen uniformly) instead of a random grid point, so shapes grow out of each other. Needs no crossing permission - edges that merely meet at a node don't count as crossing - but can't be combined with SubSymbolSpacing.MinNodeDistance > 0 (a shared node is distance 0).",
           "default": false
         },
+        "startOnShapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "With startOnExistingNode: only the nodes of these shapes (ids of EARLIER shapes) count as places to start on. null (default) = every node already in the glyph. When none of the listed shapes was drawn in this glyph, there is nothing to attach to and the shape is placed like the first one, at a random point."
+        },
         "side": {
           "oneOf": [
             {
@@ -1125,9 +1629,20 @@
           "enum": [
             "Butt",
             "Square",
-            "Round"
+            "Round",
+            "Level"
           ],
           "default": "Butt"
+        },
+        "capLevel": {
+          "type": "string",
+          "enum": [
+            "Auto",
+            "Horizontal",
+            "Vertical"
+          ],
+          "description": "With cap Level: which line the end is cut along. Horizontal = flat on the node's row (like text on a baseline), Vertical = along its column, Auto = across the stroke's dominant direction, so a stroke steeper than 45 degrees is cut horizontally and a flatter one vertically. Straight horizontal and vertical strokes are never changed.",
+          "default": "Auto"
         }
       },
       "additionalProperties": false,
@@ -1145,6 +1660,18 @@
             "GlyphCentered"
           ],
           "default": "Grid"
+        },
+        "rotateDegrees": {
+          "type": "number",
+          "description": "Turns every glyph by this many degrees, clockwise, around the middle of its grid; the canvas itself stays as it is. Any angle works (curves turn exactly). The framing then fits the turned glyphs, so with Grid framing the grid's square is what is rotated and its corners may reach past the canvas margin. Applies to the normal and the debug images alike. Default 0.",
+          "default": 0
+        },
+        "rotateOptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RotateOption"
+          },
+          "description": "Per-glyph random turn, added to rotateDegrees: each glyph draws one option by weight, then an angle uniformly from that option's range (degrees, clockwise). The draw comes from the glyph's own seed, so a glyph always turns the same way. Empty (default) = no random turn. Example: [ { \"min\": -8, \"max\": 8, \"weight\": 4 }, { \"min\": 85, \"max\": 95, \"weight\": 1 } ] mostly tilts a little and now and then lays a glyph on its side."
         },
         "foreground": {
           "type": "string",
@@ -1193,10 +1720,37 @@
           "type": "boolean",
           "description": "Debug option (see DebugShowNodes): in the extra \".debug.png\" images, colour the ink each kind of part ADDS on top of the stroke bodies - grey for caps (and Ball / Ink terminals), violet for corner joins, pink for junction joins (including straightening). The strokes themselves keep the foreground colour (or their component colour). Parts are painted over the strokes in the order they are built: corner joins, then junction joins, then caps.",
           "default": false
+        },
+        "debugColorShapes": {
+          "type": "boolean",
+          "description": "Debug option (see DebugShowNodes): in the extra \".debug.png\" images, give every shape its own colour, in the order of the shapes list. Instances of one shape (a shape with a count, or a copy of each instance) share its hue and differ in lightness, so they can be told apart. Joins between strokes keep the foreground colour. Takes the place of debugColorComponents where both are on.",
+          "default": false
         }
       },
       "additionalProperties": false,
       "description": "Per-language rendering settings. Pixel size and margin still come from CanvasConfig."
+    },
+    "RotateOption": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "number",
+          "description": "Smallest angle in degrees (clockwise; negative turns the other way).",
+          "default": 0
+        },
+        "max": {
+          "type": "number",
+          "description": "Largest angle in degrees.",
+          "default": 0
+        },
+        "weight": {
+          "type": "number",
+          "description": "Relative chance of this option (default 1; 0 = never).",
+          "default": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "One weighted range of turns for render.rotateOptions."
     },
     "RotationConfig": {
       "type": "object",
@@ -1299,6 +1853,25 @@
           ],
           "description": "How many instances per glyph, rolled once per glyph. Omit for exactly one guaranteed instance (no roll)."
         },
+        "chance": {
+          "type": "number",
+          "description": "Chance (0-100) that this entry is drawn in a glyph at all, rolled once per glyph and covering every instance (a count still applies when it is drawn). Default 100: always drawn. A copy shape whose original was skipped has nothing to copy and is skipped too.",
+          "default": 100
+        },
+        "onlyForGlyphs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "When set, this shape is drawn only in these glyphs (names from glyphs/baseGlyphs); null = every plain glyph. A copy of this shape is drawn only where this shape is."
+        },
+        "excludeGlyphs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Glyphs this shape is never drawn in (applied after OnlyForGlyphs). Empty = none."
+        },
         "chain": {
           "allOf": [
             {
@@ -1353,6 +1926,14 @@
             }
           ],
           "description": "Advanced: prefix of this shape's random streams, which defaults to \"shape-\" plus the id. Only needed to make a migrated config reproduce its old glyphs exactly (the migration tool sets it); leave it out otherwise."
+        },
+        "copyOf": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CopyConfig"
+            }
+          ],
+          "description": "Makes this entry a copy of an earlier shape instead of drawing it (see CopyConfig). Leave out kind, count, chain, nodes and placement on such an entry."
         }
       },
       "additionalProperties": false,

@@ -12,10 +12,12 @@ public sealed class RectangularTypeface : ITypeface
 {
     private readonly double _halfWidth;
     private readonly CapStyle _cap;
+    private readonly LevelAxis _capLevel;
     private readonly JoinsConfig _joins;
 
-    public RectangularTypeface(double widthPx, CapStyle cap, JoinsConfig joins)
+    public RectangularTypeface(double widthPx, CapStyle cap, JoinsConfig joins, LevelAxis capLevel = LevelAxis.Auto)
     {
+        _capLevel = capLevel;
         _halfWidth = Math.Max(0, widthPx) / 2;
         _cap = cap;
         _joins = joins;
@@ -25,7 +27,7 @@ public sealed class RectangularTypeface : ITypeface
     public double DotRadiusPx => _halfWidth;
     public double SampleSpacingPx => 0.0; // width never varies, so straight edges stay one segment
     public double MaxInkExtentPx =>
-        _halfWidth * Math.Max(JoinResolver.ExtentFactor(_joins), _cap == CapStyle.Square ? 1.5 : 1.0);
+        _halfWidth * Math.Max(JoinResolver.ExtentFactor(_joins), _cap == CapStyle.Square ? 1.5 : _cap == CapStyle.Level ? 2.3 : 1.0);
 
     public void AppendOutline(StrokePath path, StrokeContext context, List<Vec2[]> polygons)
     {
@@ -38,6 +40,6 @@ public sealed class RectangularTypeface : ITypeface
         Array.Fill(start, w);
         Array.Fill(end, w);
 
-        StrokeOutlineBuilder.Build(path, start, end, _joins, _cap, polygons, context.JoinSink, context.StrokeId);
+        StrokeOutlineBuilder.Build(path, start, end, _joins, _cap, polygons, context.JoinSink, context.StrokeId, _capLevel);
     }
 }

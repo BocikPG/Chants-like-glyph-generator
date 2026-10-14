@@ -72,6 +72,10 @@ public sealed class JoinSideConfig
     /// stroke (1 = as large as half the stroke width). Limited automatically so it never reaches
     /// past the neighbouring node.</summary>
     public double Size { get; set; } = 0.5;
+
+    /// <summary>Outer Level only: the line the corner is cut along. Auto = across the corner's outward direction, so a
+    /// V pointing down is cut flat on the bottom and a corner pointing right is cut along its column.</summary>
+    public LevelAxis Axis { get; set; } = LevelAxis.Auto;
 }
 
 /// <summary>Replaces the outer and/or inner join for nodes whose angle falls in a range.</summary>

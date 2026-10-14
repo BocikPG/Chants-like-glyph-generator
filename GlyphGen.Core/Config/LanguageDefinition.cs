@@ -15,6 +15,7 @@ public sealed class CanvasConfig
 public sealed class GlyphDefinition
 {
     public string Name { get; set; } = "";
+
 }
 
 public sealed class LanguageDefinition
@@ -45,6 +46,10 @@ public sealed class LanguageDefinition
 
     public CurveConfig Curve { get; set; } = new();
     public CombinationConfig Combination { get; set; } = new();
+
+    /// <summary>Glyphs made by editing another glyph, by glyph name. A name listed here is not generated
+    /// from shapes and has no recipe. See DerivationConfig.</summary>
+    public Dictionary<string, DerivationConfig> Derivations { get; set; } = new();
 
     /// <summary>Post-generation gates (similarity to other glyphs, straight-line rejection).</summary>
     public QualityConfig Quality { get; set; } = new();

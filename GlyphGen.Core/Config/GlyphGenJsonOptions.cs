@@ -39,8 +39,17 @@ public static class RootConfigLoader
 {
     public static RootConfig Load(string json)
     {
-        var config = JsonSerializer.Deserialize<RootConfig>(json, GlyphGenJsonOptions.Default)
-            ?? throw new JsonException("Config deserialized to null.");
+        RootConfig? config;
+        try
+        {
+            config = JsonSerializer.Deserialize<RootConfig>(json, GlyphGenJsonOptions.Default);
+        }
+        catch (JsonException ex)
+        {
+            throw new JsonException(JsonErrorExplainer.Explain(ex, json, typeof(RootConfig)), ex);
+        }
+
+        if (config is null) throw new JsonException("Config deserialized to null.");
 
         var structural = new List<string>();
         ConfigStructureChecker.Check(json, structural);
