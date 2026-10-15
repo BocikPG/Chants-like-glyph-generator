@@ -13,6 +13,8 @@ public sealed class ChainGenerationRequest
     public bool AllowNodeRevisit { get; init; }
     public bool AllowEdgeRevisit { get; init; }
     public bool AllowClosedLoop { get; init; }
+    /// <summary>The language bends every edge (curve.forceAllEdgesCurved): no rule's edges can be pre-checked as straight lines.</summary>
+    public bool AllEdgesCurved { get; init; }
     public ConnectionWeighting ConnectionWeighting { get; init; } = ConnectionWeighting.PerMove;
     /// <summary>Node-to-node spacing rules within this chain; a new node must satisfy all.</summary>
     public IReadOnlyList<SelfSpacingRule> SelfSpacingRules { get; init; } = Array.Empty<SelfSpacingRule>();

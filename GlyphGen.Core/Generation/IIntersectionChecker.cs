@@ -13,13 +13,10 @@ public interface IIntersectionContext
 {
     IEnumerable<GridEdge> ExistingEdges { get; }
 
-    /// <summary>Whether the shape currently being placed allows its edges to cross others'.</summary>
-    bool AllowCrossing { get; }
-
-    /// <summary>The existing edges the shape being placed must NOT cross. Everything when it
-    /// does not allow crossing; otherwise only the edges of shapes that themselves forbid being
-    /// crossed - a crossing needs both shapes' permission.</summary>
-    IEnumerable<GridEdge> BlockingEdges { get; }
+    /// <summary>True when the edge would cross something it may not: each committed edge it cuts through must be accepted by
+    /// the crossing settings of both shapes (the one being placed, and the one that owns that edge). ownNodes are the nodes of
+    /// the chain the edge belongs to (they can make a crossing "at a node").</summary>
+    bool IsBlocked(GridEdge edge, IReadOnlyList<GridPoint> ownNodes);
 
     /// <summary>The existing edges that were drawn by the given shapes (ids). Contexts that do not know which shape
     /// drew what return everything.</summary>

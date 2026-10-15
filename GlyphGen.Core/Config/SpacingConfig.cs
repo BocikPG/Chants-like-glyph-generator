@@ -102,6 +102,11 @@ public sealed class SpacingConfig
 
     public ProximityMode MaxDistanceMode { get; set; } = ProximityMode.NearestShape;
 
+    /// <summary>For a shape with placement.startOnExistingNode: leave the node it starts on out of the spacing checks
+    /// (centroid, minimum and maximum node distance), since that node is shared with an existing shape and so sits at distance 0
+    /// from it. Every other node of the shape is still measured. Default false.</summary>
+    public bool IgnoreStartNode { get; set; } = false;
+
     /// <summary>Returns a human-readable message per problem found (empty = valid). Checked
     /// even when Enabled is false, so a typo isn't silently waiting for the day it's switched on.</summary>
     public IReadOnlyList<string> Validate()

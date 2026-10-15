@@ -1,5 +1,5 @@
 using GlyphGen.Core.Config;
-using GlyphGen.Rendering.Geometry;
+using GlyphGen.Core.Geometry;
 
 namespace GlyphGen.Rendering.Layout;
 

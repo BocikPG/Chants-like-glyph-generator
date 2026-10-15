@@ -6,8 +6,8 @@ namespace GlyphGen.Core.Config;
 /// <summary>
 /// One combination recipe. Written either as a plain list of component glyph names -
 /// "fortress": ["warrior", "protect"] - or as an object with its own arrangement:
-/// "fortress": { "components": ["warrior", "protect"], "arrangement": { "allowCrossing": true } }.
-/// Whatever the object form's arrangement lists (allowCrossing, spacing, bias) replaces that part
+/// "fortress": { "components": ["warrior", "protect"], "arrangement": { "crossing": { "mode": "Anywhere" } } }.
+/// Whatever the object form's arrangement lists (crossing, spacing, bias) replaces that part
 /// of combination.arrangement for this recipe; everything it leaves out is inherited.
 /// </summary>
 [JsonConverter(typeof(RecipeConfigConverter))]

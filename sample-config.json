@@ -1100,10 +1100,16 @@
             "crossing": {
               "mode": "NodesOnly",
               "nodeTolerance": 0.3
+            },
+            "spacing":{
+              "enabled": true,
+              "ignoreStartNode": true,
+              "minNodeDistance": 2
             }
           },
           "placement": {
-            "startOnExistingNode": false
+            "startOnExistingNode": true,
+            "startOnExistingNodeChance": 60
           }
         },
         {
@@ -1114,12 +1120,12 @@
           ],
           "count": {
             "min": 1,
-            "max": 4
+            "max": 3
           },
           "chain": {
             "length": {
               "min": 3,
-              "max": 5
+              "max": 7
             },
             "selfSpacing": [
               {
@@ -1147,7 +1153,7 @@
                 "maxLength": 7,
                 "weight": 3,
                 "curve": {
-                  "chanceToBeCurved": 70,
+                  "chanceToBeCurved": 80,
                   "mode": "Hybrid",
                   "tension": {
                     "options": [
@@ -1173,13 +1179,13 @@
                 "maxLength": 7,
                 "weight": 3,
                 "curve": {
-                  "chanceToBeCurved": 70,
+                  "chanceToBeCurved": 80,
                   "mode": "Hybrid",
                   "tension": {
                     "options": [
                       {
                         "min": 0.1,
-                        "max": 0.1
+                        "max": 0.2
                       },
                       {
                         "min": 0.4,
@@ -1205,14 +1211,14 @@
             "spacing":{
               "enabled": true,
               "ignoreStartNode": true,
-              "minNodeDistance": 3
+              "minNodeDistance": 4
             }
           },
           "placement": {
             "startOnExistingNode": true,
             "startOnShapes": [
               "firstStroke"
-            ],
+            ], 
             "redoShape": 50,
             "redrawGlyph": 50
           }

@@ -31,10 +31,13 @@
     "ArrangementRules": {
       "type": "object",
       "properties": {
-        "allowCrossing": {
-          "type": "boolean",
-          "description": "If true, this shape's edges may cross edges already placed. A crossing is only allowed when BOTH shapes allow it: the shape being placed AND the shape that owns the edge it would cross. So a shape with allowCrossing false can never be crossed, even by a shape that is itself allowed to cross. Edges that merely meet at a shared node never count as crossing.",
-          "default": false
+        "crossing": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CrossingConfig"
+            }
+          ],
+          "description": "Whether and where this shape's edges may cross edges already placed (curves count: a curved edge is checked as the curve it is drawn as). A crossing needs both shapes to accept it - the one being placed and the one that owns the edge it would cross - each by its own crossing settings."
         },
         "spacing": {
           "allOf": [
@@ -227,9 +230,12 @@
           },
           "description": "Placement rules by component glyph. Components without a rule are placed as before."
         },
-        "allowCrossing": {
-          "type": "boolean",
-          "default": false
+        "crossing": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CrossingConfig"
+            }
+          ]
         },
         "spacing": {
           "allOf": [
@@ -685,7 +691,7 @@
         },
         "preferNoCrossing": {
           "type": "boolean",
-          "description": "Try every flip position the config allows in random order and take one that crosses nothing already drawn. If none exists the best attempt is kept, but only when the destination's arrangement.allowCrossing is true; otherwise the copy fails like any shape that cannot be placed. Turn off to take the first position that obeys the hard rules.",
+          "description": "Try every flip position the config allows in random order and take one that crosses nothing already drawn. If none exists the best attempt is kept, but only when the destination's arrangement.crossing allows crossing (mode NodesOnly or Anywhere); otherwise the copy fails like any shape that cannot be placed. Turn off to take the first position that obeys the hard rules.",
           "default": true
         },
         "moveGlyphToFit": {
@@ -720,7 +726,35 @@
         }
       },
       "additionalProperties": false,
-      "description": "Turns a shape into a copy of another shape (put it on the destination entry in the shapes list; the origin entry must come earlier in the list). Instead of being drawn, the destination becomes one copy of every instance of the origin, flipped around the origin chain's start node and then moved by the anchor, gap and shift. A copy can itself be copied. The destination takes no chain, nodes, placement or count of its own; its arrangement (allowCrossing, spacing, bias) decides which copy positions are acceptable."
+      "description": "Turns a shape into a copy of another shape (put it on the destination entry in the shapes list; the origin entry must come earlier in the list). Instead of being drawn, the destination becomes one copy of every instance of the origin, flipped around the origin chain's start node and then moved by the anchor, gap and shift. A copy can itself be copied. The destination takes no chain, nodes, placement or count of its own; its arrangement (crossing, spacing, bias) decides which copy positions are acceptable."
+    },
+    "CrossingConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "None",
+            "NodesOnly",
+            "Anywhere"
+          ],
+          "default": "None"
+        },
+        "nodeTolerance": {
+          "type": "number",
+          "description": "NodesOnly: how far (lattice units) from a node a crossing may lie and still count as being at it. A stroke passing near a node but not through it is fine. Default 0.3.",
+          "default": 0.3
+        },
+        "nodesOfShapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "NodesOnly: only the nodes of these shapes (ids) count. Empty/missing = every node (the shape's own included). With a list, the shape's own nodes count only if its own id is listed."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Crossing rules of one shape (arrangement.crossing). Curves are taken into account."
     },
     "CurveConfig": {
       "type": "object",
@@ -739,11 +773,6 @@
               "$ref": "#/definitions/CurveProximityGuardConfig"
             }
           ]
-        },
-        "recheckProximityInCombined": {
-          "type": "boolean",
-          "description": "A component reuses its source glyph's curves inside a composite, so the proximity guard only ever judged it ALONE (and at its original size). If true, the guard is run again once the component sits in the composite - with its scaled edge lengths and the composite's other nodes - and any curved edge it would force straight is flattened. Needs ProximityGuard.Enabled. Default false.",
-          "default": false
         },
         "forceAllEdgesCurved": {
           "type": "boolean",
@@ -775,11 +804,6 @@
           "type": "number",
           "description": "Edges shorter than this (grid units) are always forced straight - a curve on a very short edge exaggerates its bulge relative to the edge's own length, making it more likely to swing into nearby geometry.",
           "default": 1.5
-        },
-        "minDistanceToOtherNodes": {
-          "type": "number",
-          "description": "If > 0, also forces an edge straight whenever ANY other node in the same glyph (any chain, any combination component) sits within this distance of either of the edge's own endpoints - a broader, more expensive check than MinEdgeLength alone, since it looks at nearby geometry beyond just the edge's own two ends. 0 disables this part.",
-          "default": 0
         }
       },
       "additionalProperties": false,
@@ -1016,7 +1040,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Add: ids of entries of the language's shapes, each placed as it would be in a plain glyph (its count, chain, placement and arrangement), against the strokes that are left. Added strokes may cross the existing ones only if the shape's arrangement.allowCrossing says so."
+          "description": "Add: ids of entries of the language's shapes, each placed as it would be in a plain glyph (its count, chain, placement and arrangement), against the strokes that are left. Added strokes may cross the existing ones only if the shape's arrangement.crossing says so."
         },
         "optional": {
           "oneOf": [
@@ -1481,6 +1505,29 @@
       "additionalProperties": false,
       "description": "A percentage hint (0-100), resolved the same way as IntRange. Used as a soft bias (e.g. StraightLineBias), not a hard constraint."
     },
+    "PlacementBounds": {
+      "type": "object",
+      "properties": {
+        "minX": {
+          "type": "integer",
+          "default": 0
+        },
+        "minY": {
+          "type": "integer",
+          "default": 0
+        },
+        "maxX": {
+          "type": "integer",
+          "default": 0
+        },
+        "maxY": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "An inclusive box of lattice node coordinates (placement.bounds)."
+    },
     "PlacementConfig": {
       "type": "object",
       "properties": {
@@ -1529,6 +1576,14 @@
           ],
           "description": "Required when Mode == Fixed, and an error with any other mode (it would be ignored). Written as { \"x\": 7, \"y\": 9 } or [7, 9]."
         },
+        "bounds": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PlacementBounds"
+            }
+          ],
+          "description": "A box smaller than the grid that this shape must stay inside, treated as the edge of the grid while the shape is generated and placed (nodes, and circles' whole outlines). Inclusive node coordinates, e.g. { \"minX\": 4, \"minY\": 4, \"maxX\": 10, \"maxY\": 10 }. Other shapes are not limited by it. null = the whole grid."
+        },
         "allowRotationOnPlace": {
           "type": "boolean",
           "description": "Allows a random rotation per attempt, from Rotations (below). Only Literal motifs are affected: a generated chain is already random and ignores the rotation.",
@@ -1560,10 +1615,25 @@
           "description": "Failure budget for \"find/fit a shape at a location\" — distinct from CombinationConfig.MaxRetriesPerRecipe, which governs \"can this recipe's components work together at all\". Keeping these separate lets failure messages say precisely which stage gave up.",
           "default": 20
         },
+        "redoShape": {
+          "type": "integer",
+          "description": "When an instance of this shape cannot be placed within maxPlacementAttempts: how many times to redraw ALL instances of this shape (new chains, new positions) before giving up on this try of the glyph. Earlier shapes stay as they are. Default 0 = no redraw (the glyph fails, as before).",
+          "default": 0
+        },
+        "redrawGlyph": {
+          "type": "integer",
+          "description": "After redoShape is spent: how many times to redraw the WHOLE glyph from a fresh seed (every shape again) before the failure is reported. Default 0.",
+          "default": 0
+        },
         "startOnExistingNode": {
           "type": "boolean",
           "description": "RandomValid only: start the shape on a node already in the glyph (chosen uniformly) instead of a random grid point, so shapes grow out of each other. Needs no crossing permission - edges that merely meet at a node don't count as crossing - but can't be combined with SubSymbolSpacing.MinNodeDistance > 0 (a shared node is distance 0).",
           "default": false
+        },
+        "startOnExistingNodeChance": {
+          "type": "number",
+          "description": "With startOnExistingNode: the chance (0-100) that an attempt starts on an existing node; otherwise it starts on a random grid point as usual. Rolled per attempt. Default 100 = always start on a node.",
+          "default": 100
         },
         "startOnShapes": {
           "type": "array",
@@ -2021,6 +2091,11 @@
             "AllShapes"
           ],
           "default": "NearestShape"
+        },
+        "ignoreStartNode": {
+          "type": "boolean",
+          "description": "For a shape with placement.startOnExistingNode: leave the node it starts on out of the spacing checks (centroid, minimum and maximum node distance), since that node is shared with an existing shape and so sits at distance 0 from it. Every other node of the shape is still measured. Default false.",
+          "default": false
         }
       },
       "additionalProperties": false,

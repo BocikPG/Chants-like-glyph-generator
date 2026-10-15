@@ -99,15 +99,14 @@
             "maxPlacementAttempts": 20
           },
           "arrangement": {
-            "allowCrossing": true
+            "crossing": { "mode": "Anywhere" }
           }
         }
       ],
       "curve": {
         "proximityGuard": {
           "enabled": true,
-          "minEdgeLength": 2,
-          "minDistanceToOtherNodes": 1
+          "minEdgeLength": 2
         },
         "edge": {
           "mode": "Derived",
@@ -371,8 +370,7 @@
       "curve": {
         "proximityGuard": {
           "enabled": true,
-          "minEdgeLength": 2,
-          "minDistanceToOtherNodes": 1
+          "minEdgeLength": 2
         },
         "edge": {
           "mode": "Derived",

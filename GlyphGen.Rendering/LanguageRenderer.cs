@@ -4,7 +4,7 @@ using GlyphGen.Core.Grid;
 using GlyphGen.Core.Model;
 using GlyphGen.Core.Rng;
 using GlyphGen.Rendering.Curves;
-using GlyphGen.Rendering.Geometry;
+using GlyphGen.Core.Geometry;
 using GlyphGen.Rendering.Layout;
 using GlyphGen.Rendering.Typefaces;
 using SkiaSharp;

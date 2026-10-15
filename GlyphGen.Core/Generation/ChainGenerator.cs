@@ -181,7 +181,7 @@ public sealed class ChainGenerator : IChainGenerator
 
                 var edge = new GridEdge(current, target, GridEdgeKind.Circle, rule.Curve);
                 var (minX, minY, maxX, maxY) = edge.Extent();
-                if (minX < -1e-9 || minY < -1e-9 || maxX > grid.Width - 1 + 1e-9 || maxY > grid.Height - 1 + 1e-9) continue;
+                if (!grid.ContainsBox(minX, minY, maxX, maxY)) continue;
                 if (length > 0 && !RespectsSelfSpacing(target, current, chain, request.SelfSpacingRules)) continue;
                 if (!IsValidEdge(edge, chain, request, existingGeometry)) continue;
 
@@ -302,6 +302,10 @@ public sealed class ChainGenerator : IChainGenerator
         ChainGenerationRequest request,
         IIntersectionContext existingGeometry)
     {
+        // A rule that may bend its edges is not checked here as a straight line: the bend is only planned once the whole
+        // chain exists, so the placement checks the finished curves instead (faster, and it judges the real stroke).
+        bool mayCurve = request.AllEdgesCurved || candidateEdge.Curve is { ChanceToBeCurved: > 0 };
+
         foreach (var existing in chain.Edges)
         {
             if (IsSameEdge(existing, candidateEdge))
@@ -310,15 +314,13 @@ public sealed class ChainGenerator : IChainGenerator
                 continue; // exact retrace explicitly permitted; skip the geometric check below
             }
 
-            if (candidateEdge.Intersects(existing)) return false;
+            if (!mayCurve && candidateEdge.Intersects(existing)) return false;
         }
 
-        foreach (var existing in existingGeometry.BlockingEdges)
-        {
-            if (candidateEdge.Intersects(existing)) return false;
-        }
+        if (mayCurve) return true;
 
-        return true;
+        var own = new List<GridPoint>(chain.Nodes) { candidateEdge.To };
+        return !existingGeometry.IsBlocked(candidateEdge, own);
     }
 
     private static bool IsSameEdge(GridEdge a, GridEdge b) =>

@@ -27,19 +27,33 @@ public readonly struct GridEdge
     /// <summary>How the rule that made this edge wants it bent; null = the language's curve.edge.</summary>
     public EdgeCurveConfig? Curve { get; }
 
-    public GridEdge(GridPoint from, GridPoint to, GridEdgeKind kind = GridEdgeKind.Line, EdgeCurveConfig? curve = null)
+    /// <summary>The planned bend of a straight edge: null = not planned yet, <see cref="EdgeBend.None"/> = planned and
+    /// straight. Circles and dots have none.</summary>
+    public EdgeBend? Bend { get; }
+
+    public GridEdge(GridPoint from, GridPoint to, GridEdgeKind kind = GridEdgeKind.Line, EdgeCurveConfig? curve = null, EdgeBend? bend = null)
     {
         From = from;
         To = to;
         Kind = kind;
         Curve = curve;
+        Bend = kind == GridEdgeKind.Line ? bend : null;
     }
+
+    /// <summary>True when the edge has a planned bend that really bends it.</summary>
+    public bool IsCurved => Bend is { IsNone: false };
+
+    public GridEdge WithBend(EdgeBend? bend) => new(From, To, Kind, Curve, bend);
+
+    /// <summary>The mirror image of the edge's bend, for an edge that was reflected (WithPoints keeps the bend as it is).</summary>
+    public GridEdge MirroredBend() => Bend is null ? this : WithBend(Bend.Mirrored());
 
     public bool IsCircle => Kind == GridEdgeKind.Circle;
     public bool IsDot => Kind == GridEdgeKind.Circle && From == To;
 
-    /// <summary>The same edge with new end points (after a scale/rotate/translate), keeping kind and curve.</summary>
-    public GridEdge WithPoints(GridPoint from, GridPoint to) => new(from, to, Kind, Curve);
+    /// <summary>The same edge with new end points (after a scale/rotate/translate), keeping kind, curve and bend. After a
+    /// reflection also call <see cref="MirroredBend"/>.</summary>
+    public GridEdge WithPoints(GridPoint from, GridPoint to) => new(from, to, Kind, Curve, Bend);
 
     /// <summary>Circle centre and radius (a Circle edge only).</summary>
     public (double Cx, double Cy, double R) CircleGeometry =>

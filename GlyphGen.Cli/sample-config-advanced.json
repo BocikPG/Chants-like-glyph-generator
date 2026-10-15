@@ -54,7 +54,7 @@
             "maxPlacementAttempts": 40
           },
           "arrangement": {
-            "allowCrossing": false,
+            "crossing": { "mode": "None" },
             "spacing": {
               "enabled": true,
               "minCenterDistance": 0.5,
@@ -160,7 +160,7 @@
             }
           },
           "arrangement": {
-            "allowCrossing": true,
+            "crossing": { "mode": "Anywhere" },
             "spacing": {
               "enabled": true,
               "minCenterDistance": 0.5,
@@ -199,7 +199,7 @@
               "tick_base"
             ],
             "arrangement": {
-              "allowCrossing": false,
+              "crossing": { "mode": "None" },
               "placements": [
                 {
                   "glyph": "star",
@@ -244,7 +244,7 @@
         },
         "maxRetriesPerRecipe": 8,
         "arrangement": {
-          "allowCrossing": true,
+          "crossing": { "mode": "Anywhere" },
           "spacing": {
             "enabled": true,
             "minCenterDistance": 0.5,
@@ -274,10 +274,8 @@
         "contextMode": "AllCurved",
         "proximityGuard": {
           "enabled": true,
-          "minEdgeLength": 1.5,
-          "minDistanceToOtherNodes": 1
+          "minEdgeLength": 1.5
         },
-        "recheckProximityInCombined": true,
         "edge": {
           "mode": "Hybrid",
           "tension": {

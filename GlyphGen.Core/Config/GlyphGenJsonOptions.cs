@@ -64,7 +64,7 @@ public static class RootConfigLoader
         return config;
     }
 
-    /// <summary>A recipe's own arrangement replaces, key by key (allowCrossing, spacing, bias,
+    /// <summary>A recipe's own arrangement replaces, key by key (crossing, spacing, bias,
     /// candidates), what combination.arrangement says; keys it does not mention are inherited.
     /// Done on the JSON so "not written" can be told apart from "written as the default".</summary>
     private static void ResolveRecipeArrangements(RootConfig config)

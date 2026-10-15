@@ -509,6 +509,9 @@ internal static class ConfigValidator
 
             ValidatePlacement(l, c, where + ".placement", shape.Placement, rotationApplies: shape.Kind == ShapeKind.Literal, shape.Arrangement, shapeIndex: i);
             ValidateArrangement(c, where + ".arrangement", shape.Arrangement, forShape: true);
+            foreach (var id in shape.Arrangement.Crossing.NodesOfShapes ?? new List<string>())
+                if (l.Shapes.All(x => x.Id != id))
+                    c.Add(where + ".arrangement.crossing.nodesOfShapes", $"'{id}' is not the id of any shape.");
         }
     }
 
@@ -667,8 +670,16 @@ internal static class ConfigValidator
         foreach (var error in a.Spacing.Validate()) c.Add(path + ".spacing", error);
         foreach (var error in a.Bias.Validate()) c.Add(path + ".bias", error);
 
+        Enum(c, path + ".crossing.mode", a.Crossing.Mode);
+        Number(c, path + ".crossing.nodeTolerance", a.Crossing.NodeTolerance, 0, 5);
+        if (a.Crossing.Mode != CrossingMode.NodesOnly && a.Crossing.NodesOfShapes is { Count: > 0 })
+            c.Add(path + ".crossing.nodesOfShapes", "only applies with mode NodesOnly.");
+
         if (a.Candidates < 1)
             c.Add(path + ".candidates", $"must be at least 1 (got {a.Candidates}).");
+
+        if (!forShape && a.Spacing.IgnoreStartNode)
+            c.Add(path + ".spacing.ignoreStartNode", "only applies to a shape with placement.startOnExistingNode.");
 
         if (forShape && a.Bias.IncludeScaleAndRotation)
             c.Add(path + ".bias.includeScaleAndRotation", "only applies to combination components; a shape's candidates are never scaled or rotated.");
@@ -697,6 +708,17 @@ internal static class ConfigValidator
 
     private static void ValidatePlacement(LanguageDefinition l, Ctx c, string path, PlacementConfig p, bool rotationApplies, ArrangementRules arrangement, int shapeIndex = -1)
     {
+        if (p.Bounds is { } box)
+        {
+            if (box.MinX > box.MaxX || box.MinY > box.MaxY)
+                c.Add(path + ".bounds", "minX/minY must not be larger than maxX/maxY.");
+            else if (box.MinX < 0 || box.MinY < 0 || box.MaxX >= l.Grid.Width || box.MaxY >= l.Grid.Height)
+                c.Add(path + ".bounds", $"must lie inside the grid (x 0..{l.Grid.Width - 1}, y 0..{l.Grid.Height - 1}).");
+            else if (p.Mode == PlacementMode.Fixed && p.FixedOrigin is { } fo && (fo.X < box.MinX || fo.X > box.MaxX || fo.Y < box.MinY || fo.Y > box.MaxY))
+                c.Add(path + ".bounds", "does not contain fixedOrigin.");
+        }
+        if (p.RedoShape < 0) c.Add(path + ".redoShape", $"must be 0 or more (got {p.RedoShape}).");
+        if (p.RedrawGlyph < 0) c.Add(path + ".redrawGlyph", $"must be 0 or more (got {p.RedrawGlyph}).");
         Enum(c, path + ".mode", p.Mode);
 
         if (p.Side is not null)
@@ -750,14 +772,21 @@ internal static class ConfigValidator
             }
         }
 
+        if (arrangement.Spacing.IgnoreStartNode && !p.StartOnExistingNode)
+            c.Add(path.Replace(".placement", ".arrangement.spacing") + ".ignoreStartNode", "only applies to a shape with placement.startOnExistingNode: true.");
+
+        Number(c, path + ".startOnExistingNodeChance", p.StartOnExistingNodeChance, 0, 100);
+        if (!p.StartOnExistingNode && p.StartOnExistingNodeChance < 100.0)
+            c.Add(path + ".startOnExistingNodeChance", "only applies together with startOnExistingNode: true.");
+
         if (p.StartOnExistingNode)
         {
             if (p.Mode != PlacementMode.RandomValid)
                 c.Add(path + ".startOnExistingNode", $"only applies when mode is RandomValid (is {p.Mode}).");
 
             // A shape starting on an existing node shares that node, i.e. is at distance 0 from it.
-            if (arrangement.Spacing is { Enabled: true, MinNodeDistance: > 0 })
-                c.Add(path + ".startOnExistingNode", "can never satisfy arrangement.spacing.minNodeDistance > 0 (a shared node is at distance 0).");
+            if (arrangement.Spacing is { Enabled: true, MinNodeDistance: > 0, IgnoreStartNode: false } && p.StartOnExistingNodeChance >= 100.0)
+                c.Add(path + ".startOnExistingNode", "can never satisfy arrangement.spacing.minNodeDistance > 0 (a shared node is at distance 0) - set arrangement.spacing.ignoreStartNode to leave the start node out of the check.");
         }
     }
 
@@ -769,8 +798,6 @@ internal static class ConfigValidator
         Enum(c, "curve.contextMode", curve.ContextMode);
         ValidateEdgeCurve(c, "curve.edge", curve.Edge);
 
-        if (curve.RecheckProximityInCombined && !curve.ProximityGuard.Enabled)
-            c.Add("curve.recheckProximityInCombined", "needs curve.proximityGuard.enabled, otherwise there is no guard to re-run.");
         if (curve.ForceAllEdgesCurved)
         {
             bool someStraight = curve.Edge.ChanceToBeCurved < 100
@@ -780,7 +807,6 @@ internal static class ConfigValidator
         }
 
         Number(c, "curve.proximityGuard.minEdgeLength", curve.ProximityGuard.MinEdgeLength, 0, double.MaxValue);
-        Number(c, "curve.proximityGuard.minDistanceToOtherNodes", curve.ProximityGuard.MinDistanceToOtherNodes, 0, double.MaxValue);
     }
 
     private static void ValidateEdgeCurve(Ctx c, string path, EdgeCurveConfig edge)

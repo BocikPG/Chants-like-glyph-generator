@@ -48,11 +48,12 @@ internal static class ConfigStructureChecker
         [(typeof(LanguageDefinition), "allowedgerevisit")] = "is now 'chain.allowEdgeRevisit' on each generative shape.",
         [(typeof(LanguageDefinition), "allowclosedloop")] = "is now 'chain.allowClosedLoop' on each generative shape.",
         [(typeof(LanguageDefinition), "closedloopweight")] = "is now 'chain.closedLoopWeight' on each generative shape.",
-        [(typeof(LanguageDefinition), "allowsymbolstocross")] = "is now 'arrangement.allowCrossing' on each shape.",
+        [(typeof(LanguageDefinition), "allowsymbolstocross")] = "is now 'arrangement.crossing' (mode Anywhere) on each shape.",
         [(typeof(LanguageDefinition), "guaranteedmotifs")] = "is now part of 'shapes': a guaranteed motif is a shape without a 'count'.",
         [(typeof(LanguageDefinition), "subsymbolplacement")] = "is now 'placement' on each shape.",
         [(typeof(LanguageDefinition), "subsymbolspacing")] = "is now 'arrangement.spacing' on each shape (its selfSpacing is 'chain.selfSpacing').",
-        [(typeof(CombinationConfig), "allowcomponentstocross")] = "is now 'combination.arrangement.allowCrossing'.",
+        [(typeof(CombinationConfig), "allowcomponentstocross")] = "is now 'combination.arrangement.crossing' (mode Anywhere).",
+        [(typeof(ArrangementRules), "allowcrossing")] = "is now 'crossing': { \"mode\": \"None\" | \"NodesOnly\" | \"Anywhere\" } (allowCrossing true = Anywhere).",
         [(typeof(CombinationConfig), "bias")] = "is now 'combination.arrangement.bias'.",
     };
 

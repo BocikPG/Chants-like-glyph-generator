@@ -40,7 +40,8 @@ public sealed class PlacementResolver : IPlacementResolver
         // Works with crossing off too: GridEdge.Intersects treats edges that merely meet at a
         // shared node as not crossing, so a shape growing out of an existing node is legal.
         if (config.Mode == PlacementMode.RandomValid && config.StartOnExistingNode)
-            anchorNodes = CollectNodes(config.StartOnShapes is { } only ? existingGeometry.EdgesOfShapes(only) : existingGeometry.ExistingEdges);
+            anchorNodes = CollectNodes(config.StartOnShapes is { } only ? existingGeometry.EdgesOfShapes(only) : existingGeometry.ExistingEdges)
+                .Where(grid.Contains).ToList();
 
         bool positionVaries = config.Mode == PlacementMode.RandomValid;
         bool rotationVaries = config.AllowRotationOnPlace
@@ -57,7 +58,13 @@ public sealed class PlacementResolver : IPlacementResolver
             // attempt happened to consume.
             var attemptRng = rng.Derive($"placement-attempt-{attempt}");
 
-            var origin = ResolveOrigin(config, grid, attemptRng, anchorNodes);
+            // startOnExistingNode with a chance below 100: roll (from its own stream) whether this attempt grows from a node.
+            var anchors = anchorNodes;
+            if (anchors is not null && config.StartOnExistingNodeChance < 100.0
+                && attemptRng.Derive("start-on-node").NextDouble() * 100.0 >= config.StartOnExistingNodeChance)
+                anchors = null;
+
+            var origin = ResolveOrigin(config, grid, attemptRng, anchors);
             int rotation = ResolveRotation(config, rotationOptions, attemptRng);
 
             var shape = shapeFactory(origin, rotation, attemptRng);
@@ -99,12 +106,12 @@ public sealed class PlacementResolver : IPlacementResolver
         config.Mode switch
         {
             PlacementMode.Fixed => config.FixedOrigin!.Value,
-            PlacementMode.CenterAnchor => new GridPoint(grid.Width / 2, grid.Height / 2),
+            PlacementMode.CenterAnchor => new GridPoint((grid.MinX + grid.MaxX + 1) / 2, (grid.MinY + grid.MaxY + 1) / 2),
             PlacementMode.RandomValid => anchorNodes is { Count: > 0 }
                 ? anchorNodes[rng.NextInt(0, anchorNodes.Count)]
                 : new GridPoint(
-                    rng.NextInt(0, grid.Width),
-                    rng.NextInt(0, grid.Height)),
+                    grid.MinX + rng.NextInt(0, grid.MaxX - grid.MinX + 1),
+                    grid.MinY + rng.NextInt(0, grid.MaxY - grid.MinY + 1)),
             _ => throw new NotSupportedException($"Unknown placement mode: {config.Mode}"),
         };
 
@@ -137,15 +144,13 @@ public sealed class PlacementResolver : IPlacementResolver
             if (edge.IsCircle)
             {
                 var (minX, minY, maxX, maxY) = edge.Extent();
-                if (minX < -1e-9 || minY < -1e-9 || maxX > grid.Width - 1 + 1e-9 || maxY > grid.Height - 1 + 1e-9) return false;
+                if (!grid.ContainsBox(minX, minY, maxX, maxY)) return false;
             }
 
-            foreach (var existing in existingGeometry.BlockingEdges)
-            {
-                if (edge.Intersects(existing)) return false;
-            }
+            if (existingGeometry.IsBlocked(edge, shape.Nodes)) return false;
         }
 
-        return true;
+        // A chain may never cross itself (curves included).
+        return !EdgePaths.ChainCrossesItself(shape.Edges);
     }
 }

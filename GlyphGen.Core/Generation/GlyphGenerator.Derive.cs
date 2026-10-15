@@ -128,19 +128,15 @@ public sealed partial class GlyphGenerator
         {
             Source = derivation.From,
             FollowsSourceRotation = derivation.FinalOutputRotation != DerivedRotation.Own && mostChanged <= (int)derivation.FinalOutputRotation,
-            M11 = state.Affine[0], M12 = state.Affine[1], M21 = state.Affine[2], M22 = state.Affine[3],
-            Tx = state.Affine[4], Ty = state.Affine[5],
         };
 
+        int chainIndex = 0;
         foreach (var chain in state.Chains)
         {
-            glyph.Chains.Add(ToChain(chain));
-            foreach (var e in chain.Edges)
-            {
-                if (e.Origin is not { } o || e.Edge.IsCircle) continue;
-                derived.Links[DerivedFrom.Key(e.Edge.From.X, e.Edge.From.Y, e.Edge.To.X, e.Edge.To.Y)] =
-                    DerivedFrom.Key(o.From.X, o.From.Y, o.To.X, o.To.Y);
-            }
+            var made = ToChain(chain);
+            // Edges that kept their source curve keep it; new ones (bridges) and moved ones get a plan of their own.
+            BendPlanner.Plan(made, language.Curve, rng.Derive($"bend-{chainIndex++}"), curved: BendPlanner.AnyCurved(made, language.Curve));
+            glyph.Chains.Add(made);
         }
 
         foreach (var node in state.Lone)
@@ -441,7 +437,7 @@ public sealed partial class GlyphGenerator
         int budget = 6000;
 
         bool Free(GridEdge edge, List<GridEdge> path) =>
-            !others.Any(o => edge.Intersects(o)) && !path.Any(o => edge.Intersects(o));
+            !others.Any(o => EdgePaths.Crosses(edge, o)) && !path.Any(o => EdgePaths.Crosses(edge, o));
 
         List<GridEdge>? Search(GridPoint at, int remaining, List<GridEdge> path, HashSet<GridPoint> used)
         {
@@ -532,7 +528,7 @@ public sealed partial class GlyphGenerator
         DeterministicRandom rng, LatticeGrid grid)
     {
         var geometry = new GeometryContext { GridWidth = grid.Width, GridHeight = grid.Height };
-        foreach (var chain in s.Chains) geometry.Commit(ToChain(chain), allowsCrossing: true);
+        foreach (var chain in s.Chains) geometry.Commit(ToChain(chain), new CrossingConfig { Mode = CrossingMode.Anywhere });
 
         var next = s.Copy();
         bool optional = step.Optional ?? false;
@@ -555,7 +551,7 @@ public sealed partial class GlyphGenerator
 
                 var made = MakeCopies(language, shape, origins, grid, rng, geometry, glyphDef.Name, optional,
                     chainsOfShape: other => addedByShape.GetValueOrDefault(other));
-                foreach (var (_, copy, _) in made) next.Chains.Add(FromChain(copy));
+                foreach (var (_, copy) in made) next.Chains.Add(FromChain(copy));
                 addedByShape[id] = made.Select(m => m.Copy).ToList();
                 continue;
             }
@@ -575,7 +571,7 @@ public sealed partial class GlyphGenerator
                 }
 
                 placed.ShapeTag = $"{shape.Id}#{i}";
-                geometry.Commit(placed, shape.Arrangement.AllowCrossing);
+                geometry.Commit(placed, shape.Arrangement.Crossing);
                 next.Chains.Add(FromChain(placed));
                 if (!addedByShape.TryGetValue(id, out var list)) addedByShape[id] = list = new List<SubSymbolChain>();
                 list.Add(placed);
@@ -610,11 +606,15 @@ public sealed partial class GlyphGenerator
     private static DerivState MapPoints(DerivState s, Func<GridPoint, GridPoint> f, double[] affine)
     {
         var chains = new List<WorkChain>();
+        bool reflects = affine[0] * affine[3] - affine[1] * affine[2] < 0;
         foreach (var chain in s.Chains)
         {
             var mapped = new WorkChain { Closed = chain.Closed, MotifId = chain.MotifId, ShapeTag = chain.ShapeTag };
             foreach (var e in chain.Edges)
-                mapped.Edges.Add(new WorkEdge(e.Edge.WithPoints(f(e.Edge.From), f(e.Edge.To)), e.Origin));
+                {
+                var edge = e.Edge.WithPoints(f(e.Edge.From), f(e.Edge.To));
+                mapped.Edges.Add(new WorkEdge(reflects ? edge.MirroredBend() : edge, e.Origin));
+            }
 
             chains.AddRange(SplitChain(mapped, e => !e.Edge.IsCircle && e.Edge.From.Equals(e.Edge.To)));
         }
@@ -759,7 +759,7 @@ public sealed partial class GlyphGenerator
                 if (!Touches(e.Edge, from)) { moved.Edges.Add(e); continue; }
                 var a = e.Edge.From.Equals(from) ? to : e.Edge.From;
                 var b = e.Edge.To.Equals(from) ? to : e.Edge.To;
-                moved.Edges.Add(new WorkEdge(e.Edge.WithPoints(a, b), null)); // moved: its source curve no longer fits
+                moved.Edges.Add(new WorkEdge(e.Edge.WithPoints(a, b).WithBend(null), null)); // moved: its curve no longer fits, so it is planned again
             }
             next.Chains.Add(moved);
         }
@@ -773,7 +773,7 @@ public sealed partial class GlyphGenerator
         var all = s.Chains.SelectMany(c => c.Edges).Select(e => e.Edge).ToList();
         foreach (var e in all.Where(e => Touches(e, node)))
             foreach (var other in all)
-                if (!Touches(other, node) && e.Intersects(other)) return true;
+                if (!Touches(other, node) && EdgePaths.Crosses(e, other)) return true;
         return false;
     }
 }

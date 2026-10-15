@@ -47,6 +47,32 @@ public static class ConfigMigrator
     {
         bool changed = MigrateLayout(language);
         changed |= MoveCurveIntoRules(language);
+        changed |= ConvertAllowCrossing(language);
+        return changed;
+    }
+
+    /// <summary>Every arrangement (shapes, recipes, combination) with the old boolean "allowCrossing" gets the
+    /// "crossing" block instead: true = mode Anywhere, false = mode None.</summary>
+    private static bool ConvertAllowCrossing(JsonNode? node)
+    {
+        bool changed = false;
+        if (node is JsonObject obj)
+        {
+            foreach (var key in obj.Select(kv => kv.Key).ToList())
+            {
+                if (string.Equals(key, "allowCrossing", StringComparison.OrdinalIgnoreCase) && obj[key] is JsonValue value && value.TryGetValue(out bool allow))
+                {
+                    obj.Remove(key);
+                    if (obj["crossing"] is null) obj["crossing"] = new JsonObject { ["mode"] = allow ? "Anywhere" : "None" };
+                    changed = true;
+                }
+                else changed |= ConvertAllowCrossing(obj[key]);
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (var item in array) changed |= ConvertAllowCrossing(item);
+        }
         return changed;
     }
 
@@ -130,7 +156,7 @@ public static class ConfigMigrator
         JsonObject Arrangement()
         {
             var a = new JsonObject();
-            if (crossing) a["allowCrossing"] = true;
+            if (crossing) a["crossing"] = new JsonObject { ["mode"] = "Anywhere" };
             if (spacingBlock is not null && spacingBlock.Count > 0) a["spacing"] = spacingBlock.DeepClone();
             return a;
         }
@@ -202,7 +228,7 @@ public static class ConfigMigrator
         if (combination is not null)
         {
             var comboArrangement = new JsonObject();
-            if (Get(combination, "allowComponentsToCross") is { } cc) comboArrangement["allowCrossing"] = cc.DeepClone();
+            if (Get(combination, "allowComponentsToCross") is JsonValue cc && cc.TryGetValue(out bool comboCross) && comboCross) comboArrangement["crossing"] = new JsonObject { ["mode"] = "Anywhere" };
             if (spacingBlock is not null && spacingBlock.Count > 0) comboArrangement["spacing"] = spacingBlock.DeepClone();
             if (Get(combination, "bias") is { } bias) comboArrangement["bias"] = bias.DeepClone();
             Remove(combination, "allowComponentsToCross");

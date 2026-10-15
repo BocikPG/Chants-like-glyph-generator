@@ -14,6 +14,13 @@ public class GlyphGenerationException : Exception
     public GlyphGenerationException(string message) : base(message) { }
 }
 
+/// <summary>A generative or literal shape could not be placed (placement.redoShape / redrawGlyph decide whether it is retried).</summary>
+public sealed class ShapePlacementException : GlyphGenerationException
+{
+    public ShapeDefinition Shape { get; }
+    public ShapePlacementException(ShapeDefinition shape, string message) : base(message) { Shape = shape; }
+}
+
 /// <summary>
 /// Why the placement attempts for ONE shape failed, so the error can say what to change. Only the
 /// shape factory can tell "the chain couldn't be built" and "a spacing rule rejected it" apart;
@@ -41,7 +48,7 @@ public sealed class PlacementDiagnostics
             : SpacingRejections >= Collisions && SpacingRejections > 0
                 ? "Spacing is rejecting most candidates: relax arrangement.spacing (minCenterDistance, minNodeDistance), chain.selfSpacing, or raise placement.maxPlacementAttempts."
             : Collisions > 0
-                ? "Strokes are colliding or leaving the grid: set arrangement.allowCrossing, use a larger grid, a lower count, or raise placement.maxPlacementAttempts."
+                ? "Strokes are colliding or leaving the grid: set arrangement.crossing.mode, use a larger grid, a lower count, or raise placement.maxPlacementAttempts."
             : "";
 
         return hint.Length == 0 ? summary : summary + " " + hint;
@@ -136,9 +143,10 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         // A copy shape that cannot be placed first redraws its base shape (copyOf.regenerateBase times), then the whole
         // glyph from a fresh seed (copyOf.redrawGlyph times). Nothing is retried when no copy fails, so such glyphs
         // come out exactly as they always did.
-        int maxRedraws = language.Shapes.Where(x => x.CopyOf is not null).Select(x => x.CopyOf!.RedrawGlyph).DefaultIfEmpty(0).Max();
+        int maxRedraws = language.Shapes.Select(x => Math.Max(x.CopyOf?.RedrawGlyph ?? 0, x.Placement.RedrawGlyph)).DefaultIfEmpty(0).Max();
+        int shapeRedos = 0;
         int baseRedraws = 0, glyphRedraws = 0;
-        CopyPlacementException? last = null;
+        GlyphGenerationException? last = null;
 
         for (int redraw = 0; redraw <= maxRedraws; redraw++)
         {
@@ -152,6 +160,15 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
                 {
                     return BuildPlainGlyph(language, glyphDef, grid, seed, salts);
                 }
+                catch (ShapePlacementException ex)
+                {
+                    last = ex;
+                    int used = salts.GetValueOrDefault(ex.Shape.Id);
+                    if (used < ex.Shape.Placement.RedoShape) { salts[ex.Shape.Id] = used + 1; shapeRedos++; continue; }
+                    if (redraw >= ex.Shape.Placement.RedrawGlyph) // nothing left to try for this shape
+                        throw new GlyphGenerationException(ex.Message + Retried(shapeRedos, glyphRedraws, ex.Shape));
+                    break; // redo spent: redraw the whole glyph
+                }
                 catch (CopyPlacementException ex)
                 {
                     last = ex;
@@ -164,11 +181,19 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             }
         }
 
+        if (last is ShapePlacementException lastShape)
+            throw new GlyphGenerationException(last.Message + Retried(shapeRedos, glyphRedraws, lastShape.Shape));
+
         throw new GlyphGenerationException(
             last!.Message + (baseRedraws + glyphRedraws == 0 ? "" :
                 $" Retried before giving up: the base shape was redrawn {baseRedraws} time(s) and the whole glyph {glyphRedraws} time(s) " +
                 "(copyOf.regenerateBase and copyOf.redrawGlyph set how many are allowed)."));
     }
+
+    private static string Retried(int shapeRedos, int glyphRedraws, ShapeDefinition shape) =>
+        shapeRedos + glyphRedraws == 0 ? "" :
+            $" Retried before giving up: the shape was redrawn {shapeRedos} time(s) and the whole glyph {glyphRedraws} time(s) " +
+            $"(placement.redoShape and placement.redrawGlyph on '{shape.Id}' set how many are allowed).";
 
     /// <summary>The shape a chain of copies ultimately comes from: the first one that is not itself a copy.</summary>
     private static string RootShapeId(LanguageDefinition language, ShapeDefinition shape)
@@ -237,14 +262,14 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
                 var diagnostics = new PlacementDiagnostics();
                 double lengthExtra = shape.Count is null ? 0.0 : lengthExtraDraws;
                 var placed = GenerateShape(language, shape, grid, rng, geometry, i, lengthExtra, diagnostics, salts.GetValueOrDefault(shape.Id))
-                    ?? throw new GlyphGenerationException(
+                    ?? throw new ShapePlacementException(shape,
                         $"[{language.Name}] Shape '{shape.Id}'" +
                         (shape.Count is null ? "" : $" (instance {i + 1}/{count})") +
                         $" for glyph '{glyphDef.Name}' could not be placed within its configured " +
                         $"attempt budget. {diagnostics.Describe()}");
 
                 placed.ShapeTag = $"{shape.Id}#{i}";
-                geometry.Commit(placed, shape.Arrangement.AllowCrossing);
+                geometry.Commit(placed, shape.Arrangement.Crossing);
                 glyph.Chains.Add(placed);
 
                 if (!placedByShape.TryGetValue(shape.Id, out var instances))
@@ -271,22 +296,28 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         PlacementDiagnostics diagnostics,
         int redo = 0)
     {
+        // A placement.bounds box is the edge of the grid for this shape.
+        if (shape.Placement.Bounds is { } box) grid = grid.Restricted(box.MinX, box.MinY, box.MaxX, box.MaxY);
+
         var rng = glyphRng.Derive(shape.StreamLabel(instanceIndex) + (redo > 0 ? $"-redo{redo}" : ""));
         var rotationOptions = RotationOptionsFor(language, shape.Placement);
         bool shapeVariesPerAttempt = shape.Kind == ShapeKind.Generative;
 
-        geometry.AllowCrossing = shape.Arrangement.AllowCrossing;
+        geometry.SetCurrent(shape.Id, shape.Arrangement.Crossing);
 
         SubSymbolChain? ShapeFactory(GridPoint origin, int rotation, DeterministicRandom attemptRng)
         {
             SubSymbolChain? chain = shape.Kind switch
             {
                 ShapeKind.Literal => BuildLiteralChain(shape, origin, rotation),
-                ShapeKind.Generative => GenerateShapeChain(shape, grid, origin, attemptRng, geometry, lengthExtraDraws),
+                ShapeKind.Generative => GenerateShapeChain(shape, grid, origin, attemptRng, geometry, lengthExtraDraws, language.Curve.ForceAllEdgesCurved),
                 _ => throw new NotSupportedException($"Unknown shape kind: {shape.Kind}"),
             };
 
             if (chain is null) { diagnostics.ChainFailures++; return null; }
+
+            // Curves are planned now, while the shape is placed, so later checks and steps see the real strokes.
+            BendPlanner.Plan(chain, language.Curve, attemptRng.Derive("bend"), curved: BendPlanner.AnyCurved(chain, language.Curve));
 
             if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.Nodes, geometry.NodeGroups, shape.Arrangement.Spacing))
             {
@@ -378,7 +409,8 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         GridPoint origin,
         DeterministicRandom rng,
         GeometryContext geometry,
-        double lengthExtraDraws)
+        double lengthExtraDraws,
+        bool allEdgesCurved)
     {
         var chainRules = shape.Chain;
         var request = new ChainGenerationRequest
@@ -389,6 +421,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             AllowNodeRevisit = chainRules.AllowNodeRevisit,
             AllowEdgeRevisit = chainRules.AllowEdgeRevisit,
             AllowClosedLoop = chainRules.AllowClosedLoop,
+            AllEdgesCurved = allEdgesCurved,
             ConnectionWeighting = chainRules.ConnectionWeighting,
             SelfSpacingRules = chainRules.SelfSpacing,
         };

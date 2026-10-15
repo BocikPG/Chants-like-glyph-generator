@@ -1,5 +1,15 @@
 namespace GlyphGen.Core.Config;
 
+/// <summary>Whether a shape's geometry is fixed (Literal) or grown by the chain engine (Generative).</summary>
+public enum ShapeKind
+{
+    /// <summary>Fixed relative-coordinate shape (nodes), identical every time except for rotation.</summary>
+    Literal,
+
+    /// <summary>Grown by the chain engine from its own chain rules.</summary>
+    Generative,
+}
+
 /// <summary>
 /// One entry in a language's shapes list: a kind of stroke every plain glyph is built from. The
 /// list is processed in order, each entry placed against everything before it. Omit count for a

@@ -1,63 +1,43 @@
-using GlyphGen.Core.Config;
 using GlyphGen.Core.Generation;
 using GlyphGen.Core.Grid;
 using GlyphGen.Core.Model;
-using GlyphGen.Core.Rng;
-using GlyphGen.Rendering.Geometry;
+using GlyphGen.Core.Geometry;
 
 namespace GlyphGen.Rendering.Curves;
 
 /// <summary>
-/// Stage 1 of rendering: turns a glyph's straight grid edges into a drawable plan (each edge a
-/// line or a cubic bezier), per the language's CurveConfig. Pure geometry, fully determined by
-/// the seed. Topology and intersection checks only ever saw the straight edges, so a curve can
-/// in principle bulge into a neighbouring stroke; the tension cap keeps that rare, and
-/// CurveConfig.ProximityGuard (opt-in) forces an edge straight outright when geometry makes
-/// that bulge more likely - but neither guarantees it can't happen.
+/// Stage 1 of rendering: turns a glyph's chains into a drawable plan (each edge a line or a cubic bezier). The
+/// curves were decided while the glyph was generated and are stored on the edges (GridEdge.Bend), so this only
+/// converts them - no random draws happen here, and what is drawn is exactly what the collision checks saw.
 /// </summary>
 public static class CurvePlanner
 {
     // Circle through 4 beziers: control distance for a quarter arc.
     private const double Kappa = 0.5522847498307936;
 
-    public static PlannedGlyph Plan(Glyph glyph, CurveConfig curve, ulong seed)
+    public static PlannedGlyph Plan(Glyph glyph)
     {
-        var rng = new DeterministicRandom(seed);
-
-        // Gathered once for the proximity guard's MinDistanceToOtherNodes check, which needs
-        // visibility across every chain/component in the glyph, not just the one being planned.
-        var allPoints = curve.ProximityGuard.Enabled && curve.ProximityGuard.MinDistanceToOtherNodes > 0
-            ? GlyphGeometryUtils.GetAllNodes(glyph).Select(p => new Vec2(p.X, p.Y)).Distinct().ToList()
-            : new List<Vec2>();
-
         var planned = new PlannedGlyph { Name = glyph.Name };
 
         if (glyph.Chains.Count > 0)
-            planned.Layers.Add(PlanLayer("base", glyph.Chains, curve, allPoints, rng));
+            planned.Layers.Add(PlanLayer("base", glyph.Chains));
 
         foreach (var component in glyph.Components)
-            planned.Layers.Add(PlanLayer(component.SourceGlyphName, component.TransformedChains, curve, allPoints, rng));
+            planned.Layers.Add(PlanLayer(component.SourceGlyphName, component.TransformedChains));
 
         return planned;
     }
 
-    private static PlannedLayer PlanLayer(
-        string label,
-        IEnumerable<SubSymbolChain> chains,
-        CurveConfig curve,
-        List<Vec2> allPoints,
-        DeterministicRandom rng)
+    private static PlannedLayer PlanLayer(string label, IEnumerable<SubSymbolChain> chains)
     {
         var layer = new PlannedLayer { Label = label };
-        foreach (var chain in chains)
-            layer.Chains.AddRange(PlanChain(chain, curve, allPoints, rng));
+        foreach (var chain in chains) layer.Chains.AddRange(PlanChain(chain));
         return layer;
     }
 
-    /// <summary>One stroke chain becomes one planned chain per unbroken run of straight edges; every
-    /// circle or dot in it becomes a planned chain of its own (no random draws).</summary>
-    private static List<PlannedChain> PlanChain(
-        SubSymbolChain chain, CurveConfig curve, List<Vec2> allPoints, DeterministicRandom rng)
+    /// <summary>One stroke chain becomes one planned chain per unbroken run of straight-line edges; every
+    /// circle or dot in it becomes a planned chain of its own.</summary>
+    private static List<PlannedChain> PlanChain(SubSymbolChain chain)
     {
         var result = new List<PlannedChain>();
         var run = new List<GridEdge>();
@@ -68,7 +48,7 @@ public static class CurvePlanner
         void Flush()
         {
             if (run.Count == 0) return;
-            var planned = PlanRun(run, closed, chain.MotifId, curve, allPoints, rng, chain.ShapeTag);
+            var planned = PlanRun(run, closed, chain.MotifId, chain.ShapeTag);
             if (planned is not null) result.Add(planned);
             run.Clear();
         }
@@ -123,131 +103,26 @@ public static class CurvePlanner
         return planned;
     }
 
-    private static PlannedChain? PlanRun(
-        List<GridEdge> edges, bool closed, string? motifId, CurveConfig curve,
-        List<Vec2> allPoints, DeterministicRandom rng, string? shapeTag = null)
+    private static PlannedChain? PlanRun(List<GridEdge> edges, bool closed, string? motifId, string? shapeTag)
     {
-        var pts = new List<Vec2>();
-        var styles = new List<EdgeCurveConfig>();
+        var result = new PlannedChain { Closed = closed && edges.Count >= 3, MotifId = motifId, ShapeTag = shapeTag };
 
-        void AddPoint(Vec2 v) { if (pts.Count == 0 || (v - pts[^1]).Length > 1e-9) pts.Add(v); }
-
-        AddPoint(new Vec2(edges[0].From.X, edges[0].From.Y));
         foreach (var e in edges)
         {
-            int before = pts.Count;
-            AddPoint(new Vec2(e.To.X, e.To.Y));
-            if (pts.Count > before) styles.Add(e.Curve ?? curve.Edge); // one style per drawn segment
-        }
+            var pa = new Vec2(e.From.X, e.From.Y);
+            var pb = new Vec2(e.To.X, e.To.Y);
+            if ((pb - pa).Length < 1e-9) continue;
 
-        // A closed chain's last edge returns to the start: that point is the first one again.
-        if (closed && pts.Count > 1 && (pts[^1] - pts[0]).Length < 1e-9) pts.RemoveAt(pts.Count - 1);
-
-        if (pts.Count < 2) return null;
-        closed = closed && pts.Count >= 3;
-
-        int n = pts.Count;
-        var result = new PlannedChain { Closed = closed, MotifId = motifId, ShapeTag = shapeTag };
-        int edgeCount = closed ? n : n - 1;
-
-        for (int i = 0; i < edgeCount && i < styles.Count; i++)
-        {
-            int a = i, b = (i + 1) % n;
-            Vec2 pa = pts[a], pb = pts[b];
-            double len = (pb - pa).Length;
-            if (len < 1e-9) continue;
-
-            var style = styles[i];
-
-            // Everything below is drawn for every edge, even one that ends up straight - keeps RNG
-            // consumption identical whatever the chance or the proximity guard decide, so changing
-            // one edge's settings doesn't shift unrelated downstream draws.
-            bool rolledStraight = rng.NextBool(1.0 - Math.Clamp(style.ChanceToBeCurved / 100.0, 0.0, 1.0));
-            var (outDir, outMag, inDir, inMag) = MakeHandles(pts, a, b, closed, style, rng);
-            bool forcedStraight = IsForcedStraight(pa, pb, len, curve.ProximityGuard, allPoints);
-
-            if ((rolledStraight || forcedStraight) && !curve.ForceAllEdgesCurved)
+            if (e.Bend is null || e.Bend.IsNone)
             {
                 result.Edges.Add(new PlannedEdge { P0 = pa, P3 = pb, C1 = pa, C2 = pb, IsLine = true });
                 continue;
             }
 
-            var c1 = pa + outDir * (outMag * len);
-            var c2 = pb - inDir * (inMag * len);
-            result.Edges.Add(new PlannedEdge { P0 = pa, C1 = c1, C2 = c2, P3 = pb, IsLine = false });
+            var (c1x, c1y, c2x, c2y) = e.Bend.Controls(e.From, e.To);
+            result.Edges.Add(new PlannedEdge { P0 = pa, C1 = new Vec2(c1x, c1y), C2 = new Vec2(c2x, c2y), P3 = pb, IsLine = false });
         }
 
         return result.Edges.Count > 0 ? result : null;
-    }
-
-    /// <summary>CurveConfig.ProximityGuard: forces an edge straight when its own length is
-    /// short, or (opt-in) when some other node in the glyph sits close to either endpoint.</summary>
-    internal static bool IsForcedStraight(
-        Vec2 pa, Vec2 pb, double edgeLen, CurveProximityGuardConfig guard, List<Vec2> allPoints)
-    {
-        if (!guard.Enabled) return false;
-        if (edgeLen < guard.MinEdgeLength) return true;
-
-        if (guard.MinDistanceToOtherNodes > 0)
-        {
-            foreach (var p in allPoints)
-            {
-                bool isOwnEndpoint = (p - pa).Length < 1e-9 || (p - pb).Length < 1e-9;
-                if (isOwnEndpoint) continue;
-
-                if ((p - pa).Length < guard.MinDistanceToOtherNodes || (p - pb).Length < guard.MinDistanceToOtherNodes)
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>The two bezier handles of edge a-&gt;b: the out-handle at a and the in-handle at b, per this
-    /// edge's own style. Derived: along the smooth tangent of each end node. Explicit: each deviates
-    /// independently, so kinks are possible. Hybrid: one or the other for the whole edge.</summary>
-    private static (Vec2 OutDir, double OutMag, Vec2 InDir, double InMag) MakeHandles(
-        List<Vec2> pts, int a, int b, bool closed, EdgeCurveConfig style, DeterministicRandom rng)
-    {
-        Vec2 tangentA = DerivedTangent(pts, a, closed);
-        Vec2 tangentB = DerivedTangent(pts, b, closed);
-
-        double DrawMagnitude() => Math.Clamp(style.Tension.Resolve(rng), 0.0, 0.5);
-
-        bool isExplicit = style.Mode == CurveMode.Explicit
-            || (style.Mode == CurveMode.Hybrid && rng.NextBool(0.5));
-
-        if (!isExplicit)
-        {
-            double outMag = DrawMagnitude();
-            double inMag = DrawMagnitude();
-            return (tangentA, outMag, tangentB, inMag);
-        }
-
-        double ampA = style.ExplicitJitterDegrees.Resolve(rng) * Math.PI / 180.0;
-        Vec2 outDir = tangentA.Rotated((rng.NextDouble() * 2 - 1) * ampA);
-        double outM = DrawMagnitude();
-        double ampB = style.ExplicitJitterDegrees.Resolve(rng) * Math.PI / 180.0;
-        Vec2 inDir = tangentB.Rotated((rng.NextDouble() * 2 - 1) * ampB);
-        double inM = DrawMagnitude();
-        return (outDir, outM, inDir, inM);
-    }
-
-    /// <summary>Catmull-Rom style tangent: direction from the previous to the next node (open
-    /// chain ends just use their single edge's direction).</summary>
-    private static Vec2 DerivedTangent(List<Vec2> pts, int i, bool closed)
-    {
-        int n = pts.Count;
-        bool hasPrev = closed || i > 0;
-        bool hasNext = closed || i < n - 1;
-
-        Vec2 prev = hasPrev ? pts[(i - 1 + n) % n] : pts[i];
-        Vec2 next = hasNext ? pts[(i + 1) % n] : pts[i];
-
-        Vec2 t = (next - prev).Normalized();
-        if (t.Length < 0.5) // prev == next (a doubled-back chain): fall back to one side
-            t = hasNext ? (next - pts[i]).Normalized() : (pts[i] - prev).Normalized();
-
-        return t;
     }
 }

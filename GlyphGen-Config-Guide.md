@@ -111,7 +111,7 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
     "kind": "Literal",
     "nodes": [ [0, 0], [2, 0], [2, 2] ],
     "placement": { "mode": "RandomValid", "allowRotationOnPlace": true, "maxPlacementAttempts": 20 },
-    "arrangement": { "allowCrossing": false }
+    "arrangement": { "crossing": { "mode": "None" } }
   },
   {
     "id": "strokes",
@@ -124,7 +124,7 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
       ],
       "allowClosedLoop": true
     },
-    "arrangement": { "allowCrossing": true }
+    "arrangement": { "crossing": { "mode": "Anywhere" } }
   }
 ]
 ```
@@ -165,11 +165,11 @@ A shape can be a **copy of an earlier shape** instead of being drawn: add one mo
       "gap": { "min": 1, "max": 2 }, "shift": { "min": 0, "max": 1 },
       "anchor": "OriginStart", "preferNoCrossing": true
     },
-    "arrangement": { "allowCrossing": false } }
+    "arrangement": { "crossing": { "mode": "None" } } }
 ]
 ```
 
-The original must be listed **before** the copy (shapes are processed in order, so the copies are made after all instances of the original). A copy can itself be copied (four-way symmetry: copy once `Horizontal`, copy that `Vertical`). The copy entry takes no `chain`, `nodes`, `placement` or `count`; its `arrangement` (`allowCrossing`, `spacing`, `bias`) decides which positions are acceptable. An original that was not drawn (a `count` of 0) leaves nothing to copy.
+The original must be listed **before** the copy (shapes are processed in order, so the copies are made after all instances of the original). A copy can itself be copied (four-way symmetry: copy once `Horizontal`, copy that `Vertical`). The copy entry takes no `chain`, `nodes`, `placement` or `count`; its `arrangement` (`crossing`, `spacing`, `bias`) decides which positions are acceptable. An original that was not drawn (a `count` of 0) leaves nothing to copy.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -183,7 +183,7 @@ The original must be listed **before** the copy (shapes are processed in order, 
 | `gap` | 0 to 0 | Steps the copy is moved **apart** from the original, in the direction the flip throws it (or the direction `CenterWeight` aims). `0` = the copy starts on the anchor itself, so the two share that node; positive = apart; negative = pushed back over the original (they overlap or cross). Drawn from the range for each copy. |
 | `shift` | 0 to 0 | Steps the copy is slid sideways (across the gap direction), up or down at random. |
 | `anchor` | `OriginStart` | Where the copy's start node goes before gap and shift: the original's own start, `ExistingNode` (a node already on the glyph) or `ExistingEdge` (a lattice point on a line already there). Existing points are tried in random order. |
-| `preferNoCrossing` | `true` | All gap/shift/anchor combinations are tried in random order and the first that crosses nothing is taken. If every one crosses, the least-crossing one is kept **only** when the copy's `arrangement.allowCrossing` is true; otherwise generation fails like any shape that cannot be placed. With `false` the first position that obeys the hard rules is taken. |
+| `preferNoCrossing` | `true` | All gap/shift/anchor combinations are tried in random order and the first that crosses nothing is taken. If every one crosses, the least-crossing one is kept **only** when the copy's `arrangement.crossing` is true; otherwise generation fails like any shape that cannot be placed. With `false` the first position that obeys the hard rules is taken. |
 | `moveGlyphToFit` | `true` | When no position keeps the copy on the grid but one would if the strokes already drawn sat elsewhere, the **whole glyph so far moves over** (copy included, by the smallest whole-step move) to where it fits. Positions that cross nothing are preferred. `false` fails instead. Not used by copies in a derivation step. |
 | `regenerateBase` | `3` | First retry. If no position works for the copy, the base shape (the first shape in the chain of copies that is not itself a copy) is redrawn with fresh random numbers and the copy tried again, up to this many times. Everything placed after the base is rebuilt around the new draw. `0` turns it off. Only helps when the base is generated, not a literal. |
 | `redrawGlyph` | `3` | Second retry, after the base redraws are spent: the whole glyph is redrawn from a fresh seed, up to this many times, before generation fails with the error (which then says how many retries were spent). `0` turns it off. Neither retry applies to copies in a derivation step. Glyphs where no copy fails are drawn exactly as before. |
@@ -193,7 +193,7 @@ The original must be listed **before** the copy (shapes are processed in order, 
 
 If a copy cannot be placed the error lists the flip that was chosen, the anchor and gap/shift ranges, how many positions were tried, and how many were rejected for leaving the grid (and, when the glyph could be moved, how large the glyph and copy are together), breaking `arrangement.spacing`, or crossing existing strokes, followed by a hint for the most common cause.
 
-Notes. The hard rules still apply: the copy must fit the grid (circles and dots too) and obey `arrangement.spacing`, and with `allowCrossing: false` it may not cross anything. Note a copy with `gap: 0` shares its start node with the original, so a `minNodeDistance` spacing rule would reject it. Under `bias`, up to `candidates` acceptable positions are compared and the best-scoring kept. In a derivation's `Add` step a copy shape must be listed after its original in the same step, and its curves are drawn fresh. Every random choice uses its own stream, so adding a copy shape does not change the glyphs of the other shapes.
+Notes. The hard rules still apply: the copy must fit the grid (circles and dots too) and obey `arrangement.spacing`, and with `crossing.mode: None` it may not cross anything. Note a copy with `gap: 0` shares its start node with the original, so a `minNodeDistance` spacing rule would reject it. Under `bias`, up to `candidates` acceptable positions are compared and the best-scoring kept. In a derivation's `Add` step a copy shape must be listed after its original in the same step, and its curves are drawn fresh. Every random choice uses its own stream, so adding a copy shape does not change the glyphs of the other shapes.
 
 ---
 
@@ -272,7 +272,7 @@ With `PerMove`, a rule with many possible moves (`Any` with a long range has doz
 
 At each step every geometrically valid concrete move (every direction x length of every rule) is listed, and one is picked by weight. With **`PerMove`** (default) each concrete move inherits its rule's full weight, so a rule with a wide length range or `Both` directions gets more total probability than a narrow rule with the same `weight`. With **`PerRule`** a rule's weight is split evenly over its valid moves at that step, so each rule's share depends only on the weights (a rule with no valid move drops out).
 
-A chain **never crosses itself**, whatever `arrangement.allowCrossing` says; that flag controls crossing *other* shapes.
+A chain **never crosses itself** (curves included), whatever `arrangement.crossing` says; that setting controls crossing *other* shapes.
 
 ### Within one chain: `selfSpacing`
 
@@ -330,8 +330,12 @@ Each shape has its own `placement` block.
 | `fixedOrigin` | `null` | A grid point, required for `Fixed` and an error with any other mode. Written as `{ "x": 7, "y": 7 }` or `[7, 7]`. |
 | `allowRotationOnPlace` | `true` | Allows a random rotation per attempt. See the rotation note below. |
 | `rotations` | `null` | Literal shapes only. `null`: use `combination.rotation.allowed` when `combination.allowRotate` is on (the original coupling). A list: use exactly these angles. `[]`: never rotate. Only 0, 90, 180, 270. |
+| `bounds` | *(whole grid)* | A box smaller than the grid that this shape must stay inside, e.g. `{ "minX": 4, "minY": 4, "maxX": 10, "maxY": 10 }` (inclusive node coordinates). It acts as the edge of the grid for this shape: chain moves, start points (`RandomValid` picks inside the box, `CenterAnchor` uses its middle) and circles' whole outlines must fit. Other shapes are not limited by it. Must lie inside the grid and contain `fixedOrigin` if there is one. |
 | `maxPlacementAttempts` | `20` | Attempts per instance (>= 1). Only used when something varies between attempts (random position, rotation, or a generated shape); otherwise one attempt. Generative shapes always vary. |
+| `redoShape` | `0` | If an instance still cannot be placed after `maxPlacementAttempts`: redraw **all instances of this shape** (new chains, new positions) up to this many times before giving up on this try of the glyph. Shapes placed earlier stay as they are. |
+| `redrawGlyph` | `0` | After `redoShape` is spent: redraw the **whole glyph** from a fresh seed (every shape again) up to this many times before the failure is reported. Each redraw is deterministic, so the same seed gives the same glyph. Default `0` keeps the old behaviour: the glyph fails. |
 | `startOnExistingNode` | `false` | New shapes start on a node already in the glyph. See below. |
+| `startOnExistingNodeChance` | `100` | With `startOnExistingNode`: the chance (0-100) that an attempt starts on an existing node; otherwise that attempt starts on a random grid point. Rolled per attempt, so a shape can mix both. With a chance below 100, `startOnExistingNode` and `spacing.minNodeDistance > 0` can coexist (the attempts that start elsewhere satisfy it). |
 | `startOnShapes` | all shapes | With `startOnExistingNode`: a list of ids of **earlier** shapes; only their nodes count as places to start on (copies and instances included, by shape id). Default: every node already in the glyph. If none of the listed shapes was drawn in this glyph (a `chance` roll, `onlyForGlyphs`), there is nothing to attach to and the shape is placed at a random point, like the very first shape. Errors: used without `startOnExistingNode`, an empty list, an unknown id, or a shape not listed before this one. |
 | `side` | none | Pull the shape towards a side or corner (`RandomValid` only). See "Side pull" below. |
 
@@ -387,7 +391,7 @@ The draw is made **for each instance** of the shape (a shape with a `count` can 
 
 ```json
 "arrangement": {
-  "allowCrossing": false,
+  "crossing": { "mode": "None" },
   "spacing": { "enabled": true, "minCenterDistance": 1, "maxNodeDistance": 4 },
   "bias": { "modes": [ "Tallest" ] },
   "candidates": 3
@@ -396,16 +400,28 @@ The draw is made **for each instance** of the shape (a shape with a `count` can 
 
 ### Crossing
 
-`allowCrossing` (default `false`). If `false`, none of this shape's edges may cross an already-placed edge. Edges that merely **meet at a shared node** (end to end, or a loop closing on its start) never count as crossing. A true crossing, a node landing on another edge's interior (a T-junction) and a collinear overlap beyond a single point all do. Passing over a node does not occupy it.
+`crossing` decides where this shape's edges may cross edges that are already placed. **Curves count**: a curved edge is checked as the curve it is drawn as (curves are planned while the shape is placed, so what is checked is what you see). Edges that merely **meet at a shared node** (end to end, or a loop closing on its start) never count as crossing. A true crossing, a node landing on another edge's interior (a T-junction) and a collinear overlap beyond a single point all do. Passing over a node does not occupy it. Thickness is not considered: that is the typeface's business.
 
-**A crossing is allowed only if both shapes allow it:** the shape being placed *and* the shape that owns the edge it would cross. So a shape with `allowCrossing: false` can never be crossed, not even by a shape that is itself allowed to cross. That lets a motif protect itself:
+| Field | Default | Meaning |
+|---|---|---|
+| `mode` | `None` | `None`: no crossing at all. `NodesOnly`: a crossing is accepted only where it lies within `nodeTolerance` of a node. `Anywhere`: crossing is free. |
+| `nodeTolerance` | `0.3` | `NodesOnly`: how far (lattice units) from a node a crossing may lie and still count as "at" it. So a stroke that passes *near* a node, though not exactly through it, is fine. |
+| `nodesOfShapes` | *(all)* | `NodesOnly`: only the nodes of these shapes (ids) count. Missing/empty = every node of every shape, and the shape's own nodes too. With a list, the shape's own nodes count only if its own id is in it. |
 
 ```json
-{ "id": "bar",     "kind": "Literal", "nodes": [[0,0],[4,0]], "arrangement": { "allowCrossing": false } },
-{ "id": "scribble", "count": {"min": 2, "max": 3}, "chain": { ... }, "arrangement": { "allowCrossing": true } }
+"arrangement": { "crossing": { "mode": "NodesOnly", "nodeTolerance": 0.4, "nodesOfShapes": ["frame"] } }
+```
+
+**A crossing is allowed only if both shapes accept it:** the shape being placed *and* the shape that owns the edge it would cross, each by its own `crossing` settings (a `NodesOnly` shape also checks the crossing against its own `nodesOfShapes`). So a shape with `mode: None` can never be crossed, not even by a shape that is `Anywhere`. That lets a motif protect itself:
+
+```json
+{ "id": "bar",     "kind": "Literal", "nodes": [[0,0],[4,0]], "arrangement": { "crossing": { "mode": "None" } } },
+{ "id": "scribble", "count": {"min": 2, "max": 3}, "chain": { ... }, "arrangement": { "crossing": { "mode": "Anywhere" } } }
 ```
 
 Here the scribbles may cross each other but never the bar. Because shapes are placed in order, this also means a later shape that forbids crossing cannot cross *anything*, including earlier shapes that allow it.
+
+**Speed.** Edges of a rule with `chanceToBeCurved` above 0 are not pre-checked as straight lines while the chain grows (the bend is only known once the chain is complete); the finished chain is checked once with its real curves, and rejected as a whole if it crosses something it may not. Rules that are always straight are still checked step by step.
 
 ### Spacing
 
@@ -420,6 +436,7 @@ A "shape" here is one placed instance of a shapes entry, and in composites a who
 | `minNodeDistance` | `0` | Minimum distance between the **closest pair of nodes** of two different shapes. |
 | `maxNodeDistance` | `0` | Maximum distance between the closest node pair of the candidate and an existing shape. Must be >= `minNodeDistance` when both are set. |
 | `maxDistanceMode` | `NearestShape` | `NearestShape`: within range of **at least one** existing shape (keeps the glyph connected). `AllShapes`: within range of **every** existing shape. |
+| `ignoreStartNode` | `false` | Only for a shape with `placement.startOnExistingNode: true`: leaves the node it starts on out of the spacing checks (only when it really sits on an existing node) (centroid, min and max node distance), since that node is shared and so at distance 0. Every other node is still measured. Not allowed on `combination.arrangement` or recipes. |
 
 The first shape in a glyph has nothing to be near, so the maximum doesn't apply to it. (Spacing *within* one chain is `chain.selfSpacing`, section 5.)
 
@@ -496,7 +513,7 @@ Block: `combination`. A composite is a glyph whose name is a key in `recipes`; i
 "combination": {
   "recipes": {
     "fortress": [ "warrior", "protect" ],
-    "citadel":  { "components": [ "warrior", "protect" ], "arrangement": { "allowCrossing": true } }
+    "citadel":  { "components": [ "warrior", "protect" ], "arrangement": { "crossing": { "mode": "Anywhere" } } }
   },
   "allowScale": true,
   "allowedScales": [
@@ -525,9 +542,9 @@ Block: `combination`. A composite is a glyph whose name is a key in `recipes`; i
 
 ### Arrangement for components
 
-`combination.arrangement` applies to every recipe; a recipe in the object form can override parts of it. **Whatever the recipe's `arrangement` lists (`allowCrossing`, `spacing`, `bias`) replaces that key of the combination's; keys it leaves out are inherited.** `spacing` and `bias` are replaced as whole blocks, not merged field by field.
+`combination.arrangement` applies to every recipe; a recipe in the object form can override parts of it. **Whatever the recipe's `arrangement` lists (`crossing`, `spacing`, `bias`) replaces that key of the combination's; keys it leaves out are inherited.** `spacing` and `bias` are replaced as whole blocks, not merged field by field.
 
-- **Crossing**: default `false`. Overlay composition is controlled stacking: components don't cross each other unless the arrangement allows it. They may always touch at shared nodes. This is independent of any shape's `allowCrossing` (which governs strokes inside one glyph).
+- **Crossing**: default `false`. Overlay composition is controlled stacking: components don't cross each other unless the arrangement allows it. They may always touch at shared nodes. This is independent of any shape's `crossing` (which governs strokes inside one glyph).
 - **Spacing**: each placed component counts as **one** shape, checked against the components already placed in this composite. With `minCenterDistance` / `minNodeDistance` set, the plain (0,0) overlay of two components usually fails and components get pushed apart.
 - **Bias**: below. `candidates` does not apply: components search every placement exhaustively.
 
@@ -605,7 +622,7 @@ Block: `derivations` (language level), a map from glyph name to a recipe for edi
 - A derived glyph can be a component of a recipe, or the source of another derivation.
 - `finalOutputRotation` (default `FollowMoves`) decides whether the derived glyph is drawn at its source's `render.rotateOptions` angle instead of its own. Only steps that actually ran count (one skipped by `chance` or `onlyIf` does not): `Own` never follows; `FollowMoves` follows when only `Scale`, `Mirror`, `Rotate` or `Nudge` ran; `FollowRemovals` also follows after `DeleteNodes`, `DeleteEdges` and `Keep` (what is left is a part of the source); `FollowAlways` follows whatever ran, `Add` included.
 - Everything random comes from the glyph's seed and the step's position, so the same seed gives the same result; a quality retry draws a different edit.
-- **Curves are kept.** An edge that survives untouched (not moved, and not new) gets the source's exact curve back, scaled/mirrored/rotated with the glyph. New or moved edges get a fresh curve from the connection rule that made them.
+- **Curves are kept.** An edge that survives untouched (not moved, and not new) keeps the source's exact curve, scaled/mirrored/rotated with the glyph. New or moved edges get a fresh curve from the connection rule that made them.
 - **Quality gate.** The derived glyph is compared with every glyph **except** its source using `quality.maxSimilarity`, and with the source using `maxSimilarityToSource` (0-1, default `0.9`; `1` turns it off). So it can never be a copy. Similarity is measured on the node positions (shifted to the top left), so deleting edges but keeping their nodes (`removeOrphanNodes: false`) leaves it identical in that measure.
 
 | Option | Default | Notes |
@@ -628,7 +645,7 @@ Every step has `op`, and optionally `onlyIf` and `chance`. Options that don't be
 | `DeleteNodes` | `amount`, `target`, `mode`, `connectionRules`, `bridgeMaxMoves`, `removeOrphanNodes`, `keepAtLeast`, `keepConnected` | Removes nodes and the edges touching them. |
 | `DeleteEdges` | `amount`, `removeOrphanNodes`, `keepAtLeast`, `keepConnected` | Removes edges. |
 | `Keep` | same as `DeleteEdges` | The opposite: `amount` is how many edges **stay**; the rest go. |
-| `Add` | `shapes`, `optional` | Adds strokes from entries of `shapes` (by `id`), placed with their own count, chain, placement and arrangement against what is left. Added strokes cross the existing ones only if the shape's `arrangement.allowCrossing` is true. A shape that can't be placed fails the glyph unless `optional` is true. |
+| `Add` | `shapes`, `optional` | Adds strokes from entries of `shapes` (by `id`), placed with their own count, chain, placement and arrangement against what is left. Added strokes cross the existing ones only if the shape's `arrangement.crossing` is true. A shape that can't be placed fails the glyph unless `optional` is true. |
 | `Scale` | `factors` | Scales the whole glyph about its middle by one of the weighted ratios `{numerator, denominator, weight}`. Nodes snap to the grid (so nodes can merge, and a straight edge collapsing to a point is dropped). A ratio that would not fit the grid is not picked; if none fits the step is skipped. |
 | `Mirror` | `axis` | `Horizontal` (left becomes right, default), `Vertical` or `Random`. |
 | `Rotate` | `degrees` | One of 90, 180, 270 (default all three), then slid back into the grid; skipped if it cannot fit. |
@@ -648,7 +665,7 @@ Circles and dots are single edges: deleting either end node, or the edge, remove
 
 How an edge bends is set **per connection rule**, in the rule's `curve` block, so one stroke can mix gentle curves and dead-straight ticks. The top-level `curve` block only holds what is not per edge: `edge` (the settings for edges that no rule made, i.e. Literal shapes), the proximity guard, `forceAllEdgesCurved` and `contextMode`.
 
-Grid edges are always straight in the generated topology; the renderer turns each edge into a straight line or a cubic bezier. Curves are planned from the seed and can in principle bulge into neighbouring strokes; the tension cap and the proximity guard make that rare but do not rule it out.
+Each edge is a straight line or a cubic bezier. Curves are planned while the glyph is generated (once the whole chain is known) and stored on the edges, so copies, derivations, composites and the renderer all use the same curves. Copies mirror their original's curves; a derived glyph keeps the curve of every edge it did not move; a moved or new edge is planned again from the rule that made it.
 
 ```json
 "connectionRules": [
@@ -667,7 +684,7 @@ Grid edges are always straight in the generated topology; the renderer turns eac
 "curve": {
   "contextMode": "AllCurved",
   "edge": { "chanceToBeCurved": 100 },
-  "proximityGuard": { "enabled": true, "minEdgeLength": 2, "minDistanceToOtherNodes": 1 }
+  "proximityGuard": { "enabled": true, "minEdgeLength": 2 }
 }
 ```
 
@@ -688,10 +705,8 @@ Language level (`curve`):
 | Option | Notes |
 |---|---|
 | `edge` | Default: always curved, `Derived`, tension `0.25..0.35`. Used for edges no rule made (Literal shapes). |
-| `proximityGuard.enabled` | Default `false`. Forces some edges straight to reduce bulging into neighbours; it changes how many edges end up curved. |
+| `proximityGuard.enabled` | Default `false`. Forces edges shorter than `minEdgeLength` straight; it changes how many edges end up curved. |
 | `proximityGuard.minEdgeLength` | Default `1.5`. Edges shorter than this (grid units) are forced straight. |
-| `proximityGuard.minDistanceToOtherNodes` | Default `0` (off). An edge is forced straight when any other node in the glyph (any chain or component) lies closer than this to either endpoint. Broader and more expensive than `minEdgeLength`. |
-| `recheckProximityInCombined` | Default `false`. Re-runs the guard on components once they sit in a composite. Needs the guard. |
 | `forceAllEdgesCurved` | Default `false`. Every edge is a curve, ignoring every `chanceToBeCurved` and the guard. Rejected if any chance is below 100 or the guard is on. |
 | `contextMode` | Default `AllCurved`. Curved or straight, for glyphs on their own versus inside composites (below). |
 
@@ -924,7 +939,7 @@ Errors aim to say what to change. A value of the wrong kind (a misspelled name, 
 | `shapes` | At least one when there are plain/base glyphs (derived glyphs don't count). Each `id` non-empty and unique; `seedLabel` unique. `count` >= 0 with `max` >= `min`. Literal: `nodes` present, >= 2 points, no repeated consecutive point. Generative: no `nodes`; `chain.length` >= 2; at least one valid `connectionRules` entry (valid direction, `minLength` >= 1 (0 for `Circle`), `maxLength` >= `minLength`, weights >= 0 and not all 0, angles within 0-180 with `maxAngle` >= `minAngle`, no preset together with explicit angles, `Angle` has a limit, `Circle` has none, `backToStartChance` and `chanceToBeCurved` within 0-100, valid `curve` block); each `selfSpacing` rule valid. |
 | `chance` | Number from 0 to 100. |
 | `copyOf` | `shape` names an earlier shape (not itself); known `flip`/`auto`/`anchor`; `flips` only with `Random`, not empty, `auto.shapes` only with `Auto` and naming earlier shapes, no `Random`/`Auto` inside; `gap` max >= min; `regenerateBase` and `redrawGlyph` >= 0; `shift` >= 0; no `count`, `nodes`, `chain` rules or `placement` on a copy entry; in a derivation step the original is listed first. |
-| `placement` | Known `mode`; `Fixed` needs a `fixedOrigin` on the grid, other modes must not have one; `maxPlacementAttempts` >= 1; `rotations` only on Literal shapes, with `allowRotationOnPlace` on, using only 0/90/180/270; `startOnExistingNode` only with `RandomValid` and not with `arrangement.spacing.minNodeDistance` > 0. |
+| `placement` | Known `mode`; `Fixed` needs a `fixedOrigin` on the grid, other modes must not have one; `maxPlacementAttempts` >= 1; `rotations` only on Literal shapes, with `allowRotationOnPlace` on, using only 0/90/180/270; `startOnExistingNode` only with `RandomValid` and not with `arrangement.spacing.minNodeDistance` > 0 unless `spacing.ignoreStartNode` is on. |
 | `arrangement` | Spacing distances finite and >= 0, `maxNodeDistance` >= `minNodeDistance`, valid `maxDistanceMode`; known bias modes, no `Tallest`+`Shortest` or `Widest`+`Narrowest`, bias weights valid; `candidates` >= 1; `includeScaleAndRotation` not on a shape. Checked for every shape, for `combination.arrangement` and for each recipe override. |
 | `placement.side` | Only with `mode: RandomValid`; `Prefer` needs one or two sides, none cancelling, and no `pick`; `SetRandom` takes no `sides`; `weight` >= 0. |
 | `placements` | The glyph must be listed in `glyphs` or `baseGlyphs` (in a recipe's own arrangement: be one of its components) and have only one rule; `Prefer` needs one or two sides, none cancelling, and no `offset` or `pick`; `SetRandom` takes no `sides` or `offset`; `Fixed` takes no `sides`, `pick` or `scope`; `weight` >= 0. |
@@ -934,7 +949,7 @@ Errors aim to say what to change. A value of the wrong kind (a misspelled name, 
 
 Generation-time errors you may meet:
 
-- *"Shape 'x' (instance i/n) for glyph 'g' could not be placed"*: the message says which kind of failure dominated. Loosen `arrangement` (crossing, spacing), the chain rules, or raise `placement.maxPlacementAttempts`.
+- *"Shape 'x' (instance i/n) for glyph 'g' could not be placed"*: the message says which kind of failure dominated. Loosen `arrangement` (crossing, spacing), the chain rules, or raise `placement.maxPlacementAttempts` (or set `placement.redoShape` / `placement.redrawGlyph` to retry with fresh draws).
 - *"Could not generate a sufficiently distinct, non-trivial glyph"*: raise `maxRegenerationAttempts`, raise `maxSimilarity`, or widen the `count` / `chain.length` ranges.
 - *"Could not satisfy combination recipe"*: allow scale/rotation, raise `maxRetriesPerRecipe`, relax `combination.arrangement` (or that recipe's), or use a larger grid.
 - *"Circular combination dependency"*: two recipes depend on each other's components.
@@ -953,7 +968,7 @@ Generation-time errors you may meet:
 
 ```json
 "placement": { "mode": "RandomValid", "startOnExistingNode": true, "maxPlacementAttempts": 30 },
-"arrangement": { "allowCrossing": true }
+"arrangement": { "crossing": { "mode": "Anywhere" } }
 ```
 
 **Airy strokes that don't fold back on themselves.**
@@ -962,13 +977,13 @@ Generation-time errors you may meet:
 "chain": { "selfSpacing": [ { "mode": "Existing", "minDistance": 1.4 } ] }
 ```
 
-**A motif nothing may cross, with free scribbles around it.** Give the motif `allowCrossing: false` and the scribbles `true` (section 7).
+**A motif nothing may cross, with free scribbles around it.** Give the motif `crossing.mode: None` and the scribbles `true` (section 7).
 
 **Long strokes plus short ticks.** Two counted shapes with different `chain.length` and `connectionRules`.
 
 **Square-ish glyphs.** `"arrangement": { "bias": { "modes": [ "Squarest" ] }, "candidates": 4 }` on a stroke shape; the same `bias` under `combination.arrangement` for composites.
 
-**One recipe that may overlap.** `"fortress": { "components": [...], "arrangement": { "allowCrossing": true } }`.
+**One recipe that may overlap.** `"fortress": { "components": [...], "arrangement": { "crossing": { "mode": "Anywhere" } } }`.
 
 **Angular script with flowing composites.**
 
@@ -982,10 +997,10 @@ Interactions to keep in mind:
 
 - Spacing applies to composites too, through `combination.arrangement`; it is separate from the spacing on shapes.
 - Spacing is order-dependent: a shape's rules are checked against the shapes before it, so give the shape that should "stay close" the `maxNodeDistance`.
-- `startOnExistingNode` and `minNodeDistance > 0` cannot coexist on the same shape.
+- `startOnExistingNode` and `minNodeDistance > 0` cannot coexist on the same shape, unless `arrangement.spacing.ignoreStartNode` is true (it leaves the shared start node out of the check).
 - `usageSizeBias` and `quality.maxSimilarity` both influence how varied plain glyphs are; strong low-size bias plus a strict similarity limit can make distinct glyphs harder to find.
 - The rotation settings live under `combination` but also feed placement of Literal shapes unless the shape lists its own `rotations`; see section 6.
-- With `allowCrossing: false` on every shape, no stroke can cross another, which makes dense glyphs on small grids hard to place. Edges may still meet at shared nodes.
+- With `crossing.mode: None` on every shape, no stroke can cross another, which makes dense glyphs on small grids hard to place. Edges may still meet at shared nodes.
 - A bias with many `candidates` on a tight grid multiplies the placement work per shape.
 
 ---
@@ -1013,7 +1028,7 @@ A valid config using the current schema. Everything not shown takes its default.
           "kind": "Literal",
           "nodes": [ [0, 0], [3, 0] ],
           "placement": { "mode": "CenterAnchor" },
-          "arrangement": { "allowCrossing": false }
+          "arrangement": { "crossing": { "mode": "None" } }
         },
         {
           "id": "strokes",
@@ -1035,7 +1050,7 @@ A valid config using the current schema. Everything not shown takes its default.
           },
           "placement": { "mode": "RandomValid", "maxPlacementAttempts": 30, "startOnExistingNode": true },
           "arrangement": {
-            "allowCrossing": true,
+            "crossing": { "mode": "Anywhere" },
             "spacing": { "enabled": true, "minCenterDistance": 1, "maxNodeDistance": 4, "maxDistanceMode": "NearestShape" },
             "bias": { "modes": [ "Squarest" ] },
             "candidates": 3
@@ -1065,7 +1080,7 @@ A valid config using the current schema. Everything not shown takes its default.
       "curve": {
         "mode": "Derived",
         "contextMode": "CurvedMiniStraightCombined",
-        "proximityGuard": { "enabled": true, "minEdgeLength": 2, "minDistanceToOtherNodes": 1 }
+        "proximityGuard": { "enabled": true, "minEdgeLength": 2 }
       },
 
       "render": {
@@ -1108,10 +1123,10 @@ The migrated config **generates the same glyphs** for the same seed. To make tha
 | `connectionRules`, `connectionWeighting`, `allowNodeRevisit`, `allowEdgeRevisit`, `allowClosedLoop` | the same names under `chain`, **copied onto every generative shape** (guaranteed generative motifs used to inherit the revisit flags and weighting silently) |
 | `guaranteedMotifs[]` | entries of `shapes` without a `count`. `type` becomes `kind`; `literal.nodes` becomes `nodes`; `generative.lengthRange` becomes `chain.length`; the rest moves under `chain` |
 | `subSymbolPlacement`, a motif's `placement` | `placement` on the shape |
-| `allowSymbolsToCross` | `arrangement.allowCrossing` on every shape. Note it is now per shape and needs both shapes' permission |
+| `allowSymbolsToCross` (or `arrangement.allowCrossing`) | `arrangement.crossing` on every shape. Note it is now per shape and needs both shapes' permission |
 | `subSymbolSpacing` (distances, `maxDistanceMode`, `enabled`) | `arrangement.spacing` on every shape, **and** `combination.arrangement.spacing` (it used to apply to components too) |
 | `subSymbolSpacing.selfSpacing` | `chain.selfSpacing` on every generative shape; **dropped if `subSymbolSpacing.enabled` was false** (it was inactive then) |
-| `combination.allowComponentsToCross` | `combination.arrangement.allowCrossing` |
+| `combination.allowComponentsToCross` | `combination.arrangement.crossing` |
 | `combination.bias` | `combination.arrangement.bias` |
 | `combination.recipes` lists | unchanged (the list form still loads) |
 | `usageSizeBias` | unchanged; now affects shapes that have a `count` |

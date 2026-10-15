@@ -8,12 +8,10 @@ namespace GlyphGen.Core.Config;
 /// </summary>
 public class ArrangementRules
 {
-    /// <summary>If true, this shape's edges may cross edges already placed. A crossing is only
-    /// allowed when BOTH shapes allow it: the shape being placed AND the shape that owns the
-    /// edge it would cross. So a shape with allowCrossing false can never be crossed, even by a
-    /// shape that is itself allowed to cross. Edges that merely meet at a shared node never count
-    /// as crossing.</summary>
-    public bool AllowCrossing { get; set; } = false;
+    /// <summary>Whether and where this shape's edges may cross edges already placed (curves count: a curved edge is
+    /// checked as the curve it is drawn as). A crossing needs both shapes to accept it - the one being placed and the
+    /// one that owns the edge it would cross - each by its own crossing settings.</summary>
+    public CrossingConfig Crossing { get; set; } = new();
 
     /// <summary>Distances to keep from the shapes already placed (centroid and closest-node
     /// minimums/maximums). The rules of the shape being placed are checked against everything
@@ -28,4 +26,30 @@ public class ArrangementRules
     /// one whose glyph bounding box scores best is kept ("best of N"). Ignored without a bias,
     /// and by combination components (they search every placement exhaustively).</summary>
     public int Candidates { get; set; } = 3;
+}
+
+public enum CrossingMode
+{
+    /// <summary>No crossing: edges may only meet at shared nodes.</summary>
+    None,
+
+    /// <summary>A crossing is accepted only where it lies within nodeTolerance of a node (see CrossingConfig.NodesOfShapes).</summary>
+    NodesOnly,
+
+    /// <summary>Edges may cross anywhere.</summary>
+    Anywhere,
+}
+
+/// <summary>Crossing rules of one shape (arrangement.crossing). Curves are taken into account.</summary>
+public sealed class CrossingConfig
+{
+    public CrossingMode Mode { get; set; } = CrossingMode.None;
+
+    /// <summary>NodesOnly: how far (lattice units) from a node a crossing may lie and still count as being at it.
+    /// A stroke passing near a node but not through it is fine. Default 0.3.</summary>
+    public double NodeTolerance { get; set; } = 0.3;
+
+    /// <summary>NodesOnly: only the nodes of these shapes (ids) count. Empty/missing = every node (the shape's own included). With a list, the
+    /// shape's own nodes count only if its own id is listed.</summary>
+    public List<string>? NodesOfShapes { get; set; }
 }

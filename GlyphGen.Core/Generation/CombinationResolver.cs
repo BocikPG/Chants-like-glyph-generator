@@ -87,7 +87,7 @@ public sealed class CombinationResolver : ICombinationResolver
             // Components don't cross each other unless the arrangement says so - overlay
             // composition is deliberate controlled stacking, not free intersection. (A crossing
             // needs BOTH components to allow it; here they all share this arrangement.)
-            var geometry = new GeometryContext(allowCrossing: arrangement.AllowCrossing);
+            var geometry = new GeometryContext(arrangement.Crossing);
             var placedByIndex = new PlacedComponent?[componentNames.Count];
             bool allPlaced = true;
 
@@ -115,7 +115,7 @@ public sealed class CombinationResolver : ICombinationResolver
                     break;
                 }
 
-                geometry.CommitAsOneShape(placed.TransformedChains, arrangement.AllowCrossing);
+                geometry.CommitAsOneShape(placed.TransformedChains, arrangement.Crossing);
                 var (cx, cy) = CenterOf(placed.TransformedChains);
                 geometry.PlacedSides.Add((cx, cy, (IReadOnlyList<GlyphSide>)(pull.Sides ?? new List<GlyphSide>())));
                 placedByIndex[index] = placed;
@@ -585,10 +585,10 @@ public sealed class CombinationResolver : ICombinationResolver
 
     private static bool FitsGeometry(List<SubSymbolChain> chains, GeometryContext geometry)
     {
+        var ownNodes = chains.SelectMany(c => c.Nodes).ToList();
         foreach (var chain in chains)
             foreach (var edge in chain.Edges)
-                foreach (var existing in geometry.BlockingEdges)
-                    if (edge.Intersects(existing)) return false;
+                if (geometry.IsBlocked(edge, ownNodes)) return false;
 
         return true;
     }
@@ -624,7 +624,7 @@ internal sealed class ComponentTally
         int top = new[] { worst.OffGrid, worst.Crossing, worst.Sides, worst.Spacing }.Max();
         string hint =
             top == 0 ? ""
-          : worst.Crossing == top ? " Components cross each other by default: allow arrangement.allowCrossing, or give the recipe components that are smaller or sparser."
+          : worst.Crossing == top ? " Components cross each other by default: set arrangement.crossing.mode, or give the recipe components that are smaller or sparser."
           : worst.Sides == top ? " The side rules are hard: check that the sides do not contradict each other and leave room on a grid of " + grid.Width + " x " + grid.Height + "."
           : worst.Spacing == top ? " Spacing rejects most placements: relax arrangement.spacing."
           : " The components are too big for the grid at the sizes allowed: turn on combination.allowScale with smaller allowedScales, or use a larger grid.";

@@ -32,6 +32,10 @@ public static class SubSymbolSpacingChecker
         SpacingConfig config)
     {
         if (!config.Enabled) return true;
+        // Only a start node that really sits on an existing node is left out (with startOnExistingNodeChance below 100 the
+        // shape may have started elsewhere).
+        if (config.IgnoreStartNode && candidateNodes.Count > 1 && existingGroups.Any(g => g.Contains(candidateNodes[0])))
+            candidateNodes = candidateNodes.Skip(1).ToList();
         if (candidateNodes.Count == 0) return true;
 
         const double eps = 1e-9;

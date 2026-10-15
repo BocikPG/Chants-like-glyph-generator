@@ -65,10 +65,10 @@ public sealed partial class GlyphGenerator
             {
                 // A crossing is only allowed when BOTH shapes allow it, so the shapes before this one count too.
                 var fixes = new List<string>();
-                if (!shape.Arrangement.AllowCrossing) fixes.Add("on this shape");
+                if (shape.Arrangement.Crossing.Mode != CrossingMode.Anywhere) fixes.Add("on this shape");
                 if (forbidsCrossing.Count > 0) fixes.Add($"on the earlier shape(s) that forbid being crossed ({string.Join(", ", forbidsCrossing.Select(x => $"'{x}'"))})");
                 hint = fixes.Count > 0
-                    ? $" A crossing needs both shapes to allow it: set arrangement.allowCrossing to true {string.Join(" and ", fixes)}."
+                    ? $" A crossing needs both shapes to allow it: set arrangement.crossing.mode to NodesOnly or Anywhere {string.Join(" and ", fixes)}."
                     : " Use a larger gap or shift, or another anchor or flip, to move the copy off the existing strokes.";
             }
             else if (TooBigToMove > 0 && TooBigToMove >= Spacing)
@@ -92,7 +92,7 @@ public sealed partial class GlyphGenerator
     /// <summary>Makes one copy of each origin chain and commits it to the geometry. A copy that cannot be placed
     /// throws, unless optional, in which case it is skipped. With a world (the glyph being built) the copies are added to
     /// it, and when a copy only fits after the whole glyph is moved, the glyph is moved.</summary>
-    private List<(SubSymbolChain Origin, SubSymbolChain Copy, ChainCopy Link)> MakeCopies(
+    private List<(SubSymbolChain Origin, SubSymbolChain Copy)> MakeCopies(
         LanguageDefinition language,
         ShapeDefinition shape,
         IReadOnlyList<SubSymbolChain> origins,
@@ -104,7 +104,7 @@ public sealed partial class GlyphGenerator
         Glyph? world = null,
         Func<string, IReadOnlyList<SubSymbolChain>?>? chainsOfShape = null)
     {
-        var made = new List<(SubSymbolChain, SubSymbolChain, ChainCopy)>();
+        var made = new List<(SubSymbolChain, SubSymbolChain)>();
         IReadOnlyList<SelfSpacingRule>? selfRules = null;
         bool ignoreOriginal = shape.CopyOf!.SelfSpacingIgnoresOriginal;
         if (shape.CopyOf!.RespectSelfSpacing)
@@ -126,14 +126,13 @@ public sealed partial class GlyphGenerator
                     shape,
                     $"[{language.Name}] Shape '{shape.Id}' (a copy of '{shape.CopyOf!.Shape}'" +
                     (origins.Count > 1 ? $", instance {i + 1}/{origins.Count}" : "") +
-                    $") for glyph '{glyphName}' could not be placed. {diag.Describe(shape, grid, language.Shapes.TakeWhile(x => x != shape).Where(x => !x.Arrangement.AllowCrossing).Select(x => x.Id).ToList())}");
+                    $") for glyph '{glyphName}' could not be placed. {diag.Describe(shape, grid, language.Shapes.TakeWhile(x => x != shape).Where(x => x.Arrangement.Crossing.Mode != CrossingMode.Anywhere).Select(x => x.Id).ToList())}");
             }
 
             if (shift != (0, 0))
             {
                 var (dx, dy) = shift;
                 foreach (var chain in world!.Chains) MoveChain(chain, dx, dy);
-                foreach (var l in world.Copies) MoveLink(l, dx, dy);
                 geometry.Translate(dx, dy);
                 MoveChain(copy, dx, dy);
 
@@ -145,24 +144,15 @@ public sealed partial class GlyphGenerator
                 };
             }
 
-            geometry.Commit(copy, shape.Arrangement.AllowCrossing);
+            geometry.Commit(copy, shape.Arrangement.Crossing);
 
-            var link = new ChainCopy { M11 = map.A11, M12 = map.A12, M21 = map.A21, M22 = map.A22, Tx = map.Tx, Ty = map.Ty };
-            for (int e = 0; e < copy.Edges.Count && e < origins[i].Edges.Count; e++)
-            {
-                var c = copy.Edges[e];
-                var o = origins[i].Edges[e];
-                if (c.IsCircle) continue;
-                link.Links[DerivedFrom.Key(c.From.X, c.From.Y, c.To.X, c.To.Y)] = DerivedFrom.Key(o.From.X, o.From.Y, o.To.X, o.To.Y);
-            }
+            // Mirrored copies already carry their bends (see Transformed); anything still unplanned gets its own.
+            BendPlanner.Plan(copy, language.Curve, rng.Derive("bend"), curved: BendPlanner.AnyCurved(copy, language.Curve));
 
             if (world is not null)
-            {
                 world.Chains.Add(copy);
-                if (shape.CopyOf!.MirrorCurves) world.Copies.Add(link);
-            }
 
-            made.Add((origins[i], copy, link));
+            made.Add((origins[i], copy));
         }
 
         return made;
@@ -175,20 +165,6 @@ public sealed partial class GlyphGenerator
             chain.Edges[i] = chain.Edges[i].WithPoints(chain.Edges[i].From.Translate(dx, dy), chain.Edges[i].To.Translate(dx, dy));
     }
 
-    /// <summary>A link after both the original and its copy moved by (dx, dy): its edge keys move, and so does the map.</summary>
-    private static void MoveLink(ChainCopy link, int dx, int dy)
-    {
-        var moved = link.Links.ToDictionary(
-            kv => (kv.Key.Item1 + dx, kv.Key.Item2 + dy, kv.Key.Item3 + dx, kv.Key.Item4 + dy),
-            kv => (kv.Value.Item1 + dx, kv.Value.Item2 + dy, kv.Value.Item3 + dx, kv.Value.Item4 + dy));
-        link.Links.Clear();
-        foreach (var kv in moved) link.Links[kv.Key] = kv.Value;
-
-        double tx = link.Tx + dx - (link.M11 * dx + link.M12 * dy);
-        double ty = link.Ty + dy - (link.M21 * dx + link.M22 * dy);
-        link.Tx = tx;
-        link.Ty = ty;
-    }
 
     private SubSymbolChain? CopyChain(
         ShapeDefinition shape, SubSymbolChain origin, LatticeGrid grid, DeterministicRandom rng,
@@ -200,7 +176,7 @@ public sealed partial class GlyphGenerator
         if (origin.Nodes.Count == 0) return null;
 
         var cfg = shape.CopyOf!;
-        geometry.AllowCrossing = shape.Arrangement.AllowCrossing;
+        geometry.SetCurrent(shape.Id, shape.Arrangement.Crossing);
 
         var start = origin.Nodes[0];
         // What the Auto rule looks at: the listed shapes' strokes, or just the chain being copied.
@@ -282,7 +258,7 @@ public sealed partial class GlyphGenerator
         var bias = shape.Arrangement.Bias;
         int need = bias.IsActive ? Math.Max(1, shape.Arrangement.Candidates) : 1;
         bool prefer = cfg.PreferNoCrossing;
-        bool crossingAllowed = shape.Arrangement.AllowCrossing;
+        bool crossingAllowed = shape.Arrangement.Crossing.Mode != CrossingMode.None;
 
         var clean = new List<(SubSymbolChain Chain, CopyMap Map)>();
         (SubSymbolChain Chain, CopyMap Map, int Soft)? fallback = null;
@@ -296,9 +272,9 @@ public sealed partial class GlyphGenerator
             if (!FitsGrid(chain, grid)) { diag.OffGrid++; continue; }
             if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.Nodes, geometry.NodeGroups, shape.Arrangement.Spacing)) { diag.Spacing++; continue; }
             if (selfRules is not null && !RespectsOriginSelfSpacing(chain, origin, selfRules, ignoreOriginal, geometry)) { diag.SelfSpacing++; continue; }
-            if (CountCrossings(chain, geometry.BlockingEdges) > 0) { diag.Crossing++; continue; }
+            if (geometry.CountBlocked(chain) > 0) { diag.Crossing++; continue; }
 
-            int soft = prefer ? CountCrossings(chain, geometry.ExistingEdges) : 0;
+            int soft = prefer ? geometry.CountCrossings(chain) : 0;
             if (soft == 0)
             {
                 clean.Add((chain, candidateMap));
@@ -381,7 +357,7 @@ public sealed partial class GlyphGenerator
                 if (wasOffGrid) { diag.OffGrid--; diag.SelfSpacing++; }
                 continue;
             }
-            if (CountCrossings(chain, geometry.BlockingEdges) > 0)
+            if (geometry.CountBlocked(chain) > 0)
             {
                 if (wasOffGrid) { diag.OffGrid--; diag.Crossing++; }
                 continue;
@@ -404,7 +380,7 @@ public sealed partial class GlyphGenerator
                 continue;
             }
 
-            int soft = prefer ? CountCrossings(chain, geometry.ExistingEdges) : 0;
+            int soft = prefer ? geometry.CountCrossings(chain) : 0;
             if (soft > 0 && !crossingAllowed)
             {
                 if (wasOffGrid) { diag.OffGrid--; diag.Crossing++; }
@@ -469,7 +445,15 @@ public sealed partial class GlyphGenerator
             ShapeTag = origin.ShapeTag is { } tag ? $"{shape.Id}#{tag[(tag.LastIndexOf('#') + 1)..]}" : null,
         };
         foreach (var n in origin.Nodes) chain.Nodes.Add(map.Apply(n));
-        foreach (var e in origin.Edges) chain.Edges.Add(e.WithPoints(map.Apply(e.From), map.Apply(e.To)));
+        bool reflects = map.A11 * map.A22 - map.A12 * map.A21 < 0;
+        foreach (var e in origin.Edges)
+        {
+            var moved = e.WithPoints(map.Apply(e.From), map.Apply(e.To));
+            // A reflection turns a curve's bulge to the other side of its edge; a copy that does not mirror curves is replanned.
+            if (!shape.CopyOf!.MirrorCurves) moved = moved.IsCircle ? moved : moved.WithBend(null);
+            else if (reflects) moved = moved.MirroredBend();
+            chain.Edges.Add(moved);
+        }
         return chain;
     }
 
@@ -486,15 +470,6 @@ public sealed partial class GlyphGenerator
         return true;
     }
 
-    private static int CountCrossings(SubSymbolChain chain, IEnumerable<GridEdge> existing)
-    {
-        int count = 0;
-        var list = existing as IList<GridEdge> ?? existing.ToList();
-        foreach (var e in chain.Edges)
-            foreach (var other in list)
-                if (e.Intersects(other)) count++;
-        return count;
-    }
 
     /// <summary>The unit step "apart" for a flip: the flip's own axis, signed by where the push is aimed
     /// (or by which side of the origin's middle the start lies on); a tie is broken at random.</summary>

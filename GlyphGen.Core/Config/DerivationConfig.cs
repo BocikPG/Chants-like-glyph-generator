@@ -152,7 +152,7 @@ public sealed class DerivationStep
 
     /// <summary>Add: ids of entries of the language's shapes, each placed as it would be in a plain glyph
     /// (its count, chain, placement and arrangement), against the strokes that are left. Added strokes may cross
-    /// the existing ones only if the shape's arrangement.allowCrossing says so.</summary>
+    /// the existing ones only if the shape's arrangement.crossing says so.</summary>
     public List<string>? Shapes { get; set; }
 
     /// <summary>Add: if a shape cannot be placed, skip it instead of failing. Default false.</summary>

@@ -102,7 +102,7 @@ public sealed class CopyAutoConfig
 /// origin entry must come earlier in the list). Instead of being drawn, the destination becomes one copy
 /// of every instance of the origin, flipped around the origin chain's start node and then moved by the
 /// anchor, gap and shift. A copy can itself be copied. The destination takes no chain, nodes, placement
-/// or count of its own; its arrangement (allowCrossing, spacing, bias) decides which copy positions are
+/// or count of its own; its arrangement (crossing, spacing, bias) decides which copy positions are
 /// acceptable.
 /// </summary>
 public sealed class CopyConfig
@@ -134,7 +134,7 @@ public sealed class CopyConfig
 
     /// <summary>Try every flip position the config allows in random order and take one that crosses nothing
     /// already drawn. If none exists the best attempt is kept, but only when the destination's
-    /// arrangement.allowCrossing is true; otherwise the copy fails like any shape that cannot be placed.
+    /// arrangement.crossing allows crossing (mode NodesOnly or Anywhere); otherwise the copy fails like any shape that cannot be placed.
     /// Turn off to take the first position that obeys the hard rules.</summary>
     public bool PreferNoCrossing { get; set; } = true;
 

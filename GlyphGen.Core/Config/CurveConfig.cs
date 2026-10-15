@@ -64,12 +64,6 @@ public sealed class CurveProximityGuardConfig
     /// very short edge exaggerates its bulge relative to the edge's own length, making it more
     /// likely to swing into nearby geometry.</summary>
     public double MinEdgeLength { get; set; } = 1.5;
-
-    /// <summary>If &gt; 0, also forces an edge straight whenever ANY other node in the same
-    /// glyph (any chain, any combination component) sits within this distance of either of the
-    /// edge's own endpoints - a broader, more expensive check than MinEdgeLength alone, since
-    /// it looks at nearby geometry beyond just the edge's own two ends. 0 disables this part.</summary>
-    public double MinDistanceToOtherNodes { get; set; } = 0.0;
 }
 
 /// <summary>
@@ -84,15 +78,6 @@ public sealed class CurveConfig
     public EdgeCurveConfig Edge { get; set; } = new();
 
     public CurveProximityGuardConfig ProximityGuard { get; set; } = new();
-
-    /// <summary>
-    /// A component reuses its source glyph's curves inside a composite, so the proximity guard
-    /// only ever judged it ALONE (and at its original size). If true, the guard is run again once
-    /// the component sits in the composite - with its scaled edge lengths and the composite's
-    /// other nodes - and any curved edge it would force straight is flattened. Needs
-    /// ProximityGuard.Enabled. Default false.
-    /// </summary>
-    public bool RecheckProximityInCombined { get; set; } = false;
 
     /// <summary>
     /// Plans EVERY edge as a curve: ignores every chanceToBeCurved and the proximity guard (both would

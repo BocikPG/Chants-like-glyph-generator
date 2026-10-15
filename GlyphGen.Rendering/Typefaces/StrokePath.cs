@@ -1,5 +1,5 @@
 using GlyphGen.Rendering.Curves;
-using GlyphGen.Rendering.Geometry;
+using GlyphGen.Core.Geometry;
 
 namespace GlyphGen.Rendering.Typefaces;
 
