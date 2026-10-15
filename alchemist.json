@@ -1,0 +1,381 @@
+{
+      "name": "Alchemist",
+      "grid": {
+        "height": 25,
+        "width": 25
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        "You",
+        "Me",
+        "Warrior",
+        "Alchemist",
+        "Fairy",
+        "Monster",
+        "Brother",
+        "Seek",
+        "Find",
+        "Open",
+        "Close",
+        "Help",
+        "Make",
+        "Door",
+        "Book",
+        "Plant",
+        "Fire",
+        "Formula",
+        "Copper",
+        "Silver",
+        "Gold",
+        "Carbon",
+        "Plural",
+        "Not",
+        "Transformation",
+        "Fear",
+        "Death",
+        "Zero",
+        "One",
+        "Two",
+        "Three",
+        "Four",
+        "Five",
+        "Six",
+        "Seven",
+        "Eight",
+        "Nine",
+        "Mine",
+        "Lab",
+        "Library",
+        "Refectory"
+      ],
+      "baseGlyphs": [
+        "personBase",
+        "personBaseCut",
+        "personBaseCutRotated",
+        "peopleBase",
+        "peopleBaseCut",
+        "peopleBaseRotated",
+        "verbBase",
+        "elementBase",
+        "numberBase",
+        "placeBase",
+        "youBase",
+        "meBase",
+        "warriorBase",
+        "alchemistBase",
+        "fairyBase",
+        "monsterBase",
+        "brotherBase",
+        "seekBase",
+        "findBase",
+        "openBase",
+        "closeBase",
+        "helpBase",
+        "makeBase",
+        "transformationBase",
+        "copperBase",
+        "silverBase",
+        "goldBase",
+        "carbonBase",
+        "fearBase",
+        "deathBase",
+        "oneBase",
+        "twoBase",
+        "threeBase",
+        "fourBase",
+        "fiveBase",
+        "sixBase",
+        "sevenBase",
+        "eightBase",
+        "nineBase",
+        "mineBase",
+        "labBase",
+        "libraryBase",
+        "refectoryBase"
+      ],
+      "combination": {
+        "recipes": {
+          "You": [
+            "personBase",
+            "youBase"
+          ],
+          "Me": [
+            "personBase",
+            "meBase"
+          ],
+          "Warrior": [
+            "peopleBase",
+            "warriorBase"
+          ],
+          "Alchemist": [
+            "peopleBase",
+            "alchemistBase"
+          ],
+          "Fairy": [
+            "peopleBase",
+            "fairyBase"
+          ],
+          "Monster": [
+            "peopleBaseCut",
+            "monsterBase"
+          ],
+          "Brother": [
+            "peopleBase",
+            "personBase",
+            "brotherBase"
+          ],
+          "Seek": [
+            "verbBase",
+            "seekBase"
+          ],
+          "Find": [
+            "verbBase",
+            "findBase"
+          ],
+          "Open": [
+            "verbBase",
+            "openBase"
+          ],
+          "Close": [
+            "verbBase",
+            "closeBase"
+          ],
+          "Help": [
+            "verbBase",
+            "helpBase"
+          ],
+          "Make": [
+            "verbBase",
+            "makeBase"
+          ],
+          "Transformation": [
+            "verbBase",
+            "transformationBase"
+          ],
+          "Copper": [
+            "elementBase",
+            "copperBase"
+          ],
+          "Silver": [
+            "elementBase",
+            "silverBase"
+          ],
+          "Gold": [
+            "elementBase",
+            "goldBase"
+          ],
+          "Carbon": [
+            "elementBase",
+            "carbonBase"
+          ],
+          "Fear": [
+            "peopleBaseRotated",
+            "personBaseCutRotated",
+            "fearBase"
+          ],
+          "Death": [
+            "personBaseCutRotated",
+            "deathBase"
+          ],
+          "One": [
+            "numberBase",
+            "oneBase"
+          ],
+          "Two": [
+            "numberBase",
+            "twoBase"
+          ],
+          "Three": [
+            "numberBase",
+            "threeBase"
+          ],
+          "Four": [
+            "numberBase",
+            "fourBase"
+          ],
+          "Five": [
+            "numberBase",
+            "fiveBase"
+          ],
+          "Six": [
+            "numberBase",
+            "sixBase"
+          ],
+          "Seven": [
+            "numberBase",
+            "sevenBase"
+          ],
+          "Eight": [
+            "numberBase",
+            "eightBase"
+          ],
+          "Nine": [
+            "numberBase",
+            "nineBase"
+          ],
+          "Mine": [
+            "placeBase",
+            "mineBase"
+          ],
+          "Lab": [
+            "placeBase",
+            "labBase"
+          ],
+          "Library": [
+            "placeBase",
+            "libraryBase"
+          ],
+          "Refectory": [
+            "placeBase",
+            "refectoryBase"
+          ]
+        },
+        "arrangement": {
+          "crossing": {
+            "mode": "Anywhere"
+          }
+        }
+      },
+      "derivations": {
+        "personBaseCut": {
+          "from": "personBase",
+          "steps": [
+            {
+              "mode": "Cut",
+              "amount": {
+                "count": {
+                  "min": 1,
+                  "max": 2
+                }
+              },
+              "removeOrphanNodes": true
+            }
+          ]
+        },
+        "personBaseCutRotated": {
+          "from": "personBaseCut",
+          "steps": [
+            {
+              "op": "Rotate",
+              "degrees": [
+                90,
+                180,
+                270
+              ]
+            }
+          ]
+        },
+        "peopleBaseCut": {
+          "from": "peopleBase",
+          "steps": [
+            {
+              "mode": "Cut",
+              "amount": {
+                "count": {
+                  "min": 1,
+                  "max": 2
+                }
+              },
+              "removeOrphanNodes": true
+            }
+          ]
+        },
+        "peopleBaseRotated": {
+          "from": "peopleBase",
+          "steps": [
+            {
+              "op": "Rotate",
+              "degrees": [
+                90,
+                180,
+                270
+              ]
+            }
+          ]
+        }
+      },
+      "shapes": [
+        {
+          "id": "numberBaseShape",
+          "onlyForGlyphs": [
+            "numberBase"
+          ],
+          "kind": "Literal",
+          "nodes": [
+            [
+              13,
+              0
+            ],
+            [
+              13,
+              25
+            ]
+          ]
+        },
+        {
+          "id": "numbersShapeBase",
+          "onlyForGlyphs": [
+            "oneBase",
+            "twoBase",
+            "threeBase",
+            "fourBase",
+            "fiveBase",
+            "sixBase",
+            "sevenBase",
+            "eightBase",
+            "nineBase"
+          ],
+          "kind": "Literal",
+          "nodes": [
+            [
+              0,
+              4
+            ],
+            [
+              0,
+              6
+            ],
+            [
+              0,
+              8
+            ]
+          ]
+        },
+        {
+          "id": "numbersShape",
+          "onlyForGlyphs": [
+            "oneBase",
+            "twoBase",
+            "threeBase",
+            "fourBase",
+            "fiveBase",
+            "sixBase",
+            "sevenBase",
+            "eightBase",
+            "nineBase"
+          ],
+          "placement": {
+            "startOnExistingNode": true
+          },
+          "chain": {
+            "selfSpacing": [
+              {
+                "mode": "AllNodes",
+                "maxDistance": 6
+              }
+            ]
+          }
+        },
+        {
+          "id": "simpleOnes",
+          "onlyForGlyphs": [
+            "personBase",
+            "peopleBase"
+          ]
+          
+        }
+      ]
+    }

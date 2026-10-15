@@ -1,0 +1,1582 @@
+{
+  "$schema": "./config.schema.json",
+  "rootSeed": 2026912343,
+  "outputDirectory": "./output",
+  "languages": [
+    {
+      "name": "Devotee",
+      "grid": {
+        "width": 20,
+        "height": 20
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        "Man/Human",
+        "You",
+        "Me",
+        "Devotee",
+        "Warrior",
+        "Preacher",
+        "Close",
+        "Open",
+        "Help",
+        "Go/Pass",
+        "Talk",
+        "Seek/Want",
+        "Find",
+        "See/Look",
+        "Love/Like",
+        "Make/Create",
+        "Abbey",
+        "Cemetery",
+        "Church",
+        "Garden",
+        "Door",
+        "Key",
+        "Instrument",
+        "Pot",
+        "Plant",
+        "Potion",
+        "Lens",
+        "Greetings",
+        "God",
+        "Death/Dead",
+        "Up/Great",
+        "Not",
+        "Music",
+        "Free"
+      ],
+      "baseGlyphs": [
+        "Action",
+        "Place",
+        "Object",
+        "you_base",
+        "me_base",
+        "devotee_base",
+        "warrior_base",
+        "talk_base",
+        "close_base",
+        "open_base",
+        "help_base",
+        "go_base",
+        "seek_base",
+        "find_base",
+        "see_base",
+        "love_base",
+        "make_base",
+        "abbey_base",
+        "door_base",
+        "key_base",
+        "pot_base",
+        "potion_base",
+        "lens_base"
+      ],
+      "combination": {
+        "recipes": {
+          "You": [
+            "Man/Human",
+            "you_base"
+          ],
+          "Me": [
+            "Man/Human",
+            "me_base"
+          ],
+          "Devotee": [
+            "Man/Human",
+            "devotee_base"
+          ],
+          "Warrior": [
+            "Man/Human",
+            "warrior_base"
+          ],
+          "Preacher": [
+            "Man/Human",
+            "talk_base"
+          ],
+          "Close": [
+            "Action",
+            "close_base"
+          ],
+          "Open": [
+            "Action",
+            "open_base"
+          ],
+          "Help": [
+            "Action",
+            "help_base"
+          ],
+          "Go/Pass": [
+            "Action",
+            "go_base"
+          ],
+          "Talk": [
+            "Action",
+            "talk_base"
+          ],
+          "Seek/Want": [
+            "Action",
+            "seek_base"
+          ],
+          "Find": [
+            "Action",
+            "find_base"
+          ],
+          "See/Look": [
+            "Action",
+            "see_base"
+          ],
+          "Love/Like": [
+            "Action",
+            "love_base"
+          ],
+          "Make/Create": [
+            "Action",
+            "make_base"
+          ],
+          "Abbey": [
+            "Place",
+            "abbey_base"
+          ],
+          "Cemetery": [
+            "Place",
+            "Death/Dead"
+          ],
+          "Church": [
+            "Place",
+            "devotee_base"
+          ],
+          "Garden": [
+            "Place",
+            "Plant"
+          ],
+          "Door": [
+            "Object",
+            "door_base"
+          ],
+          "Key": [
+            "Object",
+            "key_base"
+          ],
+          "Instrument": [
+            "Object",
+            "Music"
+          ],
+          "Pot": [
+            "Object",
+            "pot_base"
+          ],
+          "Potion": [
+            "Object",
+            "potion_base"
+          ],
+          "Lens": [
+            "Object",
+            "lens_base"
+          ]
+        },
+        "allowScale": false,
+        "allowRotate": false,
+        "maxRetriesPerRecipe": 50,
+        "arrangement": {
+          "placements": [
+            {
+              "glyph": "Man/Human",
+              "mode": "SetRandom",
+              "pick": "Corner"
+            },
+            {
+              "glyph": "Action",
+              "mode": "SetRandom",
+              "pick": "Corner"
+            },
+            {
+              "glyph": "Object",
+              "mode": "SetRandom",
+              "pick": "Corner"
+            },
+            {
+              "glyph": "Place",
+              "mode": "SetRandom",
+              "pick": "Corner"
+            }
+          ],
+          "spacing": {
+            "enabled": true,
+            "minCenterDistance": 1,
+            "minNodeDistance": 3.1,
+            "maxNodeDistance": 4,
+            "maxDistanceMode": "AllShapes"
+          },
+          "bias": {
+            "modes": [
+              "Shortest",
+              "Narrowest",
+              "Squarest"
+            ],
+            "includeScaleAndRotation": false
+          }
+        }
+      },
+      "derivations": {
+        "devotee_base": {
+          "from": "God",
+          "maxSimilarityToSource": 0.85,
+          "steps": [
+            {
+              "onlyIf": {
+                "minNodes": 6,
+                "minEdges": 4
+              },
+              "op": "DeleteNodes",
+              "mode": "Bridge",
+              "amount": {
+                "count": {
+                  "min": 1,
+                  "max": 1
+                }
+              },
+              "connectionRules": [
+                {
+                  "direction": "Any",
+                  "minLength": 2,
+                  "maxLength": 10
+                }
+              ],
+              "keepConnected": true
+            },
+            {
+              "onlyIf": {
+                "maxNodes": 5,
+                "maxEdges": 4
+              },
+              "op": "Add",
+              "shapes": [
+                "strokes"
+              ],
+              "optional": false
+            }
+          ]
+        }
+      },
+      "shapes": [
+        {
+          "id": "strokes",
+          "count": {
+            "min": 1,
+            "max": 3
+          },
+          "chain": {
+            "length": {
+              "min": 3,
+              "max": 5
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 3,
+                "backToStartChance": 5,
+                "curve": {
+                  "chanceToBeCurved": 20,
+                  "tension": {
+                    "range": {
+                      "min": 0.4,
+                      "max": 0.5
+                    }
+                  }
+                }
+              },
+              {
+                "direction": "Angle",
+                "anglePreset": "Gentle",
+                "minLength": 1,
+                "maxLength": 4,
+                "weight": 1,
+                "curve": {
+                  "chanceToBeCurved": 70
+                }
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 1,
+                "maxLength": 4,
+                "weight": 0.5,
+                "curve": {
+                  "chanceToBeCurved": 50
+                }
+              },
+              {
+                "direction": "Circle",
+                "minLength": 0,
+                "maxLength": 1,
+                "weight": 0.4
+              }
+            ],
+            "connectionWeighting": "PerRule",
+            "allowClosedLoop": true,
+            "allowNodeRevisit": true,
+            "selfSpacing": [
+              {
+                "mode": "Existing",
+                "minDistance": 1.5
+              },
+              {
+                "mode": "Adjacent",
+                "lookback": 2,
+                "minDistance": 2
+              }
+            ]
+          },
+          "arrangement": {
+            "allowCrossing": false
+          },
+          "placement": {
+            "startOnExistingNode": true
+          }
+        }
+      ],
+      "usageSizeBias": {
+        "strength": 0.8,
+        "affectSubSymbolCount": true,
+        "affectSubSymbolLength": false
+      },
+      "quality": {
+        "maxSimilarity": 0.7,
+        "rejectStraightLineOnly": true,
+        "maxRegenerationAttempts": 50
+      },
+      "render": {
+        "framing": "GlyphCentered",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "debugShowNodes": true,
+        "debugColorComponents": true,
+        "debugColorParts": true,
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.045,
+              "max": 0.045
+            },
+            "cap": "Square"
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Miter"
+            },
+            "inner": {
+              "style": "Miter"
+            }
+          },
+          "junction": {
+            "inner": {
+              "style": "Miter"
+            },
+            "outer": {
+              "style": "Miter"
+            },
+            "trimCaps": true
+          }
+        }
+      }
+    },
+    {
+      "name": "Warrior",
+      "grid": {
+        "width": 25,
+        "height": 25
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        "Balance",
+        "Bellman",
+        "Big",
+        "Bottle",
+        "Call",
+        "Carry/Possess",
+        "Chosen",
+        "Crate",
+        "Death",
+        "Duty",
+        "Fear",
+        "Fortress",
+        "Go/Pass",
+        "Help",
+        "Impure",
+        "Instrument",
+        "Key",
+        "Lay",
+        "Love",
+        "Make/Create",
+        "Moon",
+        "Music",
+        "Not",
+        "Plural",
+        "Protect",
+        "Push",
+        "Scientist",
+        "Seek/Want",
+        "Small",
+        "Sun",
+        "Treasure",
+        "Trolley",
+        "Vessel",
+        "Wait",
+        "Warrior",
+        "Weapon"
+      ],
+      "derivations": {
+        "Big": {
+          "from": "Small",
+          "maxSimilarityToSource": 1,
+          "finalOutputRotation": "FollowMoves",
+          "steps": [
+            {
+              "op": "Mirror",
+              "axis": "Horizontal"
+            },
+            {
+              "op": "Mirror",
+              "axis": "Vertical"
+            }
+          ]
+        }
+      },
+      "shapes": [
+        {
+          "id": "firstStroke",
+          "count": {
+            "min": 1,
+            "max": 1
+          },
+          "chain": {
+            "length": {
+              "min": 2,
+              "max": 4
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 3,
+                "maxLength": 5,
+                "weight": 3
+              },
+              {
+                "direction": "Angle",
+                "anglePreset": "Gentle",
+                "minLength": 2,
+                "maxLength": 5,
+                "weight": 1
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 2,
+                "maxLength": 5,
+                "weight": 2
+              }
+            ],
+            "connectionWeighting": "PerRule",
+            "selfSpacing": [
+              {
+                "mode": "Existing",
+                "minDistance": 1.5
+              },
+              {
+                "mode": "Adjacent",
+                "lookback": 2,
+                "minDistance": 2
+              }
+            ]
+          },
+          "arrangement": {
+            "allowCrossing": false
+          },
+          "placement": {
+            "startOnExistingNode": true
+          }
+        },
+        {
+          "id": "secondStroke",
+          "count": {
+            "min": 1,
+            "max": 1
+          },
+          "chain": {
+            "length": {
+              "min": 2,
+              "max": 5
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 3,
+                "maxLength": 5,
+                "weight": 3
+              },
+              {
+                "direction": "Angle",
+                "anglePreset": "Gentle",
+                "minLength": 2,
+                "maxLength": 5,
+                "weight": 1
+              },
+              {
+                "direction": "Angle",
+                "anglePreset": "Sharp",
+                "minLength": 2,
+                "maxLength": 5,
+                "weight": 1
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 2,
+                "maxLength": 5,
+                "weight": 2
+              }
+            ],
+            "connectionWeighting": "PerRule",
+            "selfSpacing": [
+              {
+                "mode": "Existing",
+                "minDistance": 2.5
+              },
+              {
+                "mode": "Adjacent",
+                "lookback": 2,
+                "minDistance": 1
+              }
+            ]
+          },
+          "arrangement": {
+            "allowCrossing": true
+          },
+          "placement": {
+            "startOnExistingNode": true
+          }
+        },
+        {
+          "id": "copyOfSecondStroke",
+          "copyOf": {
+            "shape": "secondStroke",
+            "flip": "Auto",
+            "respectSelfSpacing": true,
+            "selfSpacingIgnoresOriginal": true,
+            "auto": {
+              "by": "LongestStraight",
+              "axis": "Random",
+              "shapes": [
+                "firstStroke"
+              ]
+            },
+            "anchor": "OriginStart",
+            "regenerateBase": 50,
+            "redrawGlyph": 50
+          },
+          "arrangement": {
+            "allowCrossing": true
+          }
+        }
+      ],
+      "usageSizeBias": {
+        "strength": 0.8,
+        "affectSubSymbolCount": true,
+        "affectSubSymbolLength": false
+      },
+      "quality": {
+        "maxSimilarity": 0.7,
+        "rejectStraightLineOnly": true,
+        "maxRegenerationAttempts": 50
+      },
+      "render": {
+        "framing": "GlyphCentered",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "debugShowNodes": true,
+        "debugColorComponents": true,
+        "debugColorParts": true,
+        "debugColorShapes": true,
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.035,
+              "max": 0.035
+            },
+            "cap": "Square"
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Miter"
+            },
+            "inner": {
+              "style": "Miter"
+            }
+          },
+          "junction": {
+            "inner": {
+              "style": "Miter"
+            },
+            "outer": {
+              "style": "Miter"
+            },
+            "trimCaps": true
+          }
+        },
+        "rotateOptions": [
+          {
+            "min": 0,
+            "max": 0,
+            "weight": 5
+          },
+          {
+            "min": -15,
+            "max": 15,
+            "weight": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "Bard",
+      "grid": {
+        "width": 25,
+        "height": 25
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        "Question",
+        "Abbey",
+        "Agora",
+        "Ascend",
+        "Bard",
+        "Be",
+        "Beauty",
+        "Book",
+        "Brother",
+        "Carry/Possess",
+        "Comedy",
+        "Compass",
+        "East",
+        "Find",
+        "Fire",
+        "Fortress",
+        "Free",
+        "Go/Pass",
+        "Greetings",
+        "Hammer",
+        "Idiot",
+        "Instrument",
+        "Love/Like",
+        "Man/Human",
+        "Me",
+        "Monster",
+        "Music",
+        "North",
+        "Not",
+        "Path",
+        "Play",
+        "Pliers",
+        "Plural",
+        "Saw",
+        "Seek/Want",
+        "South",
+        "Theatre",
+        "Warrior",
+        "Weapon",
+        "West",
+        "Windmill",
+        "You"
+      ],
+      "baseGlyphs": [
+        "placeBase",
+        "actionBase",
+        "beBase",
+        "goBase",
+        "loveBase",
+        "seekBase",
+        "findBase",
+        "carryBase",
+        "ascendBase",
+        "playBase",
+        "abbeyBase",
+        "fortressBase",
+        "agoraBase",
+        "theatreBase",
+        "windmillBase",
+        "northBase",
+        "eastBase",
+        "southBase",
+        "westBase"
+      ],
+      "combination": {
+        "recipes": {
+          "Ascend": [
+            "actionBase",
+            "ascendBase"
+          ],
+          "Be": [
+            "actionBase",
+            "beBase"
+          ],
+          "Carry/Possess": [
+            "actionBase",
+            "carryBase"
+          ],
+          "Find": [
+            "actionBase",
+            "findBase"
+          ],
+          "Go/Pass": [
+            "actionBase",
+            "goBase"
+          ],
+          "Love/Like": [
+            "actionBase",
+            "loveBase"
+          ],
+          "Play": [
+            "actionBase",
+            "playBase"
+          ],
+          "Seek/Want": [
+            "actionBase",
+            "seekBase"
+          ],
+          "Abbey": [
+            "placeBase",
+            "abbeyBase"
+          ],
+          "Agora": [
+            "placeBase",
+            "agoraBase"
+          ],
+          "Fortress": [
+            "placeBase",
+            "fortressBase"
+          ],
+          "Theatre": [
+            "placeBase",
+            "theatreBase"
+          ],
+          "Windmill": [
+            "placeBase",
+            "windmillBase"
+          ],
+          "North": [
+            "placeBase",
+            "northBase"
+          ],
+          "South": [
+            "placeBase",
+            "southBase"
+          ],
+          "East": [
+            "placeBase",
+            "eastBase"
+          ],
+          "West": [
+            "placeBase",
+            "westBase"
+          ]
+        },
+        "arrangement": {
+          "allowCrossing": true,
+          "placements": [
+            {
+              "glyph": "placeBase",
+              "mode": "Fixed"
+            },
+            {
+              "glyph": "actionBase",
+              "mode": "Fixed"
+            }
+          ]
+        }
+      },
+      "shapes": [
+        {
+          "id": "bottomLine",
+          "kind": "Literal",
+          "count": {
+            "min": 1,
+            "max": 1
+          },
+          "nodes": [
+            [
+              0,
+              20
+            ],
+            [
+              1,
+              20
+            ],
+            [
+              2,
+              20
+            ],
+            [
+              3,
+              20
+            ],
+            [
+              4,
+              20
+            ],
+            [
+              5,
+              20
+            ],
+            [
+              6,
+              20
+            ],
+            [
+              7,
+              20
+            ],
+            [
+              8,
+              20
+            ],
+            [
+              9,
+              20
+            ],
+            [
+              10,
+              20
+            ],
+            [
+              11,
+              20
+            ],
+            [
+              12,
+              20
+            ],
+            [
+              13,
+              20
+            ],
+            [
+              14,
+              20
+            ],
+            [
+              15,
+              20
+            ],
+            [
+              16,
+              20
+            ],
+            [
+              17,
+              20
+            ],
+            [
+              18,
+              20
+            ],
+            [
+              19,
+              20
+            ],
+            [
+              20,
+              20
+            ],
+            [
+              21,
+              20
+            ],
+            [
+              22,
+              20
+            ],
+            [
+              23,
+              20
+            ],
+            [
+              24,
+              20
+            ]
+          ],
+          "placement": {
+            "mode": "Fixed",
+            "fixedOrigin": [
+              0,
+              0
+            ]
+          },
+          "arrangement": {
+            "allowCrossing": true
+          }
+        },
+        {
+          "id": "dotsOnly",
+          "onlyForGlyphs": [
+            "placeBase",
+            "actionBase"
+          ],
+          "count": {
+            "min": 1,
+            "max": 4
+          },
+          "chain": {
+            "length": {
+              "min": 2,
+              "max": 2
+            },
+            "connectionRules": [
+              {
+                "direction": "Circle",
+                "minLength": 0,
+                "maxLength": 0
+              }
+            ]
+          },
+          "placement": {
+            "mode": "RandomValid",
+            "maxPlacementAttempts": 50,
+            "startOnExistingNode": false
+          },
+          "arrangement": {
+            "spacing": {
+              "minNodeDistance": 2
+            },
+            "allowCrossing": false
+          }
+        },
+        {
+          "id": "firstStroke",
+          "excludeGlyphs": [
+            "placeBase",
+            "actionBase"
+          ],
+          "count": {
+            "min": 1,
+            "max": 1
+          },
+          "chain": {
+            "length": {
+              "min": 2,
+              "max": 2
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 3,
+                "maxLength": 10,
+                "weight": 2
+              },
+              {
+                "direction": "Orthogonal",
+                "minLength": 3,
+                "maxLength": 7,
+                "weight": 1,
+                "curve": {
+                  "chanceToBeCurved": 100,
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0.1,
+                        "max": 0.1
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5
+                      },
+                      {
+                        "min": 0.2,
+                        "max": 0.4
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "direction": "Angle",
+                "minAngle": 10,
+                "maxAngle": 170,
+                "minLength": 2,
+                "maxLength": 7,
+                "weight": 1,
+                "curve": {
+                  "chanceToBeCurved": 70,
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0.1,
+                        "max": 0.1
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5
+                      },
+                      {
+                        "min": 0.2,
+                        "max": 0.4
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 2,
+                "maxLength": 7,
+                "weight": 1,
+                "curve": {
+                  "chanceToBeCurved": 70,
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0.1,
+                        "max": 0.1
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5
+                      },
+                      {
+                        "min": 0.2,
+                        "max": 0.4
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "connectionWeighting": "PerRule",
+            "selfSpacing": [
+              {
+                "mode": "Existing",
+                "minDistance": 1.5
+              },
+              {
+                "mode": "Adjacent",
+                "lookback": 2,
+                "minDistance": 2
+              }
+            ]
+          },
+          "arrangement": {
+            "allowCrossing": true
+          },
+          "placement": {
+            "startOnExistingNode": false
+          }
+        },
+        {
+          "id": "secondStroke",
+          "excludeGlyphs": [
+            "placeBase",
+            "actionBase"
+          ],
+          "count": {
+            "min": 1,
+            "max": 4
+          },
+          "chain": {
+            "length": {
+              "min": 3,
+              "max": 5
+            },
+            "selfSpacing": [
+              {
+                "mode": "AllNodes",
+                "minDistance": 3
+              },
+              {
+                "mode": "Adjacent",
+                "lookback": 2,
+                "minDistance": 4
+              }
+            ],
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 3,
+                "maxLength": 6,
+                "weight": 1
+              },
+              {
+                "direction": "Angle",
+                "minAngle": 10,
+                "maxAngle": 170,
+                "minLength": 2,
+                "maxLength": 7,
+                "weight": 3,
+                "curve": {
+                  "chanceToBeCurved": 70,
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0.1,
+                        "max": 0.1
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5
+                      },
+                      {
+                        "min": 0.2,
+                        "max": 0.4
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 2,
+                "maxLength": 7,
+                "weight": 3,
+                "curve": {
+                  "chanceToBeCurved": 70,
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0.1,
+                        "max": 0.1
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5
+                      },
+                      {
+                        "min": 0.2,
+                        "max": 0.4
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "allowNodeRevisit": true,
+            "allowEdgeRevisit": true
+          },
+          "arrangement": {
+            "allowCrossing": true
+          },
+          "placement": {
+            "startOnExistingNode": true,
+            "startOnShapes": [
+              "firstStroke"
+            ]
+          }
+        }
+      ],
+      "usageSizeBias": {
+        "strength": 0.8,
+        "affectSubSymbolCount": true,
+        "affectSubSymbolLength": false
+      },
+      "quality": {
+        "maxSimilarity": 0.8,
+        "rejectStraightLineOnly": true,
+        "maxRegenerationAttempts": 50
+      },
+      "render": {
+        "framing": "Grid",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "debugShowNodes": true,
+        "debugColorComponents": true,
+        "debugColorParts": true,
+        "debugColorShapes": true,
+        "typeface": {
+          "kind": "Brush",
+          "perGlyphJitter": 0.0,
+          "brush": {
+            "mode": "BroadNib"
+          }
+        }
+      }
+    },
+    {
+      "name": "Alchemist",
+      "grid": {
+        "height": 25,
+        "width": 25
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        "You",
+        "Me",
+        "Warrior",
+        "Alchemist",
+        "Fairy",
+        "Monster",
+        "Brother",
+        "Seek",
+        "Find",
+        "Open",
+        "Close",
+        "Help",
+        "Make",
+        "Door",
+        "Book",
+        "Plant",
+        "Fire",
+        "Formula",
+        "Copper",
+        "Silver",
+        "Gold",
+        "Carbon",
+        "Plural",
+        "Not",
+        "Transformation",
+        "Fear",
+        "Death",
+        "Zero",
+        "One",
+        "Two",
+        "Three",
+        "Four",
+        "Five",
+        "Six",
+        "Seven",
+        "Eight",
+        "Nine",
+        "Mine",
+        "Lab",
+        "Library",
+        "Refectory"
+      ],
+      "baseGlyphs": [
+        "personBase",
+        "personBaseCut",
+        "personBaseCutRotated",
+        "peopleBase",
+        "peopleBaseCut",
+        "peopleBaseRotated",
+        "verbBase",
+        "elementBase",
+        "numberBase",
+        "placeBase",
+        "youBase",
+        "meBase",
+        "warriorBase",
+        "alchemistBase",
+        "fairyBase",
+        "monsterBase",
+        "brotherBase",
+        "seekBase",
+        "findBase",
+        "openBase",
+        "closeBase",
+        "helpBase",
+        "makeBase",
+        "transformationBase",
+        "copperBase",
+        "silverBase",
+        "goldBase",
+        "carbonBase",
+        "fearBase",
+        "deathBase",
+        "oneBase",
+        "twoBase",
+        "threeBase",
+        "fourBase",
+        "fiveBase",
+        "sixBase",
+        "sevenBase",
+        "eightBase",
+        "nineBase",
+        "mineBase",
+        "labBase",
+        "libraryBase",
+        "refectoryBase"
+      ],
+      "combination": {
+        "recipes": {
+          "You": [
+            "personBase",
+            "youBase"
+          ],
+          "Me": [
+            "personBase",
+            "meBase"
+          ],
+          "Warrior": [
+            "peopleBase",
+            "warriorBase"
+          ],
+          "Alchemist": [
+            "peopleBase",
+            "alchemistBase"
+          ],
+          "Fairy": [
+            "peopleBase",
+            "fairyBase"
+          ],
+          "Monster": [
+            "peopleBaseCut",
+            "monsterBase"
+          ],
+          "Brother": [
+            "peopleBase",
+            "personBase",
+            "brotherBase"
+          ],
+          "Seek": [
+            "verbBase",
+            "seekBase"
+          ],
+          "Find": [
+            "verbBase",
+            "findBase"
+          ],
+          "Open": [
+            "verbBase",
+            "openBase"
+          ],
+          "Close": [
+            "verbBase",
+            "closeBase"
+          ],
+          "Help": [
+            "verbBase",
+            "helpBase"
+          ],
+          "Make": [
+            "verbBase",
+            "makeBase"
+          ],
+          "Transformation": [
+            "verbBase",
+            "transformationBase"
+          ],
+          "Copper": [
+            "elementBase",
+            "copperBase"
+          ],
+          "Silver": [
+            "elementBase",
+            "silverBase"
+          ],
+          "Gold": [
+            "elementBase",
+            "goldBase"
+          ],
+          "Carbon": [
+            "elementBase",
+            "carbonBase"
+          ],
+          "Fear": [
+            "peopleBaseRotated",
+            "personBaseCutRotated",
+            "fearBase"
+          ],
+          "Death": [
+            "personBaseCutRotated",
+            "deathBase"
+          ],
+          "One": [
+            "numberBase",
+            "oneBase"
+          ],
+          "Two": [
+            "numberBase",
+            "twoBase"
+          ],
+          "Three": [
+            "numberBase",
+            "threeBase"
+          ],
+          "Four": [
+            "numberBase",
+            "fourBase"
+          ],
+          "Five": [
+            "numberBase",
+            "fiveBase"
+          ],
+          "Six": [
+            "numberBase",
+            "sixBase"
+          ],
+          "Seven": [
+            "numberBase",
+            "sevenBase"
+          ],
+          "Eight": [
+            "numberBase",
+            "eightBase"
+          ],
+          "Nine": [
+            "numberBase",
+            "nineBase"
+          ],
+          "Mine": [
+            "placeBase",
+            "mineBase"
+          ],
+          "Lab": [
+            "placeBase",
+            "labBase"
+          ],
+          "Library": [
+            "placeBase",
+            "libraryBase"
+          ],
+          "Refectory": [
+            "placeBase",
+            "refectoryBase"
+          ]
+        },
+        "arrangement": {
+          "allowCrossing": true
+        }
+      },
+      "derivations": {
+        "personBaseCut": {
+          "from": "personBase",
+          "steps": [
+            {
+              "mode": "Cut",
+              "amount": {
+                "count": {
+                  "min": 1,
+                  "max": 2
+                }
+              },
+              "removeOrphanNodes": true
+            }
+          ]
+        },
+        "personBaseCutRotated": {
+          "from": "personBaseCut",
+          "steps": [
+            {
+              "op": "Rotate",
+              "degrees": [
+                90,
+                180,
+                270
+              ]
+            }
+          ]
+        },
+        "peopleBaseCut": {
+          "from": "peopleBase",
+          "steps": [
+            {
+              "mode": "Cut",
+              "amount": {
+                "count": {
+                  "min": 1,
+                  "max": 2
+                }
+              },
+              "removeOrphanNodes": true
+            }
+          ]
+        },
+        "peopleBaseRotated": {
+          "from": "peopleBase",
+          "steps": [
+            {
+              "op": "Rotate",
+              "degrees": [
+                90,
+                180,
+                270
+              ]
+            }
+          ]
+        }
+      },
+      "shapes": [
+        {
+          "id": "numberBaseShape",
+          "onlyForGlyphs": [
+            "numberBase"
+          ],
+          "kind": "Literal",
+          "nodes": [
+            [
+              13,
+              0
+            ],
+            [
+              13,
+              25
+            ]
+          ]
+        },
+        {
+          "id": "numbersShapeBase",
+          "onlyForGlyphs": [
+            "oneBase",
+            "twoBase",
+            "threeBase",
+            "fourBase",
+            "fiveBase",
+            "sixBase",
+            "sevenBase",
+            "eightBase",
+            "nineBase"
+          ],
+          "kind": "Literal",
+          "nodes": [[0,4],[0,6],[0,8]]
+        },
+        {
+          "id": "numbersShape",
+          "onlyForGlyphs": [
+            "oneBase",
+            "twoBase",
+            "threeBase",
+            "fourBase",
+            "fiveBase",
+            "sixBase",
+            "sevenBase",
+            "eightBase",
+            "nineBase"
+          ],
+          "placement": {
+            "startOnExistingNode": true
+          },
+          "chain": {
+            "selfSpacing": [{"mode": "AllNodes","maxDistance": 6}]
+          }
+        },
+        {
+          "id": "simpleOnes",
+          "onlyForGlyphs": [
+            "personBase",
+            "peopleBase"
+          ]
+        }
+      ]
+    }
+  ]
+}
