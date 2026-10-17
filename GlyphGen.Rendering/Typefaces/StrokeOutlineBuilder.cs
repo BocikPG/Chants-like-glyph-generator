@@ -54,7 +54,8 @@ public static class StrokeOutlineBuilder
         List<Vec2[]> output,
         JoinSink? sink = null,
         int strokeId = 0,
-        LevelAxis capLevel = LevelAxis.Auto)
+        LevelAxis capLevel = LevelAxis.Auto,
+        LevelFlat capFlat = LevelFlat.Keep)
     {
         var pts = path.Points;
         int segCount = pts.Count - 1;
@@ -191,8 +192,8 @@ public static class StrokeOutlineBuilder
             var s = segStart[0];
             var startCap = new List<Vec2[]>();
             var endCap = new List<Vec2[]>();
-            AddCap(pts[0], -dirs[0], new WidthSample(s.Right, s.Left), cap, startCap, capLevel);
-            AddCap(pts[^1], dirs[segCount - 1], segEnd[segCount - 1], cap, endCap, capLevel);
+            AddCap(pts[0], -dirs[0], new WidthSample(s.Right, s.Left), cap, startCap, capLevel, capFlat, sink);
+            AddCap(pts[^1], dirs[segCount - 1], segEnd[segCount - 1], cap, endCap, capLevel, capFlat, sink);
             EmitTip(sink, pts[0], startCap, output);
             EmitTip(sink, pts[^1], endCap, output);
 
@@ -236,7 +237,8 @@ public static class StrokeOutlineBuilder
         Emit(output, poly);
     }
 
-    private static void AddCap(Vec2 p, Vec2 outward, WidthSample w, CapStyle cap, List<Vec2[]> output, LevelAxis level = LevelAxis.Auto)
+    private static void AddCap(Vec2 p, Vec2 outward, WidthSample w, CapStyle cap, List<Vec2[]> output,
+        LevelAxis level = LevelAxis.Auto, LevelFlat flat = LevelFlat.Keep, JoinSink? sink = null)
     {
         if (cap == CapStyle.Butt) return;
 
@@ -245,26 +247,40 @@ public static class StrokeOutlineBuilder
         if (cap == CapStyle.Level)
         {
             // The end face is cut flat along an axis: the corner that reaches less far along that axis is extended along
-            // the stroke until it reaches as far as the other, so the new face lies on the axis' level.
-            Vec2 axis = level switch
+            // the stroke until it reaches as far as the other, so the new face lies on the axis' level. With Both the end
+            // is cut along the row and the column at once, which turns a diagonal end into a point.
+            Vec2[] axes = level switch
             {
-                LevelAxis.Horizontal => new Vec2(0, 1),
-                LevelAxis.Vertical => new Vec2(1, 0),
-                _ => Math.Abs(outward.X) > Math.Abs(outward.Y) ? new Vec2(1, 0) : new Vec2(0, 1),
+                LevelAxis.Horizontal => new[] { new Vec2(0, 1) },
+                LevelAxis.Vertical => new[] { new Vec2(1, 0) },
+                LevelAxis.Both => new[] { new Vec2(1, 0), new Vec2(0, 1) },
+                _ => new[] { Math.Abs(outward.X) > Math.Abs(outward.Y) ? new Vec2(1, 0) : new Vec2(0, 1) },
             };
-            double along = axis.Dot(outward);
-            if (Math.Abs(along) < 0.70) return; // too shallow to level: the extension would be huge (and a square end is already level)
-            if (along < 0) axis = new Vec2(-axis.X, -axis.Y);
-            along = Math.Abs(along);
+            double minAlong = level == LevelAxis.Both ? 0.3 : 0.70; // too shallow to level: the extension would be huge
 
             Vec2 left = p + n * w.Left, right = p - n * w.Right;
-            double hl = axis.Dot(left), hr = axis.Dot(right);
-            if (Math.Abs(hl - hr) < 1e-6) return;
+            double reach = (w.Left + w.Right) * 4 / minAlong;
+            Vec2[] face = { left, right, right + outward * reach, left + outward * reach };
+            bool cut = false;
+            foreach (var candidate in axes)
+            {
+                Vec2 axis = candidate;
+                double along = axis.Dot(outward);
+                if (Math.Abs(along) < minAlong) continue;
+                if (along < 0) axis = new Vec2(-axis.X, -axis.Y);
 
-            bool leftIsFar = hl > hr;
-            Vec2 far = leftIsFar ? left : right, near = leftIsFar ? right : left;
-            Vec2 extended = near + outward * (Math.Abs(hl - hr) / along);
-            Emit(output, new[] { near, extended, far });
+                double hl = axis.Dot(left), hr = axis.Dot(right);
+                bool isFlat = Math.Abs(hl - hr) < 1e-6;
+                double top = Math.Max(hl, hr);
+                sink?.LevelTips.Add(new LevelTip(p, outward, axis, top, isFlat, flat == LevelFlat.ExtendToNeighbours, w));
+                if (isFlat) continue;
+
+                face = ClipBelow(face, axis, top);
+                cut = true;
+                if (face.Length < 3) return;
+            }
+
+            if (cut) Emit(output, face);
             return;
         }
 

@@ -28,6 +28,33 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GlyphGen config",
   "definitions": {
+    "ArcConfig": {
+      "type": "object",
+      "properties": {
+        "angles": {
+          "type": "string",
+          "enum": [
+            "Cardinal",
+            "Diagonal",
+            "Both"
+          ],
+          "description": "Angles the arc may start (and end) at. Default Cardinal.",
+          "default": "Cardinal"
+        },
+        "minSweep": {
+          "type": "integer",
+          "description": "Smallest sweep in degrees (a multiple of the preset's step: 90, or 45 for Both). 180 = a half circle. Default 90.",
+          "default": 90
+        },
+        "maxSweep": {
+          "type": "integer",
+          "description": "Largest sweep in degrees, below 360. Default 270.",
+          "default": 270
+        }
+      },
+      "additionalProperties": false,
+      "description": "direction Arc: which part of the circle is drawn. The circle is set like a Circle rule's (its diameter runs from the current node to the node 'length' steps away); the arc starts at an angle of the preset, sweeps clockwise by a multiple of the preset's step, and so also ends on an angle of the preset."
+    },
     "ArrangementRules": {
       "type": "object",
       "properties": {
@@ -228,7 +255,7 @@
           "items": {
             "$ref": "#/definitions/ComponentPlacementRule"
           },
-          "description": "Placement rules by component glyph. Components without a rule are placed as before."
+          "description": "Placement rules by component glyph (\"*\" = every component without a rule of its own). Components without a rule are placed as before."
         },
         "crossing": {
           "allOf": [
@@ -477,6 +504,15 @@
           ],
           "description": "Fixed only: how far to move the component from where it sits in its own glyph, as { \"x\": 2, \"y\": 0 } or [2, 0]. Omitted = not moved at all (the plain overlay)."
         },
+        "ifBlocked": {
+          "type": "string",
+          "enum": [
+            "Regenerate",
+            "Translate"
+          ],
+          "description": "Fixed only: what to do when the fixed position is blocked (crossing, spacing, off the grid). Default Regenerate, as before; Translate tries every other position first.",
+          "default": "Regenerate"
+        },
         "weight": {
           "type": "number",
           "description": "Prefer and SetRandom: how strongly the side pull counts against the arrangement's bias, when both are active (default 1; 0 turns the pull off).",
@@ -484,7 +520,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "Controls where one component (named by its glyph) goes inside a composite."
+      "description": "Controls where one component (named by its glyph, or \"*\" for all of them) goes inside a composite."
     },
     "ConnectionRuleConfig": {
       "type": "object",
@@ -497,7 +533,8 @@
             "Both",
             "Any",
             "Angle",
-            "Circle"
+            "Circle",
+            "Arc"
           ],
           "default": "Orthogonal"
         },
@@ -542,6 +579,22 @@
           "type": "number",
           "description": "Chance (0-100), each time this rule is the one picked, that the stroke instead goes back to its starting node and closes into a loop. Needs chain.allowClosedLoop and at least 3 nodes so far, and the closing edge must be free of crossings, otherwise the rule just makes its normal move. Replaces chain.closedLoopWeight.",
           "default": 0
+        },
+        "arc": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ArcConfig"
+            }
+          ],
+          "description": "direction Arc only: which arcs may be drawn."
+        },
+        "outlineNodes": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/OutlineNodesConfig"
+            }
+          ],
+          "description": "direction Circle or Arc: extra nodes along the outline."
         },
         "curve": {
           "allOf": [
@@ -736,7 +789,8 @@
           "enum": [
             "None",
             "NodesOnly",
-            "Anywhere"
+            "Anywhere",
+            "Strict"
           ],
           "default": "None"
         },
@@ -1278,7 +1332,8 @@
           "enum": [
             "Auto",
             "Horizontal",
-            "Vertical"
+            "Vertical",
+            "Both"
           ],
           "description": "Outer Level only: the line the corner is cut along. Auto = across the corner's outward direction, so a V pointing down is cut flat on the bottom and a corner pointing right is cut along its column.",
           "default": "Auto"
@@ -1490,6 +1545,47 @@
         "grid"
       ]
     },
+    "OutlineNodesConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "None",
+            "AtAngles",
+            "EveryLatticePoint"
+          ],
+          "default": "None"
+        },
+        "angles": {
+          "type": "string",
+          "enum": [
+            "Cardinal",
+            "Diagonal",
+            "Both"
+          ],
+          "description": "AtAngles: which angles get a node. Default Cardinal.",
+          "default": "Cardinal"
+        },
+        "snap": {
+          "type": "string",
+          "enum": [
+            "Within",
+            "Nearest",
+            "Exact"
+          ],
+          "description": "AtAngles: how a point between lattice points is handled. Default Within.",
+          "default": "Within"
+        },
+        "tolerance": {
+          "type": "number",
+          "description": "How close (lattice units) the outline must pass to a lattice point for Within and EveryLatticePoint. Default 0.3.",
+          "default": 0.3
+        }
+      },
+      "additionalProperties": false,
+      "description": "Extra nodes along a circle or arc (on a connection rule with direction Circle or Arc). They count as nodes of the shape for spacing, startOnExistingNode and NodesOnly crossings; the chain itself still continues from the far node."
+    },
     "PercentRange": {
       "type": "object",
       "properties": {
@@ -1543,30 +1639,67 @@
         "fixedOrigin": {
           "oneOf": [
             {
+              "description": "One origin, or an array of origins from which one is picked at random.",
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "x": {
-                      "type": "integer"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
                     },
-                    "y": {
-                      "type": "integer"
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
                     }
-                  },
-                  "required": [
-                    "x",
-                    "y"
-                  ],
-                  "additionalProperties": false
+                  ]
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "integer"
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "integer"
+                          },
+                          "y": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        },
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    ]
                   },
-                  "minItems": 2,
-                  "maxItems": 2
+                  "minItems": 1
                 }
               ]
             },
@@ -1574,7 +1707,12 @@
               "type": "null"
             }
           ],
-          "description": "Required when Mode == Fixed, and an error with any other mode (it would be ignored). Written as { \"x\": 7, \"y\": 9 } or [7, 9]."
+          "description": "Required when Mode == Fixed, and an error with any other mode (it would be ignored). Written as { \"x\": 7, \"y\": 9 } or [7, 9] - or as an array of such points, in which case one is picked at random for each glyph (a failed try moves on to the next of a shuffled order, so every origin is tried before giving up)."
+        },
+        "discardUsedOrigins": {
+          "type": "boolean",
+          "description": "Fixed with several fixedOrigin points: an origin an earlier instance of this shape (same glyph) was placed at is not used again, so a shape with count N and N origins fills each of them once. When every origin is used the instance cannot be placed. Default false.",
+          "default": false
         },
         "bounds": {
           "allOf": [
@@ -1709,10 +1847,20 @@
           "enum": [
             "Auto",
             "Horizontal",
-            "Vertical"
+            "Vertical",
+            "Both"
           ],
           "description": "With cap Level: which line the end is cut along. Horizontal = flat on the node's row (like text on a baseline), Vertical = along its column, Auto = across the stroke's dominant direction, so a stroke steeper than 45 degrees is cut horizontally and a flatter one vertically. Straight horizontal and vertical strokes are never changed.",
           "default": "Auto"
+        },
+        "capLevelFlat": {
+          "type": "string",
+          "enum": [
+            "Keep",
+            "ExtendToNeighbours"
+          ],
+          "description": "With cap Level: what happens to an end that is already flat on the axis. ExtendToNeighbours grows every end to half a stroke width past its node's row (or column), so verticals, horizontals and diagonals all stop on one line.",
+          "default": "Keep"
         }
       },
       "additionalProperties": false,
@@ -1794,6 +1942,11 @@
         "debugColorShapes": {
           "type": "boolean",
           "description": "Debug option (see DebugShowNodes): in the extra \".debug.png\" images, give every shape its own colour, in the order of the shapes list. Instances of one shape (a shape with a count, or a copy of each instance) share its hue and differ in lightness, so they can be told apart. Joins between strokes keep the foreground colour. Takes the place of debugColorComponents where both are on.",
+          "default": false
+        },
+        "debugShowUndrawn": {
+          "type": "boolean",
+          "description": "Debug option (see DebugShowNodes): in the extra \".debug.png\" images, also draw the shapes that have isDrawn = false, in one translucent orange. They are never in the normal images.",
           "default": false
         }
       },
@@ -1941,6 +2094,11 @@
             "type": "string"
           },
           "description": "Glyphs this shape is never drawn in (applied after OnlyForGlyphs). Empty = none."
+        },
+        "isDrawn": {
+          "type": "boolean",
+          "description": "false: the shape is generated and placed like any other - it blocks other shapes, counts for crossing and spacing, and can be copied, derived and combined - but it is left out of the rendered glyph (and out of its framing). Use it as an invisible blockade or spacer. Shown only in the extra debug images, in their own colour, when render.debugShowUndrawn is on. Default true.",
+          "default": true
         },
         "chain": {
           "allOf": [

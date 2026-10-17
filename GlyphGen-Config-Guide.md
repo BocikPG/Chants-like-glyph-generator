@@ -139,6 +139,7 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
 | `placement` | see section 6 | Where the shape goes. |
 | `arrangement` | see section 7 | How it relates to the other shapes. |
 | `chance` | `100` | Chance (0-100) that the shape is drawn in a glyph at all, rolled once per glyph and covering every instance (a `count` still applies when it is drawn). `100` always draws. A copy shape (below) whose original was skipped is skipped too. |
+| `isDrawn` | `true` | `false` makes the shape an invisible **blockade**: it is generated, placed, copied, derived and combined like any other shape, and it blocks other shapes (crossing, spacing, `startOnExistingNode`, nodes) - but it is left out of the rendered glyph, and out of the glyph's bounds for framing. Use it to keep an area free or to force strokes to bend around something. It shows only in the extra `.debug.png` images, in translucent orange, when `render.debugShowUndrawn` is on. The glyph's quality checks (similarity, straight-line) still see it. |
 | `onlyForGlyphs` | all glyphs | List of glyph names (from `glyphs`/`baseGlyphs`): the shape is drawn **only** in these plain glyphs. Omitted = every plain glyph. A copy (`copyOf`) is drawn only where its original is, so a copy may narrow further but cannot add glyphs (listing one where the original is not drawn is an error). |
 | `excludeGlyphs` | none | Glyph names this shape is never drawn in, applied after `onlyForGlyphs`. A shape left out of a glyph takes no random draws, so that glyph's other strokes and all unfiltered glyphs come out exactly as before. Errors: an unknown name, a composite (recipe) or derived glyph (not built from `shapes`; a derivation's `Add` step picks its own), or a plain glyph left with no shape at all. |
 | `seedLabel` | none | Advanced: names the shape's random streams (default: `shape-<id>`). Only needed to make a migrated config reproduce its old glyphs; leave it out in new configs. |
@@ -234,7 +235,7 @@ Notes. The hard rules still apply: the copy must fit the grid (circles and dots 
 | Field | Default | Notes |
 |---|---|---|
 | `direction` | `Orthogonal` | Which moves the rule may make, see the table below. |
-| `minLength`, `maxLength` | `1`, `1` | Step length in grid cells. A diagonal step of length *n* spans *n* cells on each axis. See each direction for what "length" means. Minimum 1, except for `Circle` (0 is a dot). |
+| `minLength`, `maxLength` | `1`, `1` | Step length in grid cells. A diagonal step of length *n* spans *n* cells on each axis. See each direction for what "length" means. Minimum 1, except for `Circle` (0 is a dot); `Arc` needs at least 1. |
 | `weight` | `1.0` | Relative probability of choosing this rule. A chain with a single rule uses it every time. |
 | `minAngle`, `maxAngle` | `0`, `180` | Limits the **turn** at the current node (not for `Circle`), see "Angles". |
 | `anglePreset` | `None` | `Straight`, `Gentle`, `Right` or `Sharp`: a ready-made `minAngle`/`maxAngle` pair. Replaces them (set one or the other). |
@@ -249,6 +250,35 @@ Notes. The hard rules still apply: the copy must fit the grid (circles and dots 
 | `Any` | **Any node on the grid, at any angle.** Length is the Chebyshev distance `max(|dx|, |dy|)`, so length 1 is exactly `Both` and longer lengths also reach the in-between nodes (3 right and 1 up, say). Still limited by `minLength`/`maxLength` and, if set, the angle. |
 | `Angle` | Like `Any`, but requires an angle limit (`anglePreset` or `minAngle`/`maxAngle`); the validator rejects it without one. Any other direction accepts the same limits too, so `Both` + `Right` is a valid way to say "diagonal or straight, but only right-angle turns". |
 | `Circle` | Draws a **circle instead of a line.** The circle's **diameter** runs from the current node to the node `length` steps away in one of the 8 directions, and the chain carries on from that far node. A diagonal circle of length *L* has diameter *L*·√2. `minLength` may be `0`: length 0 is a **dot** (a disc as thick as the stroke) on the current node, and the chain carries on from the same node. A circle must fit inside the grid, and it blocks like any other edge: it may not cut through other lines or circles, but may touch them at nodes, contain them, or be tangent. Angle limits do not apply. Circles are drawn as their own closed shape, so they do not take part in joins. |
+| `Arc` | Draws **part of a circle.** The circle is set like a `Circle`'s: its diameter runs from the current node to the node `length` steps away (`minLength` at least 1), and the chain carries on from that far node. Only an arc of it is drawn, picked at random from the rule's `arc` settings (see "Arcs and outline nodes"). The drawn arc may not reach the far node (a quarter circle, say), in which case the next stroke starts from the far node anyway; a half circle whose ends are the two diameter ends always connects. Same blocking and grid rules as a circle, applied to the arc only. Angle limits do not apply. |
+
+### Arcs and outline nodes
+
+**`arc`** (direction `Arc`): which part of the circle is drawn. The arc starts at an angle of a preset, runs **clockwise on screen**, and so also ends on an angle of the preset. Angles are in degrees, 0 = right, 90 = down.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `angles` | `Cardinal` | The angle preset: `Cardinal` (0, 90, 180, 270), `Diagonal` (45, 135, 225, 315) or `Both` (all eight). |
+| `minSweep`, `maxSweep` | `90`, `270` | Smallest and largest sweep in degrees, multiples of the preset's step (90, or 45 for `Both`), below 360. `180` = a half circle. Every (start angle, sweep) pair is a candidate, and a rule's weight is shared between them. |
+
+```json
+{ "direction": "Arc", "minLength": 2, "maxLength": 4, "arc": { "angles": "Cardinal", "minSweep": 180, "maxSweep": 180 } }
+```
+
+**A single dot as a blocker.** A `Circle` rule with `minLength` and `maxLength` 0 draws a dot at the current node, and the chain carries on from that same node. Since `chain.length` counts **nodes** (a step adds one), a shape that is exactly one dot needs `"length": { "min": 2, "max": 2 }`; with a longer length the chain runs out of moves (it may not revisit the node), and generation fails with "ran out of valid moves". Combine with `isDrawn: false`, `placement.mode: Fixed` with several `fixedOrigin` points and `discardUsedOrigins`, and `crossing.mode: Strict` to place invisible keep-out points that nothing may touch.
+
+**`outlineNodes`** (direction `Circle` or `Arc`): extra nodes along the outline. Nodes are always **lattice points**, so a point of the outline between lattice points is handled by the settings below. The extra nodes count as nodes of the shape for `arrangement.spacing`, `startOnExistingNode` (new shapes can grow out of them) and `NodesOnly` crossings; the chain itself still walks through its own nodes only. They are lost when a glyph is derived from another.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `mode` | `None` | `None`; `AtAngles`: a node at each angle of the preset that the circle/arc covers; `EveryLatticePoint`: a node on every lattice point the outline passes within `tolerance` of. |
+| `angles` | `Cardinal` | `AtAngles`: `Cardinal`, `Diagonal` or `Both`. |
+| `snap` | `Within` | `AtAngles`: `Within`: the node goes on the nearest lattice point if that is within `tolerance`, otherwise that angle gets no node. `Nearest`: always on the nearest lattice point. `Exact`: only where the point is exactly on a lattice point. |
+| `tolerance` | `0.3` | In lattice units, 0-0.5. A circle with a 4-wide diameter has its diagonal points at about ±1.41, which is 0.59 from the nearest lattice point: they only get a node with `Nearest`. |
+
+```json
+{ "direction": "Circle", "minLength": 2, "maxLength": 4, "outlineNodes": { "mode": "AtAngles", "angles": "Both", "snap": "Within", "tolerance": 0.45 } }
+```
 
 ### Angles
 
@@ -327,7 +357,7 @@ Each shape has its own `placement` block.
 | Option | Default | Notes |
 |---|---|---|
 | `mode` | `RandomValid` | `RandomValid`: random grid point per attempt. `Fixed`: always `fixedOrigin`, which must then be set and on the grid. `CenterAnchor`: exactly the grid center (`width / 2`, `height / 2`, integer division). Every mode is still collision- and spacing-checked. |
-| `fixedOrigin` | `null` | A grid point, required for `Fixed` and an error with any other mode. Written as `{ "x": 7, "y": 7 }` or `[7, 7]`. |
+| `fixedOrigin` | `null` | A grid point, required for `Fixed` and an error with any other mode. Written as `{ "x": 7, "y": 7 }` or `[7, 7]`, **or as an array of points** (`[[1, 1], [5, 5], { "x": 7, "y": 2 }]`): one is picked at random for each glyph, and if that origin fails (crossing, spacing, off the grid) the others are tried in a shuffled order before the shape counts as unplaceable. Every point must be on the grid (and inside `bounds`). A single point draws no random numbers, so existing glyphs are unchanged. |
 | `allowRotationOnPlace` | `true` | Allows a random rotation per attempt. See the rotation note below. |
 | `rotations` | `null` | Literal shapes only. `null`: use `combination.rotation.allowed` when `combination.allowRotate` is on (the original coupling). A list: use exactly these angles. `[]`: never rotate. Only 0, 90, 180, 270. |
 | `bounds` | *(whole grid)* | A box smaller than the grid that this shape must stay inside, e.g. `{ "minX": 4, "minY": 4, "maxX": 10, "maxY": 10 }` (inclusive node coordinates). It acts as the edge of the grid for this shape: chain moves, start points (`RandomValid` picks inside the box, `CenterAnchor` uses its middle) and circles' whole outlines must fit. Other shapes are not limited by it. Must lie inside the grid and contain `fixedOrigin` if there is one. |
@@ -335,6 +365,7 @@ Each shape has its own `placement` block.
 | `redoShape` | `0` | If an instance still cannot be placed after `maxPlacementAttempts`: redraw **all instances of this shape** (new chains, new positions) up to this many times before giving up on this try of the glyph. Shapes placed earlier stay as they are. |
 | `redrawGlyph` | `0` | After `redoShape` is spent: redraw the **whole glyph** from a fresh seed (every shape again) up to this many times before the failure is reported. Each redraw is deterministic, so the same seed gives the same glyph. Default `0` keeps the old behaviour: the glyph fails. |
 | `startOnExistingNode` | `false` | New shapes start on a node already in the glyph. See below. |
+| `discardUsedOrigins` | `false` | `Fixed` with several `fixedOrigin` points: an origin that an earlier instance of this shape (in the same glyph) was placed at is not offered again, so a shape with `count` 4 and four origins fills each once. When all are used, the instance cannot be placed. |
 | `startOnExistingNodeChance` | `100` | With `startOnExistingNode`: the chance (0-100) that an attempt starts on an existing node; otherwise that attempt starts on a random grid point. Rolled per attempt, so a shape can mix both. With a chance below 100, `startOnExistingNode` and `spacing.minNodeDistance > 0` can coexist (the attempts that start elsewhere satisfy it). |
 | `startOnShapes` | all shapes | With `startOnExistingNode`: a list of ids of **earlier** shapes; only their nodes count as places to start on (copies and instances included, by shape id). Default: every node already in the glyph. If none of the listed shapes was drawn in this glyph (a `chance` roll, `onlyForGlyphs`), there is nothing to attach to and the shape is placed at a random point, like the very first shape. Errors: used without `startOnExistingNode`, an empty list, an unknown id, or a shape not listed before this one. |
 | `side` | none | Pull the shape towards a side or corner (`RandomValid` only). See "Side pull" below. |
@@ -404,7 +435,7 @@ The draw is made **for each instance** of the shape (a shape with a `count` can 
 
 | Field | Default | Meaning |
 |---|---|---|
-| `mode` | `None` | `None`: no crossing at all. `NodesOnly`: a crossing is accepted only where it lies within `nodeTolerance` of a node. `Anywhere`: crossing is free. |
+| `mode` | `None` | `None`: no crossing - edges may only meet at **shared nodes** (a junction on a node is fine, but a stroke may not pass through another stroke's middle, or through a **dot**, a circle of diameter 0). `NodesOnly`: a crossing is accepted only where it lies within `nodeTolerance` of a node. `Anywhere`: crossing is free. `Strict`: **no contact at all** - no crossing, and not even a shared node or an edge ending on another; nothing of this shape may touch any other shape (a pair is judged by the stricter of the two, so a `Strict` shape also keeps later shapes off it). Own consecutive edges still meet at their nodes. Not allowed with `placement.startOnExistingNode`. |
 | `nodeTolerance` | `0.3` | `NodesOnly`: how far (lattice units) from a node a crossing may lie and still count as "at" it. So a stroke that passes *near* a node, though not exactly through it, is fine. |
 | `nodesOfShapes` | *(all)* | `NodesOnly`: only the nodes of these shapes (ids) count. Missing/empty = every node of every shape, and the shape's own nodes too. With a list, the shape's own nodes count only if its own id is in it. |
 
@@ -564,12 +595,13 @@ Block: `combination`. A composite is a glyph whose name is a key in `recipes`; i
 
 | Option | Default | Notes |
 |---|---|---|
-| `glyph` | (required) | The component's name. It applies wherever that glyph is a component of a recipe the arrangement covers, and to every instance if a recipe lists it twice. |
+| `glyph` | (required) | The component's name. It applies wherever that glyph is a component of a recipe the arrangement covers, and to every instance if a recipe lists it twice. Use `"*"` to apply the rule to **every component** that has no rule of its own naming it (a rule naming a glyph always wins over `"*"`). With `SetRandom` each component still draws for itself, and with `Fixed` they all get the same offset (so they would overlap, unless crossing allows it). Only one `"*"` rule per list. |
 | `mode` | `Prefer` | `Prefer`, `SetRandom` or `Fixed`, see below. |
 | `sides` | `[]` | `Prefer` only: `Left`, `Right`, `Top`, `Bottom`; one or two. |
 | `pick` | `Any` | `SetRandom` only: `Any`, `Corner`, `Horizontal` or `Vertical`. |
 | `scope` | `Language` | `SetRandom` only: `Language` or `Composite`, see below. |
 | `offset` | none | `Fixed` only: `{ "x": 2, "y": 0 }` or `[2, 0]`. |
+| `ifBlocked` | `Regenerate` | `Fixed` only: what happens when the fixed position is blocked (crossing, spacing, off the grid). `Regenerate`: the recipe attempt fails and a component is redrawn. `Translate`: a component's place in a composite **always equals its place in its own glyph**, so a blocked component is not just slid inside the composite: (1) it is tried at another free position, shuffled order; (2) the **original glyph is moved to that position too**; (3) every other finished composite that uses the glyph is rebuilt with the moved original (one attempt each, nothing regenerated or moved); (4) if one of them can't be rebuilt, the next position is tried; (5) if no position works, the attempt fails and a component is redrawn as usual. Only drawn glyphs are moved (not composites); glyphs derived from a moved glyph are not moved with it. Moving happens only when the composite is built in its normal turn, not inside another composite's redraw cascade. |
 | `weight` | `1.0` | `Prefer` and `SetRandom`: how strongly the pull counts against `bias` when both are on. `0` turns it off. |
 
 **`Fixed`.** The component goes exactly where it is in its own glyph, moved by `offset` (omitted = not moved: the plain overlay). It is never scaled or rotated and has no alternatives: if it leaves the grid, crosses something or breaks the spacing, the recipe cannot be built and fails with an error. Regenerating the other components doesn't help a fixed one, so the others are placed around it (fixed components are placed first automatically).
@@ -742,6 +774,7 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
   "debugColorComponents": false,
   "debugColorParts": false,
   "debugColorShapes": false,
+  "debugShowUndrawn": false,
   "typeface": {
     "kind": "Rectangular",
     "perGlyphJitter": 0.0,
@@ -767,6 +800,7 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
 | `debugColorComponents` | Fills each combination component in its own colour. |
 | `debugColorParts` | Colours the ink each kind of part adds: **grey** caps (and Ball / Ink terminals), **violet** corner joins, **pink** junction joins (including straightening). Strokes keep the foreground (or component) colour. Each part shows only where it goes beyond the strokes, painted over them in build order: corner joins, junction joins, caps. A cap removed by `trimCaps` is not drawn, so it is not shown. |
 | `debugColorShapes` | Gives every shape its own colour in the `.debug.png` images, in the order of the shapes list. Instances of one shape (a shape with a `count`, or a copy of each instance) share a hue and differ in lightness, so they can be told apart. Joins between strokes keep the foreground colour; chains with no shape (derived strokes from before this option, circles' joins) are grey. Takes the place of `debugColorComponents` when both are on, and combines with `debugColorParts` (parts are then drawn over each shape's colour). |
+| `debugShowUndrawn` | Draws the shapes that have `isDrawn: false` in the `.debug.png` images, in one translucent orange. They are never in the normal images. |
 | `typeface.kind` | `Rectangular` (default), `ThickEnds` or `Brush`. Selects which sub-block below is used; a missing sub-block means that typeface's defaults. |
 | `typeface.perGlyphJitter` | `0` (default) = every glyph uses the identical typeface; `0.1` = each glyph's widths vary by up to +-10%. Clamped to 0-0.9. |
 
@@ -818,14 +852,14 @@ A bend has one gap of each kind; a T, a Y or a crossing only has notches. Which 
 | `Miter` | Sharp pointed corner. Falls back to a bevel when the tip would be longer than `miterLimit` x half-width (minimum 1). | Same as `Overlap`. |
 | `Bevel` | Corner cut flat. | A flat chamfer across the notch, `size` half-widths long. |
 | `Round` | Rounded corner (a full reversal gets a round cap). | A fillet in the notch with a radius of `size` half-widths. |
-| `Level` | The miter point **cut flat** along an axis (`axis`: `Auto`, `Horizontal` or `Vertical`) at the level of the outer corner that reaches furthest, so a V pointing down gets a flat bottom and a corner pointing right a vertical edge. `Auto` cuts across the corner's outward direction. Falls back to a bevel when the corner points too far from the axis to be cut. | Same as `Overlap`. |
+| `Level` | The miter point **cut flat** along an axis (`axis`: `Auto`, `Horizontal`, `Vertical` or `Both`; `Both` cuts along the row and the column at once, giving a pointed corner) at the level of the outer corner that reaches furthest, so a V pointing down gets a flat bottom and a corner pointing right a vertical edge. `Auto` cuts across the corner's outward direction. Falls back to a bevel when the corner points too far from the axis to be cut. | Same as `Overlap`. |
 | `Overlap` | Nothing added: plain overlapping strokes. | Nothing added: the notch stays sharp. |
 
 The inner `size` is measured in half-widths of the stroke (`1` = half the stroke width) and is limited automatically so the chamfer or fillet never reaches past the neighbouring node. The inner join only ever **adds** ink; it cannot cut away the notch. It follows the strokes' real edges, so it still meets the borders when a stroke curves away from the node.
 
 **`byAngle`.** A list of rules tried in order; the first whose `angle` range (degrees, 0 to 180, inclusive) contains the angle between the two strokes wins. A rule can give `outer`, `inner` or both; what it leaves out falls back to the context's own. 180 is straight on, 90 a right angle, 45 a sharp turn. On the grid the angle is almost always 45, 90 or 135; on curved edges it is measured on the curve tangents at the node, so it varies continuously. A 45 degree miter is only about 2.6 half-widths long, so `miterLimit` alone never turns grid corners into bevels; `byAngle` is the way to do that.
 
-**`trimCaps`** (junction only). When on, a tip that ends at a junction (a node where another stroke is also present) is drawn **without** its cap, `Ball` terminal or `Ink` start blob, and the joins fill the node instead. A tip that stands alone keeps everything. With the junction's `outer` set to `Overlap` nothing fills the node, so use Miter, Bevel or Round with it. Note that a junction is any node with another stroke in it, including a tip landing on the middle of another stroke.
+**`trimCaps`** (junction only). When on, a tip that ends at a junction (a node where another stroke is also present) is drawn **without** its cap, `Ball` terminal or `Ink` start blob, and the joins fill the node instead. A tip that stands alone keeps everything. With the junction's `outer` set to `Overlap` nothing fills the node, so use Miter, Bevel or Round with it. Note that a junction is any node with another stroke in it, including a tip landing on the middle of another stroke. This holds across the components of a combination too: a node where two components meet is a junction like any other, joined and trimmed the same way.
 
 **`straightenInnerDegrees` / `straightenOuterDegrees` / `straightenLength`** (junction only). Where two strokes meet within the given number of degrees of a straight line (180), the kink is straightened. The two sides of a nearly straight pair behave differently, so each has its own tolerance (`0` = off):
 
@@ -836,7 +870,7 @@ Whether the top of a T is "inner" or "outer" depends on which way the bar bends,
 
 ### Caps
 
-Caps (`Rectangular` only; the other typefaces choose their own end shapes): `Butt` ends flat at the node, `Square` extends half a width past it, `Round` ends in a half disc, `Level` cuts the end flat along an axis: the corner that reaches less far is **extended along the stroke** until it reaches as far as the other, so the end sits on one level (row or column). Straight horizontal and vertical strokes are left as they are (their end is already level), and a stroke too shallow to the axis (more than about 45 degrees off) is not changed. Caps are drawn at open tips, under any junction join, unless `junction.trimCaps` removes them at junctions.
+Caps (`Rectangular` only; the other typefaces choose their own end shapes): `Butt` ends flat at the node, `Square` extends half a width past it, `Round` ends in a half disc, `Level` cuts the end flat along an axis: the corner that reaches less far is **extended along the stroke** until it reaches as far as the other, so the end sits on one level (row or column). Straight horizontal and vertical strokes are left as they are (their end is already level), and a stroke too shallow to the axis (more than about 45 degrees off) is not changed. With `capLevel: Both` the end is cut along the row **and** the column, so a diagonal end becomes a point (a `>` shape with one horizontal and one vertical face); steep or flat strokes get just the cut that applies. With `capLevelFlat: ExtendToNeighbours` every Level end (flat or diagonal) grows until its face lies half a stroke width past its node's row (or column) - where the edge of a horizontal (or vertical) stroke through that node would be, whether or not such a stroke is present. Ends on one row therefore all stop on one line, level with any horizontal stroke on it, and the result does not depend on what else is in the glyph. Caps are drawn at open tips, under any junction join, unless `junction.trimCaps` removes them at junctions.
 
 ### Typefaces
 
@@ -848,7 +882,8 @@ One typeface per **language**, resolved once from the seed, so every glyph reads
 |---|---|---|
 | `width` | `0.05` | Stroke width. |
 | `cap` | `Butt` | `Butt`, `Square`, `Round` or `Level`. |
-| `capLevel` | `Auto` | With `Level`: the line the end is cut along. `Horizontal` = flat on the node's row, `Vertical` = along its column, `Auto` = across the stroke's dominant direction (a stroke steeper than 45 degrees is cut horizontally, a flatter one vertically; exactly 45 degrees horizontally). |
+| `capLevel` | `Auto` | With `Level`: the line the end is cut along. `Horizontal` = flat on the node's row, `Vertical` = along its column, `Auto` = across the stroke's dominant direction (a stroke steeper than 45 degrees is cut horizontally, a flatter one vertically; exactly 45 degrees horizontally), `Both` = along the row and the column (a diagonal end becomes a point). |
+| `capLevelFlat` | `Keep` | With `Level`: `Keep` leaves ends as they are; `ExtendToNeighbours` grows every Level end (flat or diagonal) until its face lies half a stroke width past its node's row/column, the same level a stroke along that line would reach, whether or not one is present. Skipped at junctions when `junction.trimCaps` removes the cap. |
 
 **`ThickEnds`** (`typeface.thickEnds`): a body of one width flaring to another at chosen nodes. If `endWidth` is smaller than `width`, the ends pinch instead of flaring.
 

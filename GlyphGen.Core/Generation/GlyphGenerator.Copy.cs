@@ -258,7 +258,7 @@ public sealed partial class GlyphGenerator
         var bias = shape.Arrangement.Bias;
         int need = bias.IsActive ? Math.Max(1, shape.Arrangement.Candidates) : 1;
         bool prefer = cfg.PreferNoCrossing;
-        bool crossingAllowed = shape.Arrangement.Crossing.Mode != CrossingMode.None;
+        bool crossingAllowed = shape.Arrangement.Crossing.Mode is CrossingMode.Anywhere or CrossingMode.NodesOnly;
 
         var clean = new List<(SubSymbolChain Chain, CopyMap Map)>();
         (SubSymbolChain Chain, CopyMap Map, int Soft)? fallback = null;
@@ -270,7 +270,7 @@ public sealed partial class GlyphGenerator
             var chain = Transformed(origin, candidateMap, shape);
             diag.Tried++;
             if (!FitsGrid(chain, grid)) { diag.OffGrid++; continue; }
-            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.Nodes, geometry.NodeGroups, shape.Arrangement.Spacing)) { diag.Spacing++; continue; }
+            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroups, shape.Arrangement.Spacing)) { diag.Spacing++; continue; }
             if (selfRules is not null && !RespectsOriginSelfSpacing(chain, origin, selfRules, ignoreOriginal, geometry)) { diag.SelfSpacing++; continue; }
             if (geometry.CountBlocked(chain) > 0) { diag.Crossing++; continue; }
 
@@ -347,7 +347,7 @@ public sealed partial class GlyphGenerator
 
             // Positions that were off the grid were counted as such; they are re-sorted here by what stops them next.
             bool wasOffGrid = !FitsGrid(chain, grid);
-            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.Nodes, geometry.NodeGroups, shape.Arrangement.Spacing))
+            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroups, shape.Arrangement.Spacing))
             {
                 if (wasOffGrid) { diag.OffGrid--; diag.Spacing++; }
                 continue;
@@ -452,6 +452,7 @@ public sealed partial class GlyphGenerator
             // A reflection turns a curve's bulge to the other side of its edge; a copy that does not mirror curves is replanned.
             if (!shape.CopyOf!.MirrorCurves) moved = moved.IsCircle ? moved : moved.WithBend(null);
             else if (reflects) moved = moved.MirroredBend();
+            if (reflects) moved = moved.MirroredArc();
             chain.Edges.Add(moved);
         }
         return chain;

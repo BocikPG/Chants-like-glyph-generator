@@ -23,7 +23,7 @@ public static class SubSymbolSpacingChecker
         SpacingConfig config)
     {
         if (!config.Enabled) return true;
-        return SatisfiesSpacing(candidateChains.SelectMany(c => c.Nodes).ToList(), existingGroups, config);
+        return SatisfiesSpacing(candidateChains.SelectMany(c => c.AllNodes()).ToList(), existingGroups, config);
     }
 
     public static bool SatisfiesSpacing(

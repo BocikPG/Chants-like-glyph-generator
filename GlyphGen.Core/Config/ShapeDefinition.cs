@@ -45,6 +45,11 @@ public sealed class ShapeDefinition
     internal bool AppliesTo(string glyphName) =>
         (OnlyForGlyphs is null || OnlyForGlyphs.Contains(glyphName)) && !ExcludeGlyphs.Contains(glyphName);
 
+    /// <summary>false: the shape is generated and placed like any other - it blocks other shapes, counts for crossing and spacing, and
+    /// can be copied, derived and combined - but it is left out of the rendered glyph (and out of its framing). Use it as an invisible
+    /// blockade or spacer. Shown only in the extra debug images, in their own colour, when render.debugShowUndrawn is on. Default true.</summary>
+    public bool IsDrawn { get; set; } = true;
+
     /// <summary>Chain rules - Generative shapes only.</summary>
     public ChainRules Chain { get; set; } = new();
 
@@ -68,7 +73,7 @@ public sealed class ShapeDefinition
 
     /// <summary>Rolls the chance on a stream of its own, so a shape with the default 100 draws no random
     /// numbers and every other sequence stays as it was.</summary>
-    internal bool IsDrawn(GlyphGen.Core.Rng.DeterministicRandom glyphRng) =>
+    internal bool PassesChance(GlyphGen.Core.Rng.DeterministicRandom glyphRng) =>
         Chance >= 100.0 || glyphRng.Derive($"chance-{Id}").NextBool(Chance / 100.0);
 
     internal string StreamLabel(int instanceIndex) =>

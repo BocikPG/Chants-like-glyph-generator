@@ -22,8 +22,11 @@ public enum JoinStyle { Miter, Bevel, Round, Overlap, Level }
 /// level of the other. Does nothing on a stroke that already ends square to that axis.</summary>
 public enum CapStyle { Butt, Square, Round, Level }
 /// <summary>The line a Level cap or join is cut along. Auto = across the stroke's dominant direction (a cap) or the
-/// join's outward direction (a join), so horizontal and vertical strokes are left alone.</summary>
-public enum LevelAxis { Auto, Horizontal, Vertical }
+/// join's outward direction (a join), so horizontal and vertical strokes are left alone.
+/// Both: cut along the row AND the column, so a diagonal end becomes a point (like a ">") with one horizontal and one vertical face.</summary>
+public enum LevelAxis { Auto, Horizontal, Vertical, Both }
+/// <summary>What a Level cap does about the level of its end. Keep = leave it. ExtendToNeighbours = every Level end grows until its face lies half a stroke width past its node's row (or column), where a stroke along that line would end, whether or not one is there.</summary>
+public enum LevelFlat { Keep, ExtendToNeighbours }
 public enum WidthProfile { Linear, Smooth, Sharp }
 public enum FlareAppliesTo { ChainEnds, EveryEdge, ChainEndsAndCorners }
 public enum TerminalStyle { Flat, Round, Ball }
@@ -44,6 +47,10 @@ public sealed class RectangularTypefaceConfig
     /// baseline), Vertical = along its column, Auto = across the stroke's dominant direction, so a stroke steeper than 45
     /// degrees is cut horizontally and a flatter one vertically. Straight horizontal and vertical strokes are never changed.</summary>
     public LevelAxis CapLevel { get; set; } = LevelAxis.Auto;
+
+    /// <summary>With cap Level: what happens to an end that is already flat on the axis. ExtendToNeighbours grows every end to
+    /// half a stroke width past its node's row (or column), so verticals, horizontals and diagonals all stop on one line.</summary>
+    public LevelFlat CapLevelFlat { get; set; } = LevelFlat.Keep;
 
 }
 

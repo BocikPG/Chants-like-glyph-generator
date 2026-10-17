@@ -254,6 +254,18 @@ public static class ConfigSchemaGenerator
                 };
             }
 
+            if (type == typeof(OriginChoice))
+            {
+                var point = SchemaFor(typeof(GridPoint), false, null);
+                return new JsonObject
+                {
+                    ["description"] = "One origin, or an array of origins from which one is picked at random.",
+                    ["oneOf"] = new JsonArray(
+                        point.DeepClone(),
+                        new JsonObject { ["type"] = "array", ["items"] = point.DeepClone(), ["minItems"] = 1 }),
+                };
+            }
+
             if (type == typeof(GridPoint))
             {
                 return new JsonObject

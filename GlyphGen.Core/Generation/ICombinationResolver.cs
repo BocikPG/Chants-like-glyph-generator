@@ -18,6 +18,12 @@ namespace GlyphGen.Core.Generation;
 /// recipe that also references the regenerated name is rebuilt too, via the same
 /// regenerateComponent callback (which handles composite names fine, recursively).
 ///
+/// A Fixed placement rule with ifBlocked Translate keeps a component's position in the composite equal to its position in
+/// its own glyph: when the fixed position is blocked, the component is moved to a free position AND the original glyph is
+/// moved with it (generated is updated), and every other already-built composite using that glyph is rebuilt through
+/// rebuildComposite (a single attempt, no regeneration, no moving of originals - isRebuild). If any of them cannot be
+/// rebuilt, the next position is tried; if none works, the attempt fails and the usual regeneration follows.
+///
 /// regenerateComponent: (componentName, attemptIndex) -> a freshly generated Glyph for that
 /// name. The caller (glyph-generation layer) is responsible for both the actual regeneration
 /// logic and for guarding against circular dependencies introduced by this cascading rebuild
@@ -45,5 +51,7 @@ public interface ICombinationResolver
         CombinationArrangementRules arrangement,
         int variation = 0,
         ulong languageSeed = 0,
-        Action<string>? explainFailure = null);
+        Action<string>? explainFailure = null,
+        Func<string, Glyph?>? rebuildComposite = null,
+        bool isRebuild = false);
 }

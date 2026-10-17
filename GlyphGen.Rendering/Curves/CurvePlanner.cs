@@ -78,6 +78,26 @@ public static class CurvePlanner
         }
 
         planned.Kind = PlannedChainKind.Circle;
+
+        if (edge.IsArc)
+        {
+            // Part of the circle: open, in pieces of at most a quarter turn each.
+            planned.Closed = false;
+            var (acx, acy, ar) = edge.CircleGeometry;
+            double first = edge.ArcStartDegrees * Math.PI / 180.0, sweep = edge.Arc!.Value.Sweep * Math.PI / 180.0;
+            int pieces = Math.Max(1, (int)Math.Ceiling(sweep / (Math.PI / 2) - 1e-9));
+            double piece = sweep / pieces, handle = 4.0 / 3.0 * Math.Tan(piece / 4) * ar;
+            Vec2 At(double angle) => new(acx + ar * Math.Cos(angle), acy + ar * Math.Sin(angle));
+            Vec2 Along(double angle) => new(-Math.Sin(angle), Math.Cos(angle));
+            for (int i = 0; i < pieces; i++)
+            {
+                double t0 = first + i * piece, t1 = t0 + piece;
+                var q0 = At(t0); var q3 = At(t1);
+                planned.Edges.Add(new PlannedEdge { P0 = q0, P3 = q3, IsLine = false, C1 = q0 + Along(t0) * handle, C2 = q3 - Along(t1) * handle });
+            }
+            return planned;
+        }
+
         planned.Closed = true;
 
         var centre = new Vec2((a.X + b.X) / 2, (a.Y + b.Y) / 2);

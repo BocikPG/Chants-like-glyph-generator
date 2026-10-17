@@ -211,7 +211,7 @@ internal static class ConfigStructureChecker
     /// their own JSON converters (which validate their own shape).</summary>
     private static bool IsLeaf(Type type) =>
         type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)
-        || type == typeof(GlyphDefinition) || type == typeof(GridPoint) || type == typeof(JsonElement);
+        || type == typeof(GlyphDefinition) || type == typeof(GridPoint) || type == typeof(OriginChoice) || type == typeof(JsonElement);
 
     private static bool TryGetMapValueType(Type type, out Type valueType)
     {

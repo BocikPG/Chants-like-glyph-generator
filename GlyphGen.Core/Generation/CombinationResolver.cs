@@ -48,7 +48,9 @@ public sealed class CombinationResolver : ICombinationResolver
         CombinationArrangementRules arrangement,
         int variation = 0,
         ulong languageSeed = 0,
-        Action<string>? explainFailure = null)
+        Action<string>? explainFailure = null,
+        Func<string, Glyph?>? rebuildComposite = null,
+        bool isRebuild = false)
     {
         var report = new Dictionary<string, ComponentTally>();
         var working = new Dictionary<string, Glyph>();
@@ -67,22 +69,27 @@ public sealed class CombinationResolver : ICombinationResolver
         // stream, so nothing else's randomness moves) and used by every attempt. A glyph listed twice in a
         // recipe gets the same sides both times.
         var sides = new Dictionary<string, (List<GlyphSide> Sides, double Weight)>();
-        foreach (var rule in arrangement.Placements)
+        foreach (var componentName in componentNames.Distinct())
         {
-            if (rule.Mode == ComponentPlacementMode.Fixed || !componentNames.Contains(rule.Glyph)) continue;
+            var rule = arrangement.RuleFor(componentName);
+            if (rule is null || rule.Mode == ComponentPlacementMode.Fixed) continue;
             bool random = rule.Mode == ComponentPlacementMode.SetRandom;
             // SetRandom: by default one draw per language and glyph (the same side in every composite, and
             // not moved by quality retries, which reseed the composite); Scope Composite draws per composite.
             var sideRng = random && languageSeed != 0 && (rule.Scope ?? SetRandomScope.Language) == SetRandomScope.Language
-                ? new DeterministicRandom(SplitMix64.DeriveSeed(languageSeed, $"setrandom-side-{rule.Glyph}"))
-                : rng.Derive($"side-{rule.Glyph}");
+                ? new DeterministicRandom(SplitMix64.DeriveSeed(languageSeed, $"setrandom-side-{componentName}"))
+                : rng.Derive($"side-{componentName}");
             var chosen = SideScoring.Choose(random, rule.Sides, rule.Pick, sideRng);
-            if (chosen.Count > 0) sides[rule.Glyph] = (chosen, rule.Weight);
+            if (chosen.Count > 0) sides[componentName] = (chosen, rule.Weight);
         }
 
-        for (int attempt = 0; attempt < config.MaxRetriesPerRecipe; attempt++)
+        for (int attempt = 0; attempt < (isRebuild ? 1 : config.MaxRetriesPerRecipe); attempt++)
         {
             var attemptRng = rng.Derive($"combine-attempt-{attempt}");
+
+            // Whatever happened since the last attempt (a component redrawn here, or deeper down while another recipe was being
+            // rebuilt) is already in the shared registry: always build from the current originals, never from an older copy.
+            foreach (var componentName in componentNames) working[componentName] = generated[componentName];
 
             // Components don't cross each other unless the arrangement says so - overlay
             // composition is deliberate controlled stacking, not free intersection. (A crossing
@@ -96,7 +103,7 @@ public sealed class CombinationResolver : ICombinationResolver
             // the finished composite lists its components in recipe order again.
             int Priority(int i)
             {
-                var rule = arrangement.Placements.FirstOrDefault(r => r.Glyph == componentNames[i]);
+                var rule = arrangement.RuleFor(componentNames[i]);
                 if (rule is { Mode: ComponentPlacementMode.Fixed }) return 0;
                 return sides.ContainsKey(componentNames[i]) ? 1 : 2;
             }
@@ -108,6 +115,12 @@ public sealed class CombinationResolver : ICombinationResolver
                 geometry.CurrentSides = pull.Sides;
                 if (!report.TryGetValue(name, out var tally)) report[name] = tally = new ComponentTally();
                 var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, arrangement, pull.Sides, pull.Weight, variation, tally);
+                if (placed is null && !isRebuild && rebuildComposite is not null
+                    && arrangement.RuleFor(name) is { Mode: ComponentPlacementMode.Fixed, IfBlocked: FixedBlockedAction.Translate } moveRule)
+                {
+                    placed = TryMoveOriginal(name, moveRule, working, generated, compositeName, config, grid, attemptRng, geometry, arrangement, variation, tally, rebuildComposite);
+                }
+
                 if (placed is null)
                 {
                     tally.Failures++;
@@ -131,6 +144,8 @@ public sealed class CombinationResolver : ICombinationResolver
                 composite.Components.AddRange(placedComponents);
                 return composite;
             }
+
+            if (isRebuild) return null; // a rebuild is one attempt: nothing is regenerated for it
 
             // Escalate: regenerate the least-used dependency first, cycling through the
             // recipe's remaining components as attempts continue. The regenerated glyph
@@ -161,6 +176,80 @@ public sealed class CombinationResolver : ICombinationResolver
         return null;
     }
 
+    /// <summary>
+    /// The component's fixed position is blocked. Slides it to another free position - and moves the ORIGINAL glyph the
+    /// same way, so the component still sits exactly where its own glyph does - provided every other finished composite
+    /// that uses the glyph can be rebuilt with it. A position where one of them fails is given up and the next is tried.
+    /// Null when no position works (the caller then regenerates as usual).
+    /// </summary>
+    private static PlacedComponent? TryMoveOriginal(
+        string name,
+        ComponentPlacementRule rule,
+        Dictionary<string, Glyph> working,
+        Dictionary<string, Glyph> generated,
+        string compositeName,
+        CombinationConfig config,
+        LatticeGrid grid,
+        DeterministicRandom rng,
+        GeometryContext geometry,
+        CombinationArrangementRules arrangement,
+        int variation,
+        ComponentTally tally,
+        Func<string, Glyph?> rebuildComposite)
+    {
+        var original = working[name];
+        if (original.IsComposite) return null; // only a drawn glyph can be moved as a whole
+
+        var offset = rule.Offset ?? new GridPoint(0, 0);
+        var chains = GlyphGeometryUtils.GetAllChains(original).ToList();
+        var nodes = chains.SelectMany(c => c.Nodes).ToList();
+        var others = config.Recipes.Where(r => r.Key != compositeName && r.Value.Components.Contains(name) && generated.ContainsKey(r.Key))
+            .Select(r => r.Key).ToList();
+
+        foreach (var translation in EnumerateShuffledTranslations(nodes, grid, rng.Derive($"move-{name}"), preferIdentity: variation == 0))
+        {
+            if (translation.X == offset.X && translation.Y == offset.Y) continue;
+
+            var placed = TryBuildPlacement(chains, 1, 1, 0, translation, name, grid, geometry, arrangement, tally);
+            if (placed is null) continue;
+
+            // The original moves by the difference, so that placed again at the offset it lands exactly here.
+            var shift = new GridPoint(translation.X - offset.X, translation.Y - offset.Y);
+            var moved = TranslateGlyph(original, shift);
+            if (!AllNodesInBounds(GlyphGeometryUtils.GetAllChains(moved).ToList(), grid)) continue;
+
+            var before = generated[name];
+            generated[name] = moved;
+            var rebuilt = new Dictionary<string, Glyph>();
+            bool ok = true;
+            foreach (var other in others)
+            {
+                Glyph? result;
+                try { result = rebuildComposite(other); }
+                catch (GlyphGenerationException) { result = null; }
+                if (result is null) { ok = false; break; }
+                rebuilt[other] = result;
+            }
+
+            if (!ok) { generated[name] = before; continue; }
+
+            foreach (var (other, glyph) in rebuilt) generated[other] = glyph;
+            working[name] = moved;
+            placed.Translation = offset;
+            return placed;
+        }
+
+        return null;
+    }
+
+    /// <summary>A copy of a drawn glyph with everything moved by shift.</summary>
+    private static Glyph TranslateGlyph(Glyph source, GridPoint shift)
+    {
+        var moved = new Glyph { Name = source.Name, LanguageName = source.LanguageName, GridWidth = source.GridWidth, GridHeight = source.GridHeight, Derived = source.Derived };
+        moved.Chains.AddRange(TransformChains(source.Chains, 1, 1, 0, shift));
+        return moved;
+    }
+
     private static PlacedComponent? TryPlaceComponent(
         Glyph source,
         string sourceName,
@@ -178,7 +267,7 @@ public sealed class CombinationResolver : ICombinationResolver
 
         // A placement rule for this component: Fixed has exactly one candidate (the component moved by its
         // offset, nothing else); Prefer ranks the legal placements by their nearness to the chosen side(s).
-        var rule = arrangement.Placements.FirstOrDefault(r => r.Glyph == sourceName);
+        var rule = arrangement.RuleFor(sourceName);
         if (rule is { Mode: ComponentPlacementMode.Fixed })
         {
             return TryBuildPlacement(
@@ -585,7 +674,7 @@ public sealed class CombinationResolver : ICombinationResolver
 
     private static bool FitsGeometry(List<SubSymbolChain> chains, GeometryContext geometry)
     {
-        var ownNodes = chains.SelectMany(c => c.Nodes).ToList();
+        var ownNodes = chains.SelectMany(c => c.AllNodes()).ToList();
         foreach (var chain in chains)
             foreach (var edge in chain.Edges)
                 if (geometry.IsBlocked(edge, ownNodes)) return false;
@@ -614,7 +703,7 @@ internal sealed class ComponentTally
             if (t.Sides > 0) reasons.Add($"{t.Sides} broke a side rule");
             if (t.Spacing > 0) reasons.Add($"{t.Spacing} broke arrangement.spacing");
 
-            bool fixedRule = arrangement.Placements.Any(r => r.Glyph == name && r.Mode == ComponentPlacementMode.Fixed);
+            bool fixedRule = arrangement.RuleFor(name) is { Mode: ComponentPlacementMode.Fixed, IfBlocked: FixedBlockedAction.Regenerate };
             lines.Add($"'{name}' could not be placed in {t.Failures} of {attempts} attempt(s)" +
                 (fixedRule ? " (it has a Fixed placement: one position per attempt)" : "") +
                 $"; of {t.Tried} placement(s) tried, " + (reasons.Count == 0 ? "none were available" : string.Join(", ", reasons)) + ".");

@@ -26,6 +26,11 @@ public enum ConnectionDirection
     /// minLength may be 0: length 0 is a dot on the current node (no circle, the chain continues from
     /// the same node). Angle limits do not apply.</summary>
     Circle,
+
+    /// <summary>Draws part of a circle: the circle is set like a Circle's (diameter from the current node to the node 'length'
+    /// steps away, minLength at least 1) but only an arc of it is drawn, picked at random from the 'arc' settings. The chain
+    /// carries on from the far node, which the drawn arc may or may not reach. Angle limits do not apply.</summary>
+    Arc,
 }
 
 /// <summary>Ready-made turn ranges for a rule's angle limit (instead of minAngle/maxAngle).</summary>
@@ -90,6 +95,12 @@ public sealed class ConnectionRuleConfig
     /// and the closing edge must be free of crossings, otherwise the rule just makes its normal move.
     /// Replaces chain.closedLoopWeight.</summary>
     public double BackToStartChance { get; set; } = 0;
+
+    /// <summary>direction Arc only: which arcs may be drawn.</summary>
+    public ArcConfig Arc { get; set; } = new();
+
+    /// <summary>direction Circle or Arc: extra nodes along the outline.</summary>
+    public OutlineNodesConfig OutlineNodes { get; set; } = new();
 
     /// <summary>How the edges this rule makes are bent when drawn.</summary>
     public EdgeCurveConfig Curve { get; set; } = new();

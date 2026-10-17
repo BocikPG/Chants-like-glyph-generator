@@ -141,20 +141,23 @@ foreach (var language in config.Languages)
     bool wantColors = language.Render.DebugColorComponents;
     bool wantParts = language.Render.DebugColorParts;
     bool wantShapes = language.Render.DebugColorShapes;
+    bool wantUndrawn = language.Render.DebugShowUndrawn;
 
     language.Render.DebugShowNodes = false;
     language.Render.DebugColorComponents = false;
     language.Render.DebugColorParts = false;
     language.Render.DebugColorShapes = false;
+    language.Render.DebugShowUndrawn = false;
     var rendered = renderer.Render(language, glyphs, config.RootSeed);
 
     IReadOnlyList<RenderedGlyph>? debugRendered = null;
-    if (wantNodes || wantColors || wantParts || wantShapes)
+    if (wantNodes || wantColors || wantParts || wantShapes || wantUndrawn)
     {
         language.Render.DebugShowNodes = wantNodes;
         language.Render.DebugColorComponents = wantColors;
         language.Render.DebugColorParts = wantParts;
         language.Render.DebugColorShapes = wantShapes;
+        language.Render.DebugShowUndrawn = wantUndrawn;
         debugRendered = renderer.Render(language, glyphs, config.RootSeed);
     }
 
@@ -162,6 +165,7 @@ foreach (var language in config.Languages)
     language.Render.DebugColorComponents = wantColors;
     language.Render.DebugColorParts = wantParts;
     language.Render.DebugColorShapes = wantShapes;
+    language.Render.DebugShowUndrawn = wantUndrawn;
 
     foreach (var r in rendered)
     {

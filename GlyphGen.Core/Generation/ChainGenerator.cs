@@ -121,6 +121,8 @@ public sealed class ChainGenerator : IChainGenerator
 
             if (rule.Direction == ConnectionDirection.Circle)
                 CollectCircles(grid, request, chain, current, existingGeometry, rule, moves, weights);
+            else if (rule.Direction == ConnectionDirection.Arc)
+                CollectArcs(grid, request, chain, current, existingGeometry, rule, moves, weights);
             else
                 CollectLines(grid, request, chain, current, existingGeometry, rule, back, moves, weights);
 
@@ -179,7 +181,7 @@ public sealed class ChainGenerator : IChainGenerator
                 if (!grid.Contains(target)) continue;
                 if (length > 0 && !request.AllowNodeRevisit && chain.Nodes.Contains(target)) continue;
 
-                var edge = new GridEdge(current, target, GridEdgeKind.Circle, rule.Curve);
+                var edge = new GridEdge(current, target, GridEdgeKind.Circle, rule.Curve, null, null, rule.OutlineNodes);
                 var (minX, minY, maxX, maxY) = edge.Extent();
                 if (!grid.ContainsBox(minX, minY, maxX, maxY)) continue;
                 if (length > 0 && !RespectsSelfSpacing(target, current, chain, request.SelfSpacingRules)) continue;
@@ -189,6 +191,47 @@ public sealed class ChainGenerator : IChainGenerator
                 weights.Add(rule.Weight);
             }
         }
+    }
+
+    /// <summary>Part-circle moves: the circle is set like a Circle's (diameter to the node 'length' away), and every arc the rule's
+    /// angle preset and sweep range allow is a candidate. The rule's weight is shared by the arcs of one circle, so a rule with
+    /// many possible arcs does not outweigh the others.</summary>
+    private static void CollectArcs(
+        LatticeGrid grid, ChainGenerationRequest request, SubSymbolChain chain, GridPoint current,
+        IIntersectionContext existingGeometry, ConnectionRuleConfig rule,
+        List<Move> moves, List<double> weights)
+    {
+        var set = rule.Arc.Angles;
+        int step = AngleSets.Step(set);
+        var starts = AngleSets.Angles(set);
+        var sweeps = new List<int>();
+        for (int sweep = rule.Arc.MinSweep; sweep <= rule.Arc.MaxSweep; sweep += step)
+            if (sweep % step == 0 && sweep > 0 && sweep < 360) sweeps.Add(sweep);
+        if (sweeps.Count == 0) return;
+        double share = rule.Weight / (starts.Length * sweeps.Count);
+
+        for (int length = Math.Max(1, rule.MinLength); length <= rule.MaxLength; length++)
+            foreach (var (dx, dy) in BothDirections)
+            {
+                var target = current.Translate(dx * length, dy * length);
+                if (!grid.Contains(target)) continue;
+                if (!request.AllowNodeRevisit && chain.Nodes.Contains(target)) continue;
+                if (!RespectsSelfSpacing(target, current, chain, request.SelfSpacingRules)) continue;
+
+                double diameterAngle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+                foreach (int start in starts)
+                    foreach (int sweep in sweeps)
+                    {
+                        int relative = (((int)Math.Round(start - diameterAngle)) % 360 + 360) % 360;
+                        var edge = new GridEdge(current, target, GridEdgeKind.Circle, rule.Curve, null, new ArcSpan(relative, sweep), rule.OutlineNodes);
+                        var (minX, minY, maxX, maxY) = edge.Extent();
+                        if (!grid.ContainsBox(minX, minY, maxX, maxY)) continue;
+                        if (!IsValidEdge(edge, chain, request, existingGeometry)) continue;
+
+                        moves.Add(new Move(edge, rule));
+                        weights.Add(share);
+                    }
+            }
     }
 
     /// <summary>The (dx, dy, length) of every straight move a direction allows, lengths min..max.</summary>
@@ -304,7 +347,7 @@ public sealed class ChainGenerator : IChainGenerator
     {
         // A rule that may bend its edges is not checked here as a straight line: the bend is only planned once the whole
         // chain exists, so the placement checks the finished curves instead (faster, and it judges the real stroke).
-        bool mayCurve = request.AllEdgesCurved || candidateEdge.Curve is { ChanceToBeCurved: > 0 };
+        bool mayCurve = !candidateEdge.IsCircle && (request.AllEdgesCurved || candidateEdge.Curve is { ChanceToBeCurved: > 0 });
 
         foreach (var existing in chain.Edges)
         {
@@ -314,7 +357,7 @@ public sealed class ChainGenerator : IChainGenerator
                 continue; // exact retrace explicitly permitted; skip the geometric check below
             }
 
-            if (!mayCurve && candidateEdge.Intersects(existing)) return false;
+            if (!mayCurve && EdgePaths.Crosses(candidateEdge, existing)) return false;
         }
 
         if (mayCurve) return true;

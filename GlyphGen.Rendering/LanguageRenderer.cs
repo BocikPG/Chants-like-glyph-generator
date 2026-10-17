@@ -39,7 +39,7 @@ public sealed class LanguageRenderer
         SKColor.Parse("#F58231"), SKColor.Parse("#911EB4"), SKColor.Parse("#008080"),
     };
 
-    private sealed record GlyphPlan(Glyph Glyph, PlannedGlyph Planned, ulong Seed, double WidthScale, Bounds? GlyphBounds, double RotateDegrees);
+    private sealed record GlyphPlan(Glyph Glyph, PlannedGlyph Planned, ulong Seed, double WidthScale, Bounds? GlyphBounds, double RotateDegrees, PlannedGlyph? Undrawn = null);
 
     /// <summary>The angle a glyph is drawn at. A derived glyph that only scaled, mirrored, rotated or nudged its source
     /// takes the source's angle (followed back to the first glyph that is not such a derivation), so the pair stays aligned.</summary>
@@ -75,6 +75,7 @@ public sealed class LanguageRenderer
         // language, so a component reuses its source glyph's curves instead of re-rolling them.
         var curvePlanner = new GlyphCurvePlanner(glyphs, language.Curve, languageSeed);
         var plans = new List<GlyphPlan>();
+        var hiddenShapes = new HashSet<string>(language.Shapes.Where(s => !s.IsDrawn).Select(s => s.Id), StringComparer.Ordinal);
         Bounds? languageBounds = null;
 
         var byName = glyphs.GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First());
@@ -82,10 +83,21 @@ public sealed class LanguageRenderer
         {
             ulong glyphSeed = SeedTree.ForGlyph(languageSeed, glyph.Name);
             var planned = curvePlanner.Plan(glyph);
+            PlannedGlyph? undrawn = null;
+            if (hiddenShapes.Count > 0)
+            {
+                (planned, undrawn) = planned.Split(tag => tag is not null && hiddenShapes.Contains(tag.Split('#')[0]));
+                if (undrawn.Layers.Count == 0) undrawn = null;
+            }
+
             double rotate = RotationFor(glyph, byName, render, languageSeed);
 
             if (rotate % 360.0 != 0.0)
-                planned = planned.Rotated(rotate, new Vec2((glyph.GridWidth - 1) / 2.0, (glyph.GridHeight - 1) / 2.0));
+            {
+                var middle = new Vec2((glyph.GridWidth - 1) / 2.0, (glyph.GridHeight - 1) / 2.0);
+                planned = planned.Rotated(rotate, middle);
+                undrawn = undrawn?.Rotated(rotate, middle);
+            }
 
             var widthRng = new DeterministicRandom(SplitMix64.DeriveSeed(glyphSeed, "width"));
             double widthScale = 1.0 + jitter * (widthRng.NextDouble() * 2 - 1);
@@ -94,7 +106,7 @@ public sealed class LanguageRenderer
             if (bounds.HasValue)
                 languageBounds = languageBounds.HasValue ? Bounds.Union(languageBounds.Value, bounds.Value) : bounds.Value;
 
-            plans.Add(new GlyphPlan(glyph, planned, glyphSeed, widthScale, bounds, rotate));
+            plans.Add(new GlyphPlan(glyph, planned, glyphSeed, widthScale, bounds, rotate, undrawn));
         }
 
         double pad = margin + typeface.MaxInkExtentPx * (1.0 + jitter) + 1.0;
@@ -134,12 +146,14 @@ public sealed class LanguageRenderer
         bool byShape = render.DebugColorShapes;
         int chainIndex = 0;
 
+        // Every stroke of the glyph, in every layer, records its nodes here; joins are built per node afterwards, so a bend, a
+        // meeting of strokes and a crossing all go through the same code - and a node where two components of a composite meet
+        // is a junction like any other (it is joined, and its caps are trimmed when junction.trimCaps is on).
+        var joinSink = new JoinSink();
+
         foreach (var layer in plan.Planned.Layers)
         {
             var polygons = new List<Vec2[]>();
-            // Every stroke of this layer records its nodes here; joins are built per node afterwards,
-            // so a bend, a meeting of strokes and a crossing all go through the same code.
-            var joinSink = new JoinSink();
             var colors = new Dictionary<Vec2[], SKColor>(ReferenceEqualityComparer.Instance);
 
             foreach (var chain in layer.Chains)
@@ -172,18 +186,24 @@ public sealed class LanguageRenderer
                 if (shapeColor is { } strokeColor) for (int k = firstPolygon; k < polygons.Count; k++) colors[polygons[k]] = strokeColor;
             }
 
-            JoinBuilder.BuildNodes(joinSink, render.Joins, polygons);
-
             layerPolygons.Add(polygons);
             layerSinks.Add(joinSink);
             layerColors.Add(colors);
         }
 
+        // The ink the joins and caps add, drawn as one extra layer after the strokes' own.
+        int strokeLayers = layerPolygons.Count;
+        var joinPolygons = new List<Vec2[]>();
+        JoinBuilder.BuildNodes(joinSink, render.Joins, joinPolygons);
+        layerPolygons.Add(joinPolygons);
+        layerSinks.Add(joinSink);
+        layerColors.Add(new Dictionary<Vec2[], SKColor>(ReferenceEqualityComparer.Instance));
+
         using var bitmap = new SKBitmap(size, size, SKColorType.Rgba8888, SKAlphaType.Premul);
         using var canvas = new SKCanvas(bitmap);
         canvas.Clear(background);
 
-        bool separateLayers = render.DebugColorComponents && layerPolygons.Count > 1 && !byShape;
+        bool separateLayers = render.DebugColorComponents && strokeLayers > 1 && !byShape;
         if (byShape)
         {
             for (int i = 0; i < layerPolygons.Count; i++)
@@ -194,20 +214,50 @@ public sealed class LanguageRenderer
             // Debug only: strokes in their colour, then the ink that joins and caps add, in their own colours.
             for (int i = 0; i < layerPolygons.Count; i++)
             {
-                var bodyColor = separateLayers ? DebugPalette[i % DebugPalette.Length] : foreground;
+                var bodyColor = separateLayers && i < strokeLayers ? DebugPalette[i % DebugPalette.Length] : foreground;
                 FillParts(canvas, layerPolygons[i], layerSinks[i].Kinds, bodyColor);
             }
         }
         else if (separateLayers)
         {
             for (int i = 0; i < layerPolygons.Count; i++)
-                FillPolygons(canvas, layerPolygons[i], DebugPalette[i % DebugPalette.Length]);
+                FillPolygons(canvas, layerPolygons[i], i < strokeLayers ? DebugPalette[i % DebugPalette.Length] : foreground);
         }
         else
         {
             var all = new List<Vec2[]>();
             foreach (var polygons in layerPolygons) all.AddRange(polygons);
             FillPolygons(canvas, all, foreground);
+        }
+
+        // Shapes that are generated but not drawn (isDrawn = false): only in the debug images, in one translucent colour.
+        if (render.DebugShowUndrawn && plan.Undrawn is { } undrawnGlyph)
+        {
+            var ghost = new List<Vec2[]>();
+            var ghostSink = new JoinSink();
+            int ghostId = 100000;
+            foreach (var layer in undrawnGlyph.Layers)
+                foreach (var chain in layer.Chains)
+                {
+                    if (chain.Kind == PlannedChainKind.Dot)
+                    {
+                        StrokeOutlineBuilder.AddDisc(transform.Apply(chain.Edges[0].P0), typeface.DotRadiusPx * plan.WidthScale, ghost);
+                        continue;
+                    }
+
+                    var path = StrokePathBuilder.Build(chain, transform.Apply, typeface.SampleSpacingPx);
+                    if (path.Points.Count < 2) continue;
+                    typeface.AppendOutline(path, new StrokeContext
+                    {
+                        WidthScale = plan.WidthScale,
+                        PathSeed = SplitMix64.DeriveSeed(plan.Seed, ghostId),
+                        JoinSink = ghostSink,
+                        StrokeId = ghostId++,
+                    }, ghost);
+                }
+
+            JoinBuilder.BuildNodes(ghostSink, render.Joins, ghost);
+            FillPolygons(canvas, ghost, new SKColor(255, 120, 0, 150));
         }
 
         if (render.DebugShowNodes)

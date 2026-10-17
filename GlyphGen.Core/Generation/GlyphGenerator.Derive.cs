@@ -428,7 +428,7 @@ public sealed partial class GlyphGenerator
         var moves = new List<(int Dx, int Dy, ConnectionRuleConfig Rule)>();
         foreach (var rule in ctx.Rules)
         {
-            if (rule.Direction == ConnectionDirection.Circle) continue;
+            if (rule.Direction == ConnectionDirection.Circle || rule.Direction == ConnectionDirection.Arc) continue;
             foreach (var (dx, dy, _) in ChainGenerator.LineVectors(rule.Direction, Math.Max(1, rule.MinLength), rule.MaxLength))
                 moves.Add((dx, dy, rule));
         }
@@ -538,7 +538,7 @@ public sealed partial class GlyphGenerator
         {
             var shape = language.Shapes.First(x => x.Id == id);
 
-            if (!shape.IsDrawn(rng))
+            if (!shape.PassesChance(rng))
             {
                 addedByShape[id] = new List<SubSymbolChain>();
                 continue;
@@ -613,7 +613,7 @@ public sealed partial class GlyphGenerator
             foreach (var e in chain.Edges)
                 {
                 var edge = e.Edge.WithPoints(f(e.Edge.From), f(e.Edge.To));
-                mapped.Edges.Add(new WorkEdge(reflects ? edge.MirroredBend() : edge, e.Origin));
+                mapped.Edges.Add(new WorkEdge(reflects ? edge.MirroredBend().MirroredArc() : edge, e.Origin));
             }
 
             chains.AddRange(SplitChain(mapped, e => !e.Edge.IsCircle && e.Edge.From.Equals(e.Edge.To)));

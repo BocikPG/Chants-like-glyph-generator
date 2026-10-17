@@ -54,8 +54,9 @@ public sealed class GeometryContext : IIntersectionContext
         {
             var other = _edgeCrossing[i];
             if (current.Mode == CrossingMode.Anywhere && other.Mode == CrossingMode.Anywhere) continue;
+            if ((current.Mode == CrossingMode.Strict || other.Mode == CrossingMode.Strict) && EdgePaths.Touches(edge, _edges[i])) return true;
             if (!EdgePaths.Crosses(edge, _edges[i])) continue;
-            if (current.Mode == CrossingMode.None || other.Mode == CrossingMode.None) return true;
+            if (current.Mode is CrossingMode.None or CrossingMode.Strict || other.Mode is CrossingMode.None or CrossingMode.Strict) return true;
 
             foreach (var point in EdgePaths.CrossingPoints(edge, _edges[i]))
             {
@@ -67,7 +68,7 @@ public sealed class GeometryContext : IIntersectionContext
     }
 
     /// <summary>How many edges of the chain are blocked (see <see cref="IsBlocked"/>).</summary>
-    public int CountBlocked(SubSymbolChain chain) => chain.Edges.Count(e => IsBlocked(e, chain.Nodes));
+    public int CountBlocked(SubSymbolChain chain) { var own = chain.AllNodes(); return chain.Edges.Count(e => IsBlocked(e, own)); }
 
     /// <summary>How many edges of the chain cross anything already placed, whatever the crossing settings say.</summary>
     public int CountCrossings(SubSymbolChain chain) =>
@@ -128,8 +129,9 @@ public sealed class GeometryContext : IIntersectionContext
         string? shapeId = ShapeIdOf(chain);
         _edges.AddRange(chain.Edges);
         for (int i = 0; i < chain.Edges.Count; i++) { _edgeShapes.Add(shapeId); _edgeCrossing.Add(crossing); }
-        foreach (var n in chain.Nodes) _nodes.Add((n, shapeId));
-        _nodeGroups.Add(new List<GridPoint>(chain.Nodes));
+        var all = chain.AllNodes();
+        foreach (var n in all) _nodes.Add((n, shapeId));
+        _nodeGroups.Add(all);
     }
 
     /// <summary>
@@ -145,8 +147,9 @@ public sealed class GeometryContext : IIntersectionContext
         {
             _edges.AddRange(chain.Edges);
             for (int i = 0; i < chain.Edges.Count; i++) { _edgeShapes.Add(null); _edgeCrossing.Add(crossing); }
-            foreach (var n in chain.Nodes) _nodes.Add((n, null));
-            group.AddRange(chain.Nodes);
+            var all = chain.AllNodes();
+            foreach (var n in all) _nodes.Add((n, null));
+            group.AddRange(all);
         }
         _nodeGroups.Add(group);
     }

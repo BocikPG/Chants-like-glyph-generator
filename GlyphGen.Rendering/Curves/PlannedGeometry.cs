@@ -73,6 +73,24 @@ public sealed class PlannedGlyph
         return result;
     }
 
+    /// <summary>Splits the glyph in the chains to draw and the chains for which hidden(shapeTag) is true (empty layers are dropped).
+    /// Builds new objects: the original, which may be cached and shared, is left alone.</summary>
+    public (PlannedGlyph Visible, PlannedGlyph Hidden) Split(Func<string?, bool> hidden)
+    {
+        var visible = new PlannedGlyph { Name = Name };
+        var gone = new PlannedGlyph { Name = Name };
+        foreach (var layer in Layers)
+        {
+            var keep = new PlannedLayer { Label = layer.Label };
+            var drop = new PlannedLayer { Label = layer.Label };
+            foreach (var chain in layer.Chains) (hidden(chain.ShapeTag) ? drop : keep).Chains.Add(chain);
+            if (keep.Chains.Count > 0) visible.Layers.Add(keep);
+            if (drop.Chains.Count > 0) gone.Layers.Add(drop);
+        }
+
+        return (visible, gone);
+    }
+
     /// <summary>Bounding box of the actual curves (sampled), not just the nodes.</summary>
     public bool TryGetBounds(out Bounds bounds)
     {

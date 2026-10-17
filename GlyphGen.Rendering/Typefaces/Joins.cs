@@ -45,7 +45,13 @@ public sealed class JoinSink
     /// <summary>What a stroke draws at a free tip (cap, ball, blob), held back until it is known whether
     /// the tip ends at a junction that wants it trimmed.</summary>
     public List<(Vec2 Point, List<Vec2[]> Polygons)> Tips { get; } = new();
+
+    /// <summary>Every Level-capped end (cut or already flat), so flat ends can be grown to their neighbours' level.</summary>
+    internal List<LevelTip> LevelTips { get; } = new();
 }
+
+/// <summary>A Level cap at a free tip: its axis (pointing the way the end faces) and the level of its face along it.</summary>
+internal readonly record struct LevelTip(Vec2 Point, Vec2 Outward, Vec2 Axis, double Level, bool Flat, bool Extend, WidthSample Width);
 
 public static class JoinResolver
 {
@@ -126,6 +132,44 @@ public static class JoinBuilder
             int before = output.Count;
             output.AddRange(polygons);
             sink.Tag(output, before, InkKind.Cap);
+        }
+
+        // Level ends can be levelled to a fixed line: every end grows until its face lies half a stroke width past its node's row
+        // (or column) - where the edge of a stroke running along that line would be, whether or not one is there.
+        var groups = new Dictionary<(long, long, long, long), List<LevelTip>>();
+        foreach (var tip in sink.LevelTips)
+        {
+            if (!tip.Extend) continue;
+            var key = (KeyOf(tip.Point).Item1, KeyOf(tip.Point).Item2, (long)Math.Round(tip.Outward.X * 1000), (long)Math.Round(tip.Outward.Y * 1000));
+            if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<LevelTip>();
+            list.Add(tip);
+        }
+
+        foreach (var group in groups.Values)
+        {
+            var first = group[0];
+            if (nodes.TryGetValue(KeyOf(first.Point), out var here) && here.Count >= 2 && joins.Junction.TrimCaps) continue;
+
+            Vec2 n = first.Outward.Perp;
+            Vec2 left = first.Point + n * first.Width.Left, right = first.Point - n * first.Width.Right;
+            double reach = (first.Width.Left + first.Width.Right) * 8;
+            Vec2[] face = { left, right, right + first.Outward * reach, left + first.Outward * reach };
+            bool grew = false;
+            foreach (var tip in group)
+            {
+                // Every end reaches half a stroke width past its node's line - exactly as far as a stroke running along that
+                // line does - whether or not such a stroke is there, so the level is the same everywhere.
+                double target = Math.Max(tip.Level, tip.Axis.Dot(tip.Point) + Math.Max(tip.Width.Left, tip.Width.Right));
+
+                if (target - tip.Level > 1e-6) grew = true;
+                face = StrokeOutlineBuilder.ClipBelow(face, tip.Axis, target);
+                if (face.Length < 3) break;
+            }
+
+            if (!grew || face.Length < 3) continue;
+            int mark = output.Count;
+            StrokeOutlineBuilder.Emit(output, face);
+            sink.Tag(output, mark, InkKind.Cap);
         }
     }
 
@@ -233,23 +277,30 @@ public static class JoinBuilder
                     double reach = outward.Length;
                     if ((m - p).Dot((pa - p) + (pb - p)) > 0 && reach > 1e-9)
                     {
-                        Vec2 axis = side.Axis switch
+                        var shape = new[] { p, pa, m, pb };
+                        bool cut = false;
+                        foreach (var candidate in side.Axis switch
                         {
-                            LevelAxis.Horizontal => new Vec2(0, 1),
-                            LevelAxis.Vertical => new Vec2(1, 0),
-                            _ => Math.Abs(outward.X) > Math.Abs(outward.Y) ? new Vec2(1, 0) : new Vec2(0, 1),
-                        };
-                        double along = axis.Dot(outward);
-                        if (Math.Abs(along) >= 0.3 * reach)
+                            LevelAxis.Horizontal => new[] { new Vec2(0, 1) },
+                            LevelAxis.Vertical => new[] { new Vec2(1, 0) },
+                            LevelAxis.Both => new[] { new Vec2(1, 0), new Vec2(0, 1) },
+                            _ => new[] { Math.Abs(outward.X) > Math.Abs(outward.Y) ? new Vec2(1, 0) : new Vec2(0, 1) },
+                        })
                         {
+                            Vec2 axis = candidate;
+                            double along = axis.Dot(outward);
+                            if (Math.Abs(along) < 0.3 * reach) continue;
                             if (along < 0) axis = new Vec2(-axis.X, -axis.Y);
                             double level = Math.Max(axis.Dot(pa), axis.Dot(pb));
-                            var clipped = StrokeOutlineBuilder.ClipBelow(new[] { p, pa, m, pb }, axis, level);
-                            if (clipped.Length >= 3)
-                            {
-                                StrokeOutlineBuilder.Emit(output, clipped);
-                                break;
-                            }
+                            shape = StrokeOutlineBuilder.ClipBelow(shape, axis, level);
+                            cut = true;
+                            if (shape.Length < 3) break;
+                        }
+
+                        if (cut && shape.Length >= 3)
+                        {
+                            StrokeOutlineBuilder.Emit(output, shape);
+                            break;
                         }
                     }
                 }

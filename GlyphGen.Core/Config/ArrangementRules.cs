@@ -30,7 +30,8 @@ public class ArrangementRules
 
 public enum CrossingMode
 {
-    /// <summary>No crossing: edges may only meet at shared nodes.</summary>
+    /// <summary>No crossing: edges may only meet at shared nodes (a junction on a node is fine; a stroke passing through a
+    /// dot or through another stroke's middle is not).</summary>
     None,
 
     /// <summary>A crossing is accepted only where it lies within nodeTolerance of a node (see CrossingConfig.NodesOfShapes).</summary>
@@ -38,6 +39,11 @@ public enum CrossingMode
 
     /// <summary>Edges may cross anywhere.</summary>
     Anywhere,
+
+    /// <summary>No contact at all: no crossing, and not even a shared node or an edge ending on another. Nothing of this shape
+    /// may touch any other shape (a pair is judged by the stricter of the two, so a Strict shape also keeps later shapes off it).
+    /// Own consecutive edges still meet at their nodes. Cannot be combined with placement.startOnExistingNode.</summary>
+    Strict,
 }
 
 /// <summary>Crossing rules of one shape (arrangement.crossing). Curves are taken into account.</summary>

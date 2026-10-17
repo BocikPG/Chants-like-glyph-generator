@@ -13,11 +13,13 @@ public sealed class RectangularTypeface : ITypeface
     private readonly double _halfWidth;
     private readonly CapStyle _cap;
     private readonly LevelAxis _capLevel;
+    private readonly LevelFlat _capFlat;
     private readonly JoinsConfig _joins;
 
-    public RectangularTypeface(double widthPx, CapStyle cap, JoinsConfig joins, LevelAxis capLevel = LevelAxis.Auto)
+    public RectangularTypeface(double widthPx, CapStyle cap, JoinsConfig joins, LevelAxis capLevel = LevelAxis.Auto, LevelFlat capFlat = LevelFlat.Keep)
     {
         _capLevel = capLevel;
+        _capFlat = capFlat;
         _halfWidth = Math.Max(0, widthPx) / 2;
         _cap = cap;
         _joins = joins;
@@ -40,6 +42,6 @@ public sealed class RectangularTypeface : ITypeface
         Array.Fill(start, w);
         Array.Fill(end, w);
 
-        StrokeOutlineBuilder.Build(path, start, end, _joins, _cap, polygons, context.JoinSink, context.StrokeId, _capLevel);
+        StrokeOutlineBuilder.Build(path, start, end, _joins, _cap, polygons, context.JoinSink, context.StrokeId, _capLevel, _capFlat);
     }
 }

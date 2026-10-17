@@ -58,8 +58,21 @@ public sealed class PlacementConfig
     public PlacementMode Mode { get; set; } = PlacementMode.RandomValid;
 
     /// <summary>Required when Mode == Fixed, and an error with any other mode (it would be
-    /// ignored). Written as { "x": 7, "y": 9 } or [7, 9].</summary>
-    public GridPoint? FixedOrigin { get; set; }
+    /// ignored). Written as { "x": 7, "y": 9 } or [7, 9] - or as an array of such points, in which case one is picked at random for
+    /// each glyph (a failed try moves on to the next of a shuffled order, so every origin is tried before giving up).</summary>
+    public OriginChoice? FixedOrigin { get; set; }
+
+    /// <summary>Fixed with several fixedOrigin points: an origin an earlier instance of this shape (same glyph) was placed at is
+    /// not used again, so a shape with count N and N origins fills each of them once. When every origin is used the instance cannot
+    /// be placed. Default false.</summary>
+    public bool DiscardUsedOrigins { get; set; } = false;
+
+    internal PlacementConfig WithOrigins(IEnumerable<GridPoint> origins)
+    {
+        var copy = (PlacementConfig)MemberwiseClone();
+        copy.FixedOrigin = new OriginChoice(origins.ToArray());
+        return copy;
+    }
 
     /// <summary>A box smaller than the grid that this shape must stay inside, treated as the edge of the grid while the
     /// shape is generated and placed (nodes, and circles' whole outlines). Inclusive node coordinates, e.g.

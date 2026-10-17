@@ -67,6 +67,10 @@ public sealed class RenderConfig
     /// differ in lightness, so they can be told apart. Joins between strokes keep the foreground colour. Takes the place of
     /// debugColorComponents where both are on.</summary>
     public bool DebugColorShapes { get; set; } = false;
+
+    /// <summary>Debug option (see DebugShowNodes): in the extra ".debug.png" images, also draw the shapes that have isDrawn = false,
+    /// in one translucent orange. They are never in the normal images.</summary>
+    public bool DebugShowUndrawn { get; set; } = false;
 }
 
 /// <summary>Settings for the contact sheet(s): one PNG laying a language's glyphs out in a grid.</summary>

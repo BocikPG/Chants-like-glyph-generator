@@ -360,7 +360,8 @@ internal static class ConfigValidator
             Enum(c, where + ".anglePreset", rule.AnglePreset);
 
             bool circle = rule.Direction == ConnectionDirection.Circle;
-            int lowest = circle ? 0 : 1;
+            bool arc = rule.Direction == ConnectionDirection.Arc;
+            int lowest = circle ? 0 : 1; // an Arc needs a circle to draw on: at least 1
             if (rule.MinLength < lowest)
                 c.Add(where, circle
                     ? $"minLength must be at least 0 (got {rule.MinLength}); 0 is a dot."
@@ -375,8 +376,27 @@ internal static class ConfigValidator
                 c.Add(where + ".anglePreset", "replaces minAngle/maxAngle - set one or the other, not both.");
             if (rule.Direction == ConnectionDirection.Angle && !rule.LimitsAngle)
                 c.Add(where, "direction Angle needs an anglePreset or a minAngle/maxAngle narrower than 0..180 (otherwise use Any).");
-            if (circle && (rule.LimitsAngle))
-                c.Add(where, "angle limits do not apply to a Circle rule.");
+            if ((circle || arc) && (rule.LimitsAngle))
+                c.Add(where, $"angle limits do not apply to a {rule.Direction} rule.");
+
+            if (arc)
+            {
+                Enum(c, where + ".arc.angles", rule.Arc.Angles);
+                int step = AngleSets.Step(rule.Arc.Angles);
+                if (rule.Arc.MinSweep < step || rule.Arc.MinSweep % step != 0)
+                    c.Add(where + ".arc.minSweep", $"must be a multiple of {step} (the step of the {rule.Arc.Angles} angles), at least {step} (got {rule.Arc.MinSweep}).");
+                if (rule.Arc.MaxSweep >= 360 || rule.Arc.MaxSweep % step != 0)
+                    c.Add(where + ".arc.maxSweep", $"must be a multiple of {step} below 360 (got {rule.Arc.MaxSweep}); use a Circle rule for a full circle.");
+                if (rule.Arc.MaxSweep < rule.Arc.MinSweep)
+                    c.Add(where + ".arc", $"maxSweep ({rule.Arc.MaxSweep}) is smaller than minSweep ({rule.Arc.MinSweep}).");
+            }
+
+            Enum(c, where + ".outlineNodes.mode", rule.OutlineNodes.Mode);
+            Enum(c, where + ".outlineNodes.angles", rule.OutlineNodes.Angles);
+            Enum(c, where + ".outlineNodes.snap", rule.OutlineNodes.Snap);
+            Number(c, where + ".outlineNodes.tolerance", rule.OutlineNodes.Tolerance, 0, 0.5);
+            if (rule.OutlineNodes.Mode != OutlineNodeMode.None && !(circle || arc))
+                c.Add(where + ".outlineNodes", "only applies to a Circle or Arc rule.");
             Number(c, where + ".backToStartChance", rule.BackToStartChance, 0, 100);
             ValidateEdgeCurve(c, where + ".curve", rule.Curve);
         }
@@ -601,6 +621,7 @@ internal static class ConfigValidator
             if (rule is null) { c.Add(where, "must not be null."); continue; }
 
             if (string.IsNullOrWhiteSpace(rule.Glyph)) c.Add(where + ".glyph", "must not be empty.");
+            else if (rule.Glyph == ComponentPlacementRule.AllGlyphs) { if (!seen.Add(rule.Glyph)) c.Add(where + ".glyph", "has more than one \"*\" rule."); }
             else if (!known.Contains(rule.Glyph)) c.Add(where + ".glyph", $"'{rule.Glyph}' is not listed in glyphs or baseGlyphs.");
             else if (recipeComponents is not null && !recipeComponents.Contains(rule.Glyph))
                 c.Add(where + ".glyph", $"'{rule.Glyph}' is not a component of this recipe, so the rule would never apply.");
@@ -612,6 +633,7 @@ internal static class ConfigValidator
             {
                 case ComponentPlacementMode.Prefer:
                     if (rule.Offset is not null) c.Add(where + ".offset", "only applies to Fixed placements.");
+                    if (rule.IfBlocked != FixedBlockedAction.Regenerate) c.Add(where + ".ifBlocked", "only applies to Fixed placements.");
                     if (rule.Pick is not null) c.Add(where + ".pick", "only applies to SetRandom placements.");
                     if (rule.Scope is not null) c.Add(where + ".scope", "only applies to SetRandom placements.");
                     if (rule.Sides.Count == 0) c.Add(where + ".sides", "a Prefer rule needs at least one side (Left, Right, Top or Bottom).");
@@ -621,6 +643,7 @@ internal static class ConfigValidator
 
                 case ComponentPlacementMode.SetRandom:
                     if (rule.Offset is not null) c.Add(where + ".offset", "only applies to Fixed placements.");
+                    if (rule.IfBlocked != FixedBlockedAction.Regenerate) c.Add(where + ".ifBlocked", "only applies to Fixed placements.");
                     if (rule.Sides.Count > 0) c.Add(where + ".sides", "only applies to Prefer placements; SetRandom draws its own (see pick).");
                     if (rule.Pick is { } pick) Enum(c, where + ".pick", pick);
                     if (rule.Scope is { } scope) Enum(c, where + ".scope", scope);
@@ -628,6 +651,7 @@ internal static class ConfigValidator
                     break;
 
                 default: // Fixed
+                    Enum(c, where + ".ifBlocked", rule.IfBlocked);
                     if (rule.Sides.Count > 0) c.Add(where + ".sides", "only applies to Prefer placements; a Fixed one is placed by its offset.");
                     if (rule.Pick is not null) c.Add(where + ".pick", "only applies to SetRandom placements.");
                     if (rule.Scope is not null) c.Add(where + ".scope", "only applies to SetRandom placements.");
@@ -714,8 +738,8 @@ internal static class ConfigValidator
                 c.Add(path + ".bounds", "minX/minY must not be larger than maxX/maxY.");
             else if (box.MinX < 0 || box.MinY < 0 || box.MaxX >= l.Grid.Width || box.MaxY >= l.Grid.Height)
                 c.Add(path + ".bounds", $"must lie inside the grid (x 0..{l.Grid.Width - 1}, y 0..{l.Grid.Height - 1}).");
-            else if (p.Mode == PlacementMode.Fixed && p.FixedOrigin is { } fo && (fo.X < box.MinX || fo.X > box.MaxX || fo.Y < box.MinY || fo.Y > box.MaxY))
-                c.Add(path + ".bounds", "does not contain fixedOrigin.");
+            else if (p.Mode == PlacementMode.Fixed && p.FixedOrigin is { } fo && fo.Points.Any(o => o.X < box.MinX || o.X > box.MaxX || o.Y < box.MinY || o.Y > box.MaxY))
+                c.Add(path + ".bounds", "does not contain every fixedOrigin.");
         }
         if (p.RedoShape < 0) c.Add(path + ".redoShape", $"must be 0 or more (got {p.RedoShape}).");
         if (p.RedrawGlyph < 0) c.Add(path + ".redrawGlyph", $"must be 0 or more (got {p.RedrawGlyph}).");
@@ -747,16 +771,25 @@ internal static class ConfigValidator
 
         if (p.Mode == PlacementMode.Fixed)
         {
-            if (p.FixedOrigin is null)
+            if (p.FixedOrigin is null || p.FixedOrigin.Points.Count == 0)
                 c.Add(path, "mode is Fixed but fixedOrigin is not set.");
-            else if (p.FixedOrigin.Value.X < 0 || p.FixedOrigin.Value.X >= l.Grid.Width
-                  || p.FixedOrigin.Value.Y < 0 || p.FixedOrigin.Value.Y >= l.Grid.Height)
-                c.Add(path + ".fixedOrigin", $"{p.FixedOrigin.Value} is outside the {l.Grid.Width}x{l.Grid.Height} grid.");
+            else
+                for (int k = 0; k < p.FixedOrigin.Points.Count; k++)
+                {
+                    var o = p.FixedOrigin.Points[k];
+                    if (o.X < 0 || o.X >= l.Grid.Width || o.Y < 0 || o.Y >= l.Grid.Height)
+                        c.Add(path + ".fixedOrigin", $"{o} is outside the {l.Grid.Width}x{l.Grid.Height} grid.");
+                }
         }
         else if (p.FixedOrigin is not null)
         {
             c.Add(path + ".fixedOrigin", $"is set but mode is {p.Mode}, so it would be ignored (use mode Fixed).");
         }
+
+        if (p.DiscardUsedOrigins && p.Mode != PlacementMode.Fixed)
+            c.Add(path + ".discardUsedOrigins", $"only applies to mode Fixed (mode is {p.Mode}).");
+        if (arrangement.Crossing.Mode == CrossingMode.Strict && p.StartOnExistingNode)
+            c.Add(path + ".startOnExistingNode", "cannot be combined with crossing.mode Strict (a shared node is a contact).");
 
         if (p.StartOnShapes is not null)
         {
@@ -872,6 +905,7 @@ internal static class ConfigValidator
             Width(c, p + ".width", r.Width);
             Enum(c, p + ".cap", r.Cap);
             Enum(c, p + ".capLevel", r.CapLevel);
+            Enum(c, p + ".capLevelFlat", r.CapLevelFlat);
         }
 
         if (t.ThickEnds is { } e)

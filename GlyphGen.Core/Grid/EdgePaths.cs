@@ -16,6 +16,13 @@ public static class EdgePaths
     public static (double X, double Y)[] Polyline(GridEdge e)
     {
         if (e.IsDot) return new[] { ((double)e.From.X, (double)e.From.Y) };
+        if (e.IsArc)
+        {
+            int n = Math.Max(4, (int)Math.Ceiling(e.Arc!.Value.Sweep / 7.5));
+            var pts = new (double X, double Y)[n + 1];
+            for (int i = 0; i <= n; i++) pts[i] = e.CirclePoint(e.ArcStartDegrees + e.Arc.Value.Sweep * i / n);
+            return pts;
+        }
         if (e.IsCircle)
         {
             var (cx, cy, r) = e.CircleGeometry;
@@ -34,9 +41,40 @@ public static class EdgePaths
     /// <summary>True when the two edges cut through each other (touching at a shared node does not count).</summary>
     public static bool Crosses(GridEdge a, GridEdge b)
     {
-        if (!a.IsCurved && !b.IsCurved) return a.Intersects(b);
+        // A dot is a point: it is crossed by an edge that passes through it (an edge that merely ends on it meets it at a node).
+        if (a.IsDot || b.IsDot)
+        {
+            if (a.IsDot && b.IsDot) return false;
+            var dot = a.IsDot ? a : b;
+            var other = a.IsDot ? b : a;
+            if (dot.From == other.From || dot.From == other.To) return false;
+            return DistanceToPath((dot.From.X, dot.From.Y), Polyline(other)) < (other.IsCurved || other.IsCircle ? TouchRadius : 1e-9);
+        }
+
+        if (!a.IsCurved && !b.IsCurved && !a.IsArc && !b.IsArc) return a.Intersects(b);
         if (a.IsDot || b.IsDot) return false;
         return PolylineCrossings(a, b, firstOnly: true).Count > 0;
+    }
+
+    /// <summary>True when the edges have anything in common: they cross, or an end point (or extra node) of one lies on the other.
+    /// Used by CrossingMode.Strict, which allows no contact at all.</summary>
+    public static bool Touches(GridEdge a, GridEdge b)
+    {
+        if (Crosses(a, b)) return true;
+        var pa = Polyline(a);
+        var pb = Polyline(b);
+        foreach (var p in PointsOf(a))
+            if (DistanceToPath(p, pb) < TouchRadius) return true;
+        foreach (var p in PointsOf(b))
+            if (DistanceToPath(p, pa) < TouchRadius) return true;
+        return false;
+    }
+
+    private static IEnumerable<(double X, double Y)> PointsOf(GridEdge e)
+    {
+        yield return (e.From.X, e.From.Y);
+        yield return (e.To.X, e.To.Y);
+        foreach (var n in e.ExtraNodes()) yield return (n.X, n.Y);
     }
 
     /// <summary>Where the two edges cross (empty when they do not). Used to decide whether a crossing is near a node.</summary>

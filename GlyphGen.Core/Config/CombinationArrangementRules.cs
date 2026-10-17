@@ -50,12 +50,26 @@ public enum ComponentPlacementMode
     Fixed,
 }
 
-/// <summary>Controls where one component (named by its glyph) goes inside a composite.</summary>
+/// <summary>What a Fixed placement does when its one position is not available.</summary>
+public enum FixedBlockedAction
+{
+    /// <summary>Nothing else is tried: the recipe attempt fails, and the component (or another one) is regenerated.</summary>
+    Regenerate,
+
+    /// <summary>The component, as drawn, is tried at every other position on the grid first (same size and rotation, in a
+    /// shuffled but deterministic order). Only when it fits nowhere does the recipe attempt fail and a component get regenerated.</summary>
+    Translate,
+}
+
+/// <summary>Controls where one component (named by its glyph, or "*" for all of them) goes inside a composite.</summary>
 public sealed class ComponentPlacementRule
 {
     /// <summary>The component's glyph name. The rule applies wherever that glyph is a component of a recipe the
     /// arrangement covers (every instance, if a recipe lists it more than once).</summary>
     public string Glyph { get; set; } = "";
+
+    /// <summary>A rule whose glyph is this applies to every component that has no rule of its own naming it.</summary>
+    public const string AllGlyphs = "*";
 
     public ComponentPlacementMode Mode { get; set; } = ComponentPlacementMode.Prefer;
 
@@ -74,6 +88,10 @@ public sealed class ComponentPlacementRule
     /// { "x": 2, "y": 0 } or [2, 0]. Omitted = not moved at all (the plain overlay).</summary>
     public GridPoint? Offset { get; set; }
 
+    /// <summary>Fixed only: what to do when the fixed position is blocked (crossing, spacing, off the grid). Default
+    /// Regenerate, as before; Translate tries every other position first.</summary>
+    public FixedBlockedAction IfBlocked { get; set; } = FixedBlockedAction.Regenerate;
+
     /// <summary>Prefer and SetRandom: how strongly the side pull counts against the arrangement's bias, when both are
     /// active (default 1; 0 turns the pull off).</summary>
     public double Weight { get; set; } = 1.0;
@@ -86,6 +104,14 @@ public sealed class ComponentPlacementRule
 /// </summary>
 public sealed class CombinationArrangementRules : ArrangementRules
 {
-    /// <summary>Placement rules by component glyph. Components without a rule are placed as before.</summary>
+    /// <summary>Placement rules by component glyph ("*" = every component without a rule of its own). Components without a rule are placed as before.</summary>
     public List<ComponentPlacementRule> Placements { get; set; } = new();
+
+    /// <summary>The rule for a component: the one naming its glyph, else the "*" rule, else none.</summary>
+    public ComponentPlacementRule? RuleFor(string glyph) =>
+        Placements.FirstOrDefault(r => r.Glyph == glyph) ?? Placements.FirstOrDefault(r => r.Glyph == ComponentPlacementRule.AllGlyphs);
+
+    /// <summary>Whether any rule of the given mode (or any other mode, when negated) applies to a component of this recipe.</summary>
+    public bool AnyRuleFor(IEnumerable<string> components, Func<ComponentPlacementRule, bool> test) =>
+        components.Distinct().Select(RuleFor).Any(r => r is not null && test(r));
 }

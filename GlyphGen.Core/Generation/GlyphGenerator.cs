@@ -235,7 +235,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         {
             // A shape that is not for this glyph draws nothing (and so its copies make none); it takes no random draw,
             // so glyphs without a filter come out exactly as before.
-            if (!shape.AppliesTo(glyphDef.Name) || !shape.IsDrawn(rng))
+            if (!shape.AppliesTo(glyphDef.Name) || !shape.PassesChance(rng))
             {
                 placedByShape[shape.Id] = new List<SubSymbolChain>();
                 continue;
@@ -257,11 +257,12 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             // glyph's random stream and shift everything placed after it).
             int count = shape.Count is null ? 1 : ResolveLowBiased(shape.Count, rng, countExtraDraws);
 
+            var usedOrigins = new HashSet<GridPoint>();
             for (int i = 0; i < count; i++)
             {
                 var diagnostics = new PlacementDiagnostics();
                 double lengthExtra = shape.Count is null ? 0.0 : lengthExtraDraws;
-                var placed = GenerateShape(language, shape, grid, rng, geometry, i, lengthExtra, diagnostics, salts.GetValueOrDefault(shape.Id))
+                var placed = GenerateShape(language, shape, grid, rng, geometry, i, lengthExtra, diagnostics, salts.GetValueOrDefault(shape.Id), usedOrigins)
                     ?? throw new ShapePlacementException(shape,
                         $"[{language.Name}] Shape '{shape.Id}'" +
                         (shape.Count is null ? "" : $" (instance {i + 1}/{count})") +
@@ -294,8 +295,20 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         int instanceIndex,
         double lengthExtraDraws,
         PlacementDiagnostics diagnostics,
-        int redo = 0)
+        int redo = 0,
+        HashSet<GridPoint>? usedOrigins = null)
     {
+        // discardUsedOrigins: the origins earlier instances took are not offered again.
+        var placement = shape.Placement;
+        if (usedOrigins is not null && placement is { Mode: PlacementMode.Fixed, DiscardUsedOrigins: true, FixedOrigin: { } fixedOrigins })
+        {
+            var left = fixedOrigins.Points.Where(p => !usedOrigins.Contains(p)).ToList();
+            if (left.Count == 0) return null;
+            placement = placement.WithOrigins(left);
+        }
+
+        var originOf = new Dictionary<SubSymbolChain, GridPoint>(ReferenceEqualityComparer.Instance);
+
         // A placement.bounds box is the edge of the grid for this shape.
         if (shape.Placement.Bounds is { } box) grid = grid.Restricted(box.MinX, box.MinY, box.MaxX, box.MaxY);
 
@@ -319,7 +332,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             // Curves are planned now, while the shape is placed, so later checks and steps see the real strokes.
             BendPlanner.Plan(chain, language.Curve, attemptRng.Derive("bend"), curved: BendPlanner.AnyCurved(chain, language.Curve));
 
-            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.Nodes, geometry.NodeGroups, shape.Arrangement.Spacing))
+            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroups, shape.Arrangement.Spacing))
             {
                 diagnostics.SpacingRejections++;
                 return null;
@@ -352,7 +365,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             // outcome is the plain first legal placement; extra candidates fork their own streams.
             var candidateRng = k == 0 ? rng : rng.Derive($"candidate-{k}");
             var result = _placementResolver.TryResolve(
-                shape.Placement, grid, candidateRng, geometry, shapeVariesPerAttempt, rotationOptions, ShapeFactory);
+                placement, grid, candidateRng, geometry, shapeVariesPerAttempt, rotationOptions, ShapeFactory);
             diagnostics.Attempts += result.AttemptsUsed;
 
             if (!result.Success || result.PlacedShape is null) break;
@@ -367,10 +380,18 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
             repeats = 0;
             candidates.Add(result.PlacedShape);
+            originOf[result.PlacedShape] = result.Origin;
         }
 
         if (candidates.Count == 0) return null;
-        if (candidates.Count == 1 || !ranked) return candidates[0];
+
+        SubSymbolChain Taken(SubSymbolChain chosen)
+        {
+            if (usedOrigins is not null && originOf.TryGetValue(chosen, out var origin)) usedOrigins.Add(origin);
+            return chosen;
+        }
+
+        if (candidates.Count == 1 || !ranked) return Taken(candidates[0]);
 
         double Score(SubSymbolChain candidate)
         {
@@ -397,7 +418,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             double score = Score(candidates[i]);
             if (score < bestScore) { best = candidates[i]; bestScore = score; }
         }
-        return best;
+        return Taken(best);
     }
 
     private static string Signature(SubSymbolChain chain) =>
@@ -495,11 +516,33 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
         Glyph RegenerateComponent(string name, int attemptIndex)
         {
+            // A recipe still being built further up is not rebuilt from here: its own attempt loop is what is running, and
+            // it takes up the regenerated component by itself. (Rebuilding it would re-enter it and look like a cycle.)
+            if (inProgress.Contains(name) && generated.TryGetValue(name, out var building)) return building;
+
             var componentDef = language.Glyphs.FirstOrDefault(g => g.Name == name)
                 ?? language.BaseGlyphs.FirstOrDefault(g => g.Name == name)
                 ?? new GlyphDefinition { Name = name };
             ulong seed = SplitMix64.DeriveSeed(glyphSeed, $"regen-{name}-{attemptIndex}");
             return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
+        }
+
+        // Rebuilds another finished composite after one of its components was moved: a single attempt, nothing regenerated
+        // or moved, null if it no longer fits.
+        Glyph? RebuildComposite(string otherName)
+        {
+            if (!language.Combination.Recipes.TryGetValue(otherName, out var otherRecipe)) return null;
+            var otherRng = new DeterministicRandom(SplitMix64.DeriveSeed(languageSeed, $"rebuild-{otherName}"));
+            var rebuilt = _combinationResolver.TryCombine(
+                otherName, otherRecipe.Components, generated, language.Combination, grid, otherRng, usageTracker,
+                (_, _) => throw new GlyphGenerationException("A rebuild never regenerates components."),
+                otherRecipe.EffectiveArrangement ?? language.Combination.Arrangement,
+                0, languageSeed, null, null, isRebuild: true);
+            if (rebuilt is null) return null;
+            rebuilt.LanguageName = language.Name;
+            rebuilt.GridWidth = grid.Width;
+            rebuilt.GridHeight = grid.Height;
+            return rebuilt;
         }
 
         string explanation = "";
@@ -515,18 +558,20 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             recipe.EffectiveArrangement ?? language.Combination.Arrangement,
             variation,
             languageSeed,
-            text => explanation = text);
+            text => explanation = text,
+            // Moving an original is only done by a composite that is built on its own, not by one rebuilt inside another's cascade.
+            inProgress.Count <= 1 ? RebuildComposite : null);
 
         if (composite is null)
         {
             var used = recipe.EffectiveArrangement ?? language.Combination.Arrangement;
-            bool hasFixed = used.Placements.Any(p => p.Mode == ComponentPlacementMode.Fixed && recipe.Components.Contains(p.Glyph));
+            bool hasFixed = used.AnyRuleFor(recipe.Components, p => p.Mode == ComponentPlacementMode.Fixed);
 
             throw new GlyphGenerationException(
                 $"[{language.Name}] Could not satisfy combination recipe for '{glyphDef.Name}' " +
                 $"after {language.Combination.MaxRetriesPerRecipe} attempts." +
                 (explanation.Length > 0 ? " " + explanation : "") +
-                (used.Placements.Any(p => p.Mode != ComponentPlacementMode.Fixed && recipe.Components.Contains(p.Glyph))
+                (used.AnyRuleFor(recipe.Components, p => p.Mode != ComponentPlacementMode.Fixed)
                     ? " Side rules are hard: each ruled component's middle must be on its side of the others' middles, " +
                       "so conflicting rules (or too little room on a small grid) make a recipe unbuildable."
                     : "") +
