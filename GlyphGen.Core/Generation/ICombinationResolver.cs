@@ -53,5 +53,6 @@ public interface ICombinationResolver
         ulong languageSeed = 0,
         Action<string>? explainFailure = null,
         Func<string, Glyph?>? rebuildComposite = null,
-        bool isRebuild = false);
+        bool isRebuild = false,
+        IReadOnlyDictionary<string, (CrossingConfig Crossing, double Clearance)>? strictShapes = null);
 }

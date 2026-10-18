@@ -558,10 +558,11 @@ public sealed partial class GlyphGenerator
 
             int count = shape.Count is null ? 1 : ResolveLowBiased(shape.Count, rng, 0.0);
 
+            var usedOrigins = new HashSet<GridPoint>();
             for (int i = 0; i < count; i++)
             {
                 var diagnostics = new PlacementDiagnostics();
-                var placed = GenerateShape(language, shape, grid, rng, geometry, i, 0.0, diagnostics);
+                var placed = GenerateShape(language, shape, grid, rng, geometry, i, 0.0, diagnostics, 0, usedOrigins);
                 if (placed is null)
                 {
                     if (optional) continue;
@@ -571,7 +572,7 @@ public sealed partial class GlyphGenerator
                 }
 
                 placed.ShapeTag = $"{shape.Id}#{i}";
-                geometry.Commit(placed, shape.Arrangement.Crossing);
+                geometry.Commit(placed, shape.Arrangement.Crossing, shape.Arrangement.Spacing);
                 next.Chains.Add(FromChain(placed));
                 if (!addedByShape.TryGetValue(id, out var list)) addedByShape[id] = list = new List<SubSymbolChain>();
                 list.Add(placed);

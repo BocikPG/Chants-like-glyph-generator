@@ -79,6 +79,11 @@ public sealed class PlacementConfig
     /// { "minX": 4, "minY": 4, "maxX": 10, "maxY": 10 }. Other shapes are not limited by it. null = the whole grid.</summary>
     public PlacementBounds? Bounds { get; set; }
 
+    /// <summary>Which nodes this shape may use, beyond <see cref="Bounds"/>: direct nodes, boxes, odd/even/every-n patterns, the
+    /// nodes of other shapes, or the box around other shapes. Every node of the shape's strokes (circle nodes included) must pass,
+    /// and so must the node it starts on. Not applied to copyOf shapes. null = no restriction.</summary>
+    public NodeMaskConfig? Nodes { get; set; }
+
     /// <summary>Allows a random rotation per attempt, from Rotations (below). Only Literal
     /// motifs are affected: a generated chain is already random and ignores the rotation.</summary>
     public bool AllowRotationOnPlace { get; set; } = true;

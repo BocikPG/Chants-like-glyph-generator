@@ -124,6 +124,8 @@ public sealed class PlacementResolver : IPlacementResolver
             PlacementMode.CenterAnchor => new GridPoint((grid.MinX + grid.MaxX + 1) / 2, (grid.MinY + grid.MaxY + 1) / 2),
             PlacementMode.RandomValid => anchorNodes is { Count: > 0 }
                 ? anchorNodes[rng.NextInt(0, anchorNodes.Count)]
+                : grid.NodeFilter is not null && grid.UsableNodes() is { Count: > 0 } usable
+                ? usable[rng.NextInt(0, usable.Count)]
                 : new GridPoint(
                     grid.MinX + rng.NextInt(0, grid.MaxX - grid.MinX + 1),
                     grid.MinY + rng.NextInt(0, grid.MaxY - grid.MinY + 1)),
@@ -167,6 +169,7 @@ public sealed class PlacementResolver : IPlacementResolver
         }
 
         // A chain may never cross itself (curves included).
-        return !EdgePaths.ChainCrossesItself(shape.Edges);
+        return !EdgePaths.ChainCrossesItself(shape.Edges)
+            && !EdgePaths.ChainTooClose(shape.Edges, ownNodes, existingGeometry.CurrentClearance);
     }
 }

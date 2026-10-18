@@ -27,4 +27,17 @@ public sealed class QualityConfig
     /// subject to RejectStraightLineOnly.
     /// </summary>
     public double CompositeMaxSimilarity { get; set; } = 1.0;
+
+    /// <summary>Declarative checks of every finished glyph (see QualityRule). Evaluated after the similarity and straight-line
+    /// checks, in order. Default: none.</summary>
+    public List<QualityRule> Rules { get; set; } = new();
+
+    /// <summary>Checks BETWEEN glyphs (see QualityRule; the selectors name glyphs): the strokes of one glyph are judged against the
+    /// strokes of another, e.g. the dots of two base glyphs that never share a composite. Checked when a glyph is accepted, against
+    /// every glyph already built. Default: none.</summary>
+    public List<QualityRule> PairRules { get; set; } = new();
+
+    /// <summary>Score rules: the penalty at or below which a glyph is accepted at once. A glyph above it is retried (up to
+    /// MaxRegenerationAttempts) and the lowest-penalty attempt is kept if none gets under it. Default 0.</summary>
+    public double AcceptPenalty { get; set; } = 0.0;
 }

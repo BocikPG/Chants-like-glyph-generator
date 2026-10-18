@@ -44,6 +44,12 @@ public enum CrossingMode
     /// may touch any other shape (a pair is judged by the stricter of the two, so a Strict shape also keeps later shapes off it).
     /// Own consecutive edges still meet at their nodes. Cannot be combined with placement.startOnExistingNode.</summary>
     Strict,
+
+    /// <summary>For <c>combination.arrangement</c> (and a recipe's override) only. Components may cross anywhere, as with
+    /// Anywhere, EXCEPT that strokes drawn by a shape whose own arrangement.crossing.mode is Strict stay Strict inside the
+    /// combined glyph: nothing of another component may touch them, and the shape's <c>spacing.minEdgeDistance</c> (when
+    /// enabled) is kept too. Use it to keep dots clear of the other component's strokes. Not allowed on a shape.</summary>
+    AnywhereButRespectStrict,
 }
 
 /// <summary>Crossing rules of one shape (arrangement.crossing). Curves are taken into account.</summary>

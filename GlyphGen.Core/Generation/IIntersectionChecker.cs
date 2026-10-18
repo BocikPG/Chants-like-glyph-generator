@@ -18,6 +18,10 @@ public interface IIntersectionContext
     /// the chain the edge belongs to (they can make a crossing "at a node").</summary>
     bool IsBlocked(GridEdge edge, IReadOnlyList<GridPoint> ownNodes);
 
+    /// <summary>spacing.minEdgeDistance of the shape being placed, for the chain's own edges (0 = none). IsBlocked already applies it
+    /// against everything committed.</summary>
+    double CurrentClearance => 0;
+
     /// <summary>The existing edges that were drawn by the given shapes (ids). Contexts that do not know which shape
     /// drew what return everything.</summary>
     IEnumerable<GridEdge> EdgesOfShapes(IReadOnlyCollection<string> shapeIds) => ExistingEdges;

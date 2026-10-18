@@ -17,6 +17,8 @@ public sealed class ChainGenerationRequest
     public bool AllEdgesCurved { get; init; }
     public ConnectionWeighting ConnectionWeighting { get; init; } = ConnectionWeighting.PerMove;
     /// <summary>Node-to-node spacing rules within this chain; a new node must satisfy all.</summary>
+    /// <summary>spacing.minEdgeDistance: the strokes of this chain keep this distance from each other (0 = off).</summary>
+    public double MinEdgeDistance { get; init; }
     public IReadOnlyList<SelfSpacingRule> SelfSpacingRules { get; init; } = Array.Empty<SelfSpacingRule>();
 }
 

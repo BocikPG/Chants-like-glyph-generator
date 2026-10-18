@@ -92,6 +92,32 @@
       "additionalProperties": false,
       "description": "How a shape relates to the shapes already placed in the glyph: whether it may cross them, how far from them it must (or must not) sit, and which of several legal placements is preferred. Used by every entry in a language's shapes list and by the combination block (for the components of a composite)."
     },
+    "AxisPattern": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Every",
+            "Odd",
+            "Even"
+          ],
+          "default": "Every"
+        },
+        "step": {
+          "type": "integer",
+          "description": "Every: the spacing between matching coordinates (1 = all). Default 1.",
+          "default": 1
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Every: the first matching coordinate (counted from 0; 1 with step 3 = 1, 4, 7, ...). Default 0.",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "Which values of one coordinate (x or y) match."
+    },
     "BrushTypefaceConfig": {
       "type": "object",
       "properties": {
@@ -781,6 +807,31 @@
       "additionalProperties": false,
       "description": "Turns a shape into a copy of another shape (put it on the destination entry in the shapes list; the origin entry must come earlier in the list). Instead of being drawn, the destination becomes one copy of every instance of the origin, flipped around the origin chain's start node and then moved by the anchor, gap and shift. A copy can itself be copied. The destination takes no chain, nodes, placement or count of its own; its arrangement (crossing, spacing, bias) decides which copy positions are acceptable."
     },
+    "CountDiffersConfig": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "type": "string",
+          "description": "Id of the shape whose instances are counted in each component.",
+          "default": ""
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "Skip",
+            "Loosen"
+          ],
+          "default": "Skip"
+        },
+        "factor": {
+          "type": "number",
+          "description": "Loosen: multiplier (0-1) for the window radius and minDistance of that pair. Default 0.5.",
+          "default": 0.5
+        }
+      },
+      "additionalProperties": false,
+      "description": "Skip or loosen a rule for a pair of strokes whose components rolled a different number of instances of a shape (two bases with 1 and 3 dots are told apart by the count already)."
+    },
     "CrossingConfig": {
       "type": "object",
       "properties": {
@@ -790,7 +841,8 @@
             "None",
             "NodesOnly",
             "Anywhere",
-            "Strict"
+            "Strict",
+            "AnywhereButRespectStrict"
           ],
           "default": "None"
         },
@@ -1545,6 +1597,116 @@
         "grid"
       ]
     },
+    "NodeMaskConfig": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NodeRegion"
+          }
+        },
+        "forbid": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NodeRegion"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "placement.nodes: which lattice nodes a shape may use (every node of its strokes, and where it starts). A node is usable when it is in at least one allow region (or allow is empty) and in no forbid region, and inside placement.bounds and the grid."
+    },
+    "NodePattern": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AxisPattern"
+            }
+          ]
+        },
+        "y": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AxisPattern"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "Nodes picked by their coordinates: a node matches when its x matches x AND its y matches y (an axis left out matches everything)."
+    },
+    "NodeRegion": {
+      "type": "object",
+      "properties": {
+        "points": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            ]
+          },
+          "description": "These nodes, as [x, y] pairs."
+        },
+        "box": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PlacementBounds"
+            }
+          ],
+          "description": "Every node inside this inclusive box."
+        },
+        "pattern": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NodePattern"
+            }
+          ],
+          "description": "Nodes picked by pattern (odd / even / every n-th x and y)."
+        },
+        "nodesOfShapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The nodes of these shapes (the node pool): only nodes that already exist in the glyph."
+        },
+        "boundsOfShapes": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ShapesBox"
+            }
+          ],
+          "description": "Everything inside the box around the nodes of these shapes."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One set of nodes. Exactly one of the fields is set."
+    },
     "OutlineNodesConfig": {
       "type": "object",
       "properties": {
@@ -1722,6 +1884,14 @@
           ],
           "description": "A box smaller than the grid that this shape must stay inside, treated as the edge of the grid while the shape is generated and placed (nodes, and circles' whole outlines). Inclusive node coordinates, e.g. { \"minX\": 4, \"minY\": 4, \"maxX\": 10, \"maxY\": 10 }. Other shapes are not limited by it. null = the whole grid."
         },
+        "nodes": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NodeMaskConfig"
+            }
+          ],
+          "description": "Which nodes this shape may use, beyond Bounds: direct nodes, boxes, odd/even/every-n patterns, the nodes of other shapes, or the box around other shapes. Every node of the shape's strokes (circle nodes included) must pass, and so must the node it starts on. Not applied to copyOf shapes. null = no restriction."
+        },
         "allowRotationOnPlace": {
           "type": "boolean",
           "description": "Allows a random rotation per attempt, from Rotations (below). Only Literal motifs are affected: a generated chain is already random and ignores the rotation.",
@@ -1817,10 +1987,184 @@
           "type": "number",
           "description": "Similarity limit for COMPOSITES, checked only against other composites - never against plain or base glyphs, which a composite contains by construction. 1.0 or more (the default) = composites are not compared at all, as before. A composite at or above the limit is rebuilt with a fresh seed, up to MaxRegenerationAttempts. Composites are never subject to RejectStraightLineOnly.",
           "default": 1
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualityRule"
+          },
+          "description": "Declarative checks of every finished glyph (see QualityRule). Evaluated after the similarity and straight-line checks, in order. Default: none."
+        },
+        "pairRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualityRule"
+          },
+          "description": "Checks BETWEEN glyphs (see QualityRule; the selectors name glyphs): the strokes of one glyph are judged against the strokes of another, e.g. the dots of two base glyphs that never share a composite. Checked when a glyph is accepted, against every glyph already built. Default: none."
+        },
+        "acceptPenalty": {
+          "type": "number",
+          "description": "Score rules: the penalty at or below which a glyph is accepted at once. A glyph above it is retried (up to MaxRegenerationAttempts) and the lowest-penalty attempt is kept if none gets under it. Default 0.",
+          "default": 0
         }
       },
       "additionalProperties": false,
       "description": "Post-generation quality gates applied to every finished glyph in a language, checked against every glyph already accepted earlier in the same run. A glyph failing either check is regenerated (fresh seed) up to MaxRegenerationAttempts times before the run fails with a clear error naming the glyph."
+    },
+    "QualityRule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "default": ""
+        },
+        "appliesTo": {
+          "type": "string",
+          "enum": [
+            "Both",
+            "Plain",
+            "Composite"
+          ],
+          "default": "Both"
+        },
+        "onlyForGlyphs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Only these glyphs (by name). Empty/missing = every glyph."
+        },
+        "excludeGlyphs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Not these glyphs (by name)."
+        },
+        "subject": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/StrokeSelector"
+            }
+          ]
+        },
+        "against": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/StrokeSelector"
+            }
+          ]
+        },
+        "among": {
+          "type": "string",
+          "enum": [
+            "Auto",
+            "OtherComponents",
+            "OtherChains"
+          ],
+          "default": "Auto"
+        },
+        "measure": {
+          "type": "string",
+          "enum": [
+            "Count",
+            "Similar",
+            "Distance"
+          ],
+          "default": "Count"
+        },
+        "window": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualityWindow"
+            }
+          ],
+          "description": "Count and Similar: the area around the subject that is searched."
+        },
+        "max": {
+          "type": "integer",
+          "description": "Count and Similar: how many strokes may be found before the check fails. Default 0.",
+          "default": 0
+        },
+        "minDistance": {
+          "type": "number",
+          "description": "Distance: the nearest 'against' stroke must be at least this far (lattice units).",
+          "default": 0
+        },
+        "similarity": {
+          "type": "string",
+          "enum": [
+            "Visual",
+            "Structural"
+          ],
+          "description": "Similar: how the strokes are compared. Default Visual.",
+          "default": "Visual"
+        },
+        "similarityThreshold": {
+          "type": "number",
+          "description": "Similar: similarity (0-1) at or above which two strokes count as alike. Default 0.7.",
+          "default": 0.7
+        },
+        "strokeWidth": {
+          "type": "number",
+          "description": "Visual similarity: brush width in lattice units. Default 1.5.",
+          "default": 1.5
+        },
+        "onFail": {
+          "type": "string",
+          "enum": [
+            "Reject",
+            "Warn",
+            "Score"
+          ],
+          "default": "Reject"
+        },
+        "redo": {
+          "type": "string",
+          "enum": [
+            "Composite",
+            "Subject",
+            "Other",
+            "Either"
+          ],
+          "description": "Composites, onFail Reject: what is redrawn when the rule fails. Default Composite.",
+          "default": "Composite"
+        },
+        "weight": {
+          "type": "number",
+          "description": "Score: the penalty one broken check adds. Default 1.",
+          "default": 1
+        },
+        "whenCountsDiffer": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CountDiffersConfig"
+            }
+          ],
+          "description": "Composites: skip or loosen the rule for components that rolled a different count of a shape."
+        }
+      },
+      "additionalProperties": false,
+      "description": "One declarative check of a finished glyph (quality.rules): for every stroke picked by subject, look at what lies around it among the strokes picked by against, and judge it with measure."
+    },
+    "QualityWindow": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "type": "string",
+          "enum": [
+            "Square",
+            "Circle"
+          ],
+          "default": "Square"
+        },
+        "radius": {
+          "type": "number",
+          "description": "Lattice units. Default 4.",
+          "default": 4
+        }
+      },
+      "additionalProperties": false
     },
     "RectangularTypefaceConfig": {
       "type": "object",
@@ -2170,6 +2514,25 @@
         "id"
       ]
     },
+    "ShapesBox": {
+      "type": "object",
+      "properties": {
+        "shapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of the shapes (already placed in the glyph when this shape is placed)."
+        },
+        "margin": {
+          "type": "integer",
+          "description": "Lattice units added on every side. Default 0.",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "The box around the nodes of other shapes, grown by margin on every side."
+    },
     "SidePull": {
       "type": "object",
       "properties": {
@@ -2242,6 +2605,25 @@
           "description": "Maximum distance between the CLOSEST pair of nodes of the candidate and an existing shape. 0 = no maximum. Which existing shapes it must hold against is controlled by MaxDistanceMode. Must be >= MinNodeDistance when both are set.",
           "default": 0
         },
+        "minEdgeDistance": {
+          "type": "number",
+          "description": "Minimum distance (lattice units) between the PATHS of this shape's strokes and every other stroke in the glyph (and between its own strokes), measured along the real curves - arcs, circles and bent lines included - not between nodes. Where two strokes meet on purpose (a shared node, an allowed crossing) the rule is waived within 1.5x this distance of the meeting point, so a stroke must leave a junction at an angle of roughly 40 degrees or more. Between two shapes the larger of their two values applies. 0 = off. Needs enabled: true. A dot is a point and keeps this distance from other strokes too.",
+          "default": 0
+        },
+        "onlyShapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Shape ids. When set, this shape's spacing rules (centroid, node and edge distance, maximum) are measured ONLY against the strokes drawn by these shapes; everything else is ignored by them. May name the shape itself (its own other instances). Not together with ExcludeShapes. The shape's own chain is always checked against itself. Shapes only."
+        },
+        "excludeShapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Shape ids that this shape's spacing rules ignore (measured against everything else). Shapes only."
+        },
         "maxDistanceMode": {
           "type": "string",
           "enum": [
@@ -2258,6 +2640,40 @@
       },
       "additionalProperties": false,
       "description": "Spacing enforced between a shape and the shapes already placed, on top of (not instead of) the ordinary intersection check. Part of a shape's (or a combination's) arrangement rules; the spacing within one chain is ChainRules.SelfSpacing. Minimums keep things from sitting uncomfortably close together; maximums keep them clustered. Disabled by default, since these are additional constraints that can make placement noticeably harder to satisfy. A \"shape\" is one placed instance of a shapes entry when generating a glyph, and a whole placed component when combining glyphs per Combination.Recipes - both go through SubSymbolSpacingChecker. The rules of the shape BEING PLACED are checked against EVERY already-placed shape (minimums against all; the maximum per MaxDistanceMode), so the result depends on placement order."
+    },
+    "StrokeSelector": {
+      "type": "object",
+      "properties": {
+        "shapes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of the shapes that drew the strokes. Empty/missing = any shape."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Any",
+            "Dot",
+            "Arc",
+            "Circle",
+            "Ring",
+            "Line",
+            "Curve"
+          ],
+          "default": "Any"
+        },
+        "glyphs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "quality.pairRules only: the glyphs (by name, \"*\" = any glyph) whose strokes this selector picks from."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Picks strokes by the shape that drew them and by their form."
     },
     "TensionConfig": {
       "type": "object",

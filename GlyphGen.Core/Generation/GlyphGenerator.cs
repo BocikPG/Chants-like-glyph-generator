@@ -32,10 +32,14 @@ public sealed class PlacementDiagnostics
     public int Attempts { get; set; }
     public int ChainFailures { get; set; }
     public int SpacingRejections { get; set; }
+
+    /// <summary>An explanation that replaces the attempt summary (a placement that was impossible from the start).</summary>
+    public string? Note { get; set; }
     public int Collisions => Math.Max(0, Attempts - ChainFailures - SpacingRejections);
 
     public string Describe()
     {
+        if (Note is not null) return Note;
         if (Attempts <= 0) return "";
 
         string summary =
@@ -270,7 +274,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
                         $"attempt budget. {diagnostics.Describe()}");
 
                 placed.ShapeTag = $"{shape.Id}#{i}";
-                geometry.Commit(placed, shape.Arrangement.Crossing);
+                geometry.Commit(placed, shape.Arrangement.Crossing, shape.Arrangement.Spacing);
                 glyph.Chains.Add(placed);
 
                 if (!placedByShape.TryGetValue(shape.Id, out var instances))
@@ -312,11 +316,23 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         // A placement.bounds box is the edge of the grid for this shape.
         if (shape.Placement.Bounds is { } box) grid = grid.Restricted(box.MinX, box.MinY, box.MaxX, box.MaxY);
 
+        // placement.nodes: only the allowed nodes are usable, read from what is placed now (the node pool, the box around shapes).
+        if (NodeMaskBuilder.Build(shape.Placement.Nodes, geometry) is { } nodeTest)
+        {
+            grid = grid.WithNodeFilter(nodeTest);
+            if (grid.UsableNodes().Count == 0)
+            {
+                diagnostics.Note = "placement.nodes leaves no usable node at all (inside placement.bounds and the grid" +
+                    (shape.Placement.Nodes!.Allow?.Any(r => r.NodesOfShapes is not null || r.BoundsOfShapes is not null) == true ? "; a node pool or shape box is empty when those shapes are not placed yet - list them earlier in shapes" : "") + ").";
+                return null;
+            }
+        }
+
         var rng = glyphRng.Derive(shape.StreamLabel(instanceIndex) + (redo > 0 ? $"-redo{redo}" : ""));
         var rotationOptions = RotationOptionsFor(language, shape.Placement);
         bool shapeVariesPerAttempt = shape.Kind == ShapeKind.Generative;
 
-        geometry.SetCurrent(shape.Id, shape.Arrangement.Crossing);
+        geometry.SetCurrent(shape.Id, shape.Arrangement.Crossing, shape.Arrangement.Spacing);
 
         SubSymbolChain? ShapeFactory(GridPoint origin, int rotation, DeterministicRandom attemptRng)
         {
@@ -332,7 +348,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             // Curves are planned now, while the shape is placed, so later checks and steps see the real strokes.
             BendPlanner.Plan(chain, language.Curve, attemptRng.Derive("bend"), curved: BendPlanner.AnyCurved(chain, language.Curve));
 
-            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroups, shape.Arrangement.Spacing))
+            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroupsFor(shape.Arrangement.Spacing), shape.Arrangement.Spacing))
             {
                 diagnostics.SpacingRejections++;
                 return null;
@@ -445,6 +461,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             AllEdgesCurved = allEdgesCurved,
             ConnectionWeighting = chainRules.ConnectionWeighting,
             SelfSpacingRules = chainRules.SelfSpacing,
+            MinEdgeDistance = shape.Arrangement.Spacing.EffectiveEdgeDistance,
         };
 
         var chain = _chainGenerator.TryGenerateChain(grid, request, rng, geometry);
@@ -527,6 +544,11 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
         }
 
+        // The shapes whose own crossing mode is Strict (what combination crossing AnywhereButRespectStrict keeps).
+        static IReadOnlyDictionary<string, (CrossingConfig Crossing, double Clearance)> StrictShapes(LanguageDefinition language) =>
+            language.Shapes.Where(s => s.Arrangement.Crossing.Mode == CrossingMode.Strict)
+                .ToDictionary(s => s.Id, s => (s.Arrangement.Crossing, s.Arrangement.Spacing.EffectiveEdgeDistance));
+
         // Rebuilds another finished composite after one of its components was moved: a single attempt, nothing regenerated
         // or moved, null if it no longer fits.
         Glyph? RebuildComposite(string otherName)
@@ -537,7 +559,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
                 otherName, otherRecipe.Components, generated, language.Combination, grid, otherRng, usageTracker,
                 (_, _) => throw new GlyphGenerationException("A rebuild never regenerates components."),
                 otherRecipe.EffectiveArrangement ?? language.Combination.Arrangement,
-                0, languageSeed, null, null, isRebuild: true);
+                0, languageSeed, null, null, isRebuild: true, strictShapes: StrictShapes(language));
             if (rebuilt is null) return null;
             rebuilt.LanguageName = language.Name;
             rebuilt.GridWidth = grid.Width;
@@ -560,7 +582,8 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             languageSeed,
             text => explanation = text,
             // Moving an original is only done by a composite that is built on its own, not by one rebuilt inside another's cascade.
-            inProgress.Count <= 1 ? RebuildComposite : null);
+            inProgress.Count <= 1 ? RebuildComposite : null,
+            strictShapes: StrictShapes(language));
 
         if (composite is null)
         {

@@ -100,6 +100,37 @@ public sealed class SpacingConfig
     /// by MaxDistanceMode. Must be >= MinNodeDistance when both are set.</summary>
     public double MaxNodeDistance { get; set; } = 0.0;
 
+    /// <summary>Minimum distance (lattice units) between the PATHS of this shape's strokes and every other stroke in the glyph (and
+    /// between its own strokes), measured along the real curves - arcs, circles and bent lines included - not between nodes.
+    /// Where two strokes meet on purpose (a shared node, an allowed crossing) the rule is waived within 1.5x this distance of the
+    /// meeting point, so a stroke must leave a junction at an angle of roughly 40 degrees or more. Between two shapes the larger of their
+    /// two values applies. 0 = off. Needs <c>enabled: true</c>. A dot is a point
+    /// and keeps this distance from other strokes too.</summary>
+    public double MinEdgeDistance { get; set; } = 0.0;
+
+    /// <summary>The clearance this shape asks for: <see cref="MinEdgeDistance"/> when spacing is enabled, else 0.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public double EffectiveEdgeDistance => Enabled ? MinEdgeDistance : 0.0;
+
+    /// <summary>Shape ids. When set, this shape's spacing rules (centroid, node and edge distance, maximum) are measured ONLY against
+    /// the strokes drawn by these shapes; everything else is ignored by them. May name the shape itself (its own other
+    /// instances). Not together with <see cref="ExcludeShapes"/>. The shape's own chain is always checked against itself. Shapes only.</summary>
+    public List<string>? OnlyShapes { get; set; }
+
+    /// <summary>Shape ids that this shape's spacing rules ignore (measured against everything else). Shapes only.</summary>
+    public List<string>? ExcludeShapes { get; set; }
+
+    /// <summary>True when a stroke drawn by <paramref name="shapeId"/> (null = not from a shape) is measured by this spacing.</summary>
+    public bool Covers(string? shapeId)
+    {
+        if (OnlyShapes is { Count: > 0 } only) return shapeId is not null && only.Contains(shapeId);
+        if (ExcludeShapes is { Count: > 0 } excluded) return shapeId is null || !excluded.Contains(shapeId);
+        return true;
+    }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasShapeFilter => OnlyShapes is { Count: > 0 } || ExcludeShapes is { Count: > 0 };
+
     public ProximityMode MaxDistanceMode { get; set; } = ProximityMode.NearestShape;
 
     /// <summary>For a shape with placement.startOnExistingNode: leave the node it starts on out of the spacing checks
@@ -116,6 +147,10 @@ public sealed class SpacingConfig
         CheckDistance(JsonNames.Of(nameof(MinCenterDistance)), MinCenterDistance);
         CheckDistance(JsonNames.Of(nameof(MinNodeDistance)), MinNodeDistance);
         CheckDistance(JsonNames.Of(nameof(MaxNodeDistance)), MaxNodeDistance);
+        CheckDistance(JsonNames.Of(nameof(MinEdgeDistance)), MinEdgeDistance);
+
+        if (OnlyShapes is { Count: > 0 } && ExcludeShapes is { Count: > 0 })
+            errors.Add($"{JsonNames.Of(nameof(OnlyShapes))} and {JsonNames.Of(nameof(ExcludeShapes))} cannot both be set - list the shapes to check, or the shapes to leave out.");
 
         if (!Enum.IsDefined(MaxDistanceMode))
             errors.Add($"{JsonNames.Of(nameof(MaxDistanceMode))} has an unknown value ({(int)MaxDistanceMode}).");

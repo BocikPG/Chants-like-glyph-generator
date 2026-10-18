@@ -64,6 +64,8 @@ internal static class ConfigValidator
 
         ValidateShapes(l, c);
         ValidateShapeGlyphFilters(l, c);
+        ValidateSpacingShapeFilters(l, c);
+        ValidateNodeMasks(l, c);
 
         ValidateCurve(l, c);
         ValidateCombinationSettings(l.Combination, c);
@@ -72,6 +74,7 @@ internal static class ConfigValidator
             c.Add("quality.maxSimilarity", $"must be a finite number above 0 (1 or more disables the check; got {l.Quality.MaxSimilarity}).");
         if (!double.IsFinite(l.Quality.CompositeMaxSimilarity) || l.Quality.CompositeMaxSimilarity <= 0)
             c.Add("quality.compositeMaxSimilarity", $"must be a finite number above 0 (1 or more disables the check; got {l.Quality.CompositeMaxSimilarity}).");
+        ValidateQualityRules(l, c);
         if (l.Quality.MaxRegenerationAttempts < 1)
             c.Add("quality.maxRegenerationAttempts", $"must be at least 1 (got {l.Quality.MaxRegenerationAttempts}).");
 
@@ -405,6 +408,160 @@ internal static class ConfigValidator
     }
 
     /// <summary>onlyForGlyphs / excludeGlyphs on shapes: known plain glyphs, and every plain glyph keeps at least one shape.</summary>
+    private static void ValidateQualityRules(LanguageDefinition l, Ctx c)
+    {
+        var q = l.Quality;
+        if (!double.IsFinite(q.AcceptPenalty) || q.AcceptPenalty < 0)
+            c.Add("quality.acceptPenalty", $"must be a finite number >= 0 (got {q.AcceptPenalty}).");
+
+        var shapeIds = new HashSet<string>(l.Shapes.Select(s => s.Id), StringComparer.Ordinal);
+        var glyphNames = new HashSet<string>(l.BaseGlyphs.Concat(l.Glyphs).Select(g => g.Name), StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        void CheckRules(List<QualityRule> list, string label, bool pair)
+        {
+        for (int i = 0; i < list.Count; i++)
+        {
+            var r = list[i];
+            string where = $"{label}[{i}]" + (string.IsNullOrWhiteSpace(r.Id) ? "" : $" ('{r.Id}')");
+
+            if (string.IsNullOrWhiteSpace(r.Id)) c.Add(where + ".id", "is required.");
+            else if (!seen.Add(r.Id)) c.Add(where + ".id", $"'{r.Id}' is used by another rule.");
+
+            Enum(c, where + ".appliesTo", r.AppliesTo);
+            Enum(c, where + ".among", r.Among);
+            Enum(c, where + ".measure", r.Measure);
+            Enum(c, where + ".similarity", r.Similarity);
+            Enum(c, where + ".onFail", r.OnFail);
+            Enum(c, where + ".redo", r.Redo);
+            if (!pair && r.Redo != QualityRedo.Composite && r.AppliesTo == QualityAppliesTo.Plain)
+                c.Add(where + ".redo", "redraws a component of a composite, but appliesTo is Plain.");
+            if (r.Redo != QualityRedo.Composite && r.OnFail != QualityAction.Reject)
+                c.Add(where + ".redo", "only applies to onFail Reject (Score keeps its best attempt, which a redrawn component would invalidate).");
+            Enum(c, where + ".subject.kind", r.Subject.Kind);
+            Enum(c, where + ".against.kind", r.Against.Kind);
+            Enum(c, where + ".window.shape", r.Window.Shape);
+
+            foreach (var (field, selector) in new[] { ("subject", r.Subject), ("against", r.Against) })
+            {
+                if (pair)
+                {
+                    if (selector.Glyphs is not { Count: > 0 }) c.Add($"{where}.{field}.glyphs", "is required: the glyph(s) whose strokes this selector picks (\"*\" = any glyph).");
+                    foreach (var g in selector.Glyphs ?? new List<string>())
+                        if (g != "*" && !glyphNames.Contains(g)) c.Add($"{where}.{field}.glyphs", $"'{g}' is not listed in glyphs or baseGlyphs.");
+                }
+                else if (selector.Glyphs is { Count: > 0 })
+                    c.Add($"{where}.{field}.glyphs", "only applies in quality.pairRules (quality.rules look inside one glyph).");
+            }
+
+            foreach (var (field, selector) in new[] { ("subject", r.Subject), ("against", r.Against) })
+                foreach (var id in selector.Shapes ?? new List<string>())
+                    if (!shapeIds.Contains(id)) c.Add($"{where}.{field}.shapes", $"'{id}' is not the id of a shape.");
+
+            if (pair && (r.OnlyForGlyphs is { Count: > 0 } || r.ExcludeGlyphs is { Count: > 0 } || r.AppliesTo != QualityAppliesTo.Both || r.Among != QualityAmong.Auto))
+                c.Add(where, "appliesTo, among, onlyForGlyphs and excludeGlyphs belong to quality.rules; a pair rule names its glyphs in subject.glyphs and against.glyphs.");
+            foreach (var (field, names) in new[] { ("onlyForGlyphs", r.OnlyForGlyphs), ("excludeGlyphs", r.ExcludeGlyphs) })
+                foreach (var name in names ?? new List<string>())
+                    if (!glyphNames.Contains(name)) c.Add($"{where}.{field}", $"'{name}' is not listed in glyphs or baseGlyphs.");
+
+            if (!double.IsFinite(r.Window.Radius) || r.Window.Radius < 0)
+                c.Add(where + ".window.radius", $"must be a finite number >= 0 (got {r.Window.Radius}).");
+            if (r.Max < 0) c.Add(where + ".max", $"must be >= 0 (got {r.Max}).");
+            if (!double.IsFinite(r.MinDistance) || r.MinDistance < 0) c.Add(where + ".minDistance", $"must be a finite number >= 0 (got {r.MinDistance}).");
+            if (r.Measure == QualityMeasure.Distance && r.MinDistance <= 0) c.Add(where + ".minDistance", "is required (above 0) for measure Distance.");
+            if (r.Measure != QualityMeasure.Distance && r.MinDistance > 0) c.Add(where + ".minDistance", "only applies to measure Distance.");
+            if (r.Measure == QualityMeasure.Distance && r.Max > 0) c.Add(where + ".max", "does not apply to measure Distance.");
+            if (r.Measure != QualityMeasure.Similar && (r.Similarity != SimilarityMode.Visual || r.SimilarityThreshold != 0.7))
+                c.Add(where + ".similarity", "similarity and similarityThreshold only apply to measure Similar.");
+            if (!double.IsFinite(r.SimilarityThreshold) || r.SimilarityThreshold <= 0 || r.SimilarityThreshold > 1)
+                c.Add(where + ".similarityThreshold", $"must be above 0 and at most 1 (got {r.SimilarityThreshold}).");
+            if (!double.IsFinite(r.StrokeWidth) || r.StrokeWidth <= 0) c.Add(where + ".strokeWidth", $"must be a finite number above 0 (got {r.StrokeWidth}).");
+            if (!double.IsFinite(r.Weight) || r.Weight < 0) c.Add(where + ".weight", $"must be a finite number >= 0 (got {r.Weight}).");
+            if (r.OnFail != QualityAction.Score && r.Weight != 1) c.Add(where + ".weight", "only applies to onFail Score.");
+
+            if (!pair && r.Among == QualityAmong.OtherComponents && r.AppliesTo == QualityAppliesTo.Plain)
+                c.Add(where + ".among", "OtherComponents needs composite glyphs, but appliesTo is Plain.");
+
+            if (r.WhenCountsDiffer is { } differ)
+            {
+                if (!shapeIds.Contains(differ.Shape)) c.Add(where + ".whenCountsDiffer.shape", $"'{differ.Shape}' is not the id of a shape.");
+                Enum(c, where + ".whenCountsDiffer.action", differ.Action);
+                if (!double.IsFinite(differ.Factor) || differ.Factor < 0 || differ.Factor > 1)
+                    c.Add(where + ".whenCountsDiffer.factor", $"must be between 0 and 1 (got {differ.Factor}).");
+                if (!pair && (r.AppliesTo == QualityAppliesTo.Plain || r.Among == QualityAmong.OtherChains))
+                    c.Add(where + ".whenCountsDiffer", "compares the components of a composite, so it needs appliesTo Both or Composite and among Auto or OtherComponents.");
+            }
+        }
+        }
+
+        CheckRules(q.Rules, "quality.rules", pair: false);
+        CheckRules(q.PairRules, "quality.pairRules", pair: true);
+    }
+
+    /// <summary>spacing.onlyShapes / excludeShapes name shapes that exist.</summary>
+    private static void ValidateSpacingShapeFilters(LanguageDefinition l, Ctx c)
+    {
+        var ids = new HashSet<string>(l.Shapes.Select(s => s.Id), StringComparer.Ordinal);
+        for (int i = 0; i < l.Shapes.Count; i++)
+        {
+            var spacing = l.Shapes[i].Arrangement.Spacing;
+            foreach (var (field, names) in new[] { ("onlyShapes", spacing.OnlyShapes), ("excludeShapes", spacing.ExcludeShapes) })
+                foreach (var name in names ?? new List<string>())
+                    if (!ids.Contains(name)) c.Add($"shapes[{i}] ('{l.Shapes[i].Id}').arrangement.spacing.{field}", $"'{name}' is not the id of a shape.");
+        }
+    }
+
+    /// <summary>placement.nodes: every region is exactly one kind and well formed; shape references name shapes placed earlier.</summary>
+    private static void ValidateNodeMasks(LanguageDefinition l, Ctx c)
+    {
+        var order = l.Shapes.Select((s, i) => (s.Id, i)).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First().i);
+        for (int i = 0; i < l.Shapes.Count; i++)
+        {
+            var shape = l.Shapes[i];
+            var mask = shape.Placement.Nodes;
+            if (mask is null) continue;
+            string where = $"shapes[{i}] ('{shape.Id}').placement.nodes";
+            if (shape.CopyOf is not null) c.Add(where, "does not apply to a copyOf shape (a copy follows its original).");
+
+            void Refs(string field, IEnumerable<string>? ids)
+            {
+                foreach (var id in ids ?? Enumerable.Empty<string>())
+                {
+                    if (!order.TryGetValue(id, out var at)) c.Add($"{where}.{field}", $"'{id}' is not the id of a shape.");
+                    else if (at > i) c.Add($"{where}.{field}", $"'{id}' comes after this shape in shapes, so none of its nodes exist when this shape is placed - list it earlier.");
+                }
+            }
+
+            foreach (var (list, label) in new[] { (mask.Allow, "allow"), (mask.Forbid, "forbid") })
+                for (int r = 0; r < (list?.Count ?? 0); r++)
+                {
+                    var region = list![r];
+                    string at = $"{where}.{label}[{r}]";
+                    if (region.KindCount != 1) { c.Add(at, "must set exactly one of points, box, pattern, nodesOfShapes, boundsOfShapes."); continue; }
+                    if (region.Points is { Count: 0 }) c.Add(at + ".points", "is empty.");
+                    if (region.Box is { } b && (b.MinX > b.MaxX || b.MinY > b.MaxY)) c.Add(at + ".box", "minX/minY must not exceed maxX/maxY.");
+                    if (region.Pattern is { } pat)
+                    {
+                        if (pat.X is null && pat.Y is null) c.Add(at + ".pattern", "needs x and/or y.");
+                        foreach (var (axisName, axis) in new[] { ("x", pat.X), ("y", pat.Y) })
+                        {
+                            if (axis is null) continue;
+                            Enum(c, $"{at}.pattern.{axisName}.mode", axis.Mode);
+                            if (axis.Step < 1) c.Add($"{at}.pattern.{axisName}.step", $"must be at least 1 (got {axis.Step}).");
+                            if (axis.Mode != AxisPatternMode.Every && (axis.Step != 1 || axis.Offset != 0)) c.Add($"{at}.pattern.{axisName}", "step and offset only apply to mode Every.");
+                        }
+                    }
+                    if (region.NodesOfShapes is { } pool) { if (pool.Count == 0) c.Add(at + ".nodesOfShapes", "is empty."); Refs($"{label}[{r}].nodesOfShapes", pool); }
+                    if (region.BoundsOfShapes is { } around)
+                    {
+                        if (around.Shapes.Count == 0) c.Add(at + ".boundsOfShapes.shapes", "is empty.");
+                        if (around.Margin < 0) c.Add(at + ".boundsOfShapes.margin", $"must be >= 0 (got {around.Margin}).");
+                        Refs($"{label}[{r}].boundsOfShapes.shapes", around.Shapes);
+                    }
+                }
+        }
+    }
+
     private static void ValidateShapeGlyphFilters(LanguageDefinition l, Ctx c)
     {
         var composites = new HashSet<string>(l.Combination.Recipes.Keys, StringComparer.Ordinal);
@@ -695,6 +852,8 @@ internal static class ConfigValidator
         foreach (var error in a.Bias.Validate()) c.Add(path + ".bias", error);
 
         Enum(c, path + ".crossing.mode", a.Crossing.Mode);
+        if (forShape && a.Crossing.Mode == CrossingMode.AnywhereButRespectStrict)
+            c.Add(path + ".crossing.mode", "AnywhereButRespectStrict is for combination.arrangement (and a recipe's arrangement) only; a shape uses Anywhere, NodesOnly, None or Strict.");
         Number(c, path + ".crossing.nodeTolerance", a.Crossing.NodeTolerance, 0, 5);
         if (a.Crossing.Mode != CrossingMode.NodesOnly && a.Crossing.NodesOfShapes is { Count: > 0 })
             c.Add(path + ".crossing.nodesOfShapes", "only applies with mode NodesOnly.");
@@ -704,6 +863,11 @@ internal static class ConfigValidator
 
         if (!forShape && a.Spacing.IgnoreStartNode)
             c.Add(path + ".spacing.ignoreStartNode", "only applies to a shape with placement.startOnExistingNode.");
+
+        if (!forShape && a.Spacing.HasShapeFilter)
+            c.Add(path + ".spacing.onlyShapes", "onlyShapes / excludeShapes only apply to shapes; a combination's spacing measures whole components.");
+        if (!forShape && a.Spacing.MinEdgeDistance > 0)
+            c.Add(path + ".spacing.minEdgeDistance", "only applies to shapes (it keeps the strokes of a shape apart while it is drawn); combined glyphs are not checked for it.");
 
         if (forShape && a.Bias.IncludeScaleAndRotation)
             c.Add(path + ".bias.includeScaleAndRotation", "only applies to combination components; a shape's candidates are never scaled or rotated.");
@@ -818,7 +982,9 @@ internal static class ConfigValidator
                 c.Add(path + ".startOnExistingNode", $"only applies when mode is RandomValid (is {p.Mode}).");
 
             // A shape starting on an existing node shares that node, i.e. is at distance 0 from it.
-            if (arrangement.Spacing is { Enabled: true, MinNodeDistance: > 0, IgnoreStartNode: false } && p.StartOnExistingNodeChance >= 100.0)
+            // Unless every shape it may start on is one the spacing does not measure (onlyShapes / excludeShapes).
+            bool startsOnlyOnUnmeasured = p.StartOnShapes is { Count: > 0 } starts && starts.All(id => !arrangement.Spacing.Covers(id));
+            if (arrangement.Spacing is { Enabled: true, MinNodeDistance: > 0, IgnoreStartNode: false } && p.StartOnExistingNodeChance >= 100.0 && !startsOnlyOnUnmeasured)
                 c.Add(path + ".startOnExistingNode", "can never satisfy arrangement.spacing.minNodeDistance > 0 (a shared node is at distance 0) - set arrangement.spacing.ignoreStartNode to leave the start node out of the check.");
         }
     }

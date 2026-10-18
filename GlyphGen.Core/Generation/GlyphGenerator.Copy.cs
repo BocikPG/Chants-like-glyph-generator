@@ -144,7 +144,7 @@ public sealed partial class GlyphGenerator
                 };
             }
 
-            geometry.Commit(copy, shape.Arrangement.Crossing);
+            geometry.Commit(copy, shape.Arrangement.Crossing, shape.Arrangement.Spacing);
 
             // Mirrored copies already carry their bends (see Transformed); anything still unplanned gets its own.
             BendPlanner.Plan(copy, language.Curve, rng.Derive("bend"), curved: BendPlanner.AnyCurved(copy, language.Curve));
@@ -176,7 +176,7 @@ public sealed partial class GlyphGenerator
         if (origin.Nodes.Count == 0) return null;
 
         var cfg = shape.CopyOf!;
-        geometry.SetCurrent(shape.Id, shape.Arrangement.Crossing);
+        geometry.SetCurrent(shape.Id, shape.Arrangement.Crossing, shape.Arrangement.Spacing);
 
         var start = origin.Nodes[0];
         // What the Auto rule looks at: the listed shapes' strokes, or just the chain being copied.
@@ -270,7 +270,7 @@ public sealed partial class GlyphGenerator
             var chain = Transformed(origin, candidateMap, shape);
             diag.Tried++;
             if (!FitsGrid(chain, grid)) { diag.OffGrid++; continue; }
-            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroups, shape.Arrangement.Spacing)) { diag.Spacing++; continue; }
+            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroupsFor(shape.Arrangement.Spacing), shape.Arrangement.Spacing)) { diag.Spacing++; continue; }
             if (selfRules is not null && !RespectsOriginSelfSpacing(chain, origin, selfRules, ignoreOriginal, geometry)) { diag.SelfSpacing++; continue; }
             if (geometry.CountBlocked(chain) > 0) { diag.Crossing++; continue; }
 
@@ -347,7 +347,7 @@ public sealed partial class GlyphGenerator
 
             // Positions that were off the grid were counted as such; they are re-sorted here by what stops them next.
             bool wasOffGrid = !FitsGrid(chain, grid);
-            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroups, shape.Arrangement.Spacing))
+            if (!SubSymbolSpacingChecker.SatisfiesSpacing(chain.AllNodes(), geometry.NodeGroupsFor(shape.Arrangement.Spacing), shape.Arrangement.Spacing))
             {
                 if (wasOffGrid) { diag.OffGrid--; diag.Spacing++; }
                 continue;

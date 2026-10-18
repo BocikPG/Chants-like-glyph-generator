@@ -1,6 +1,6 @@
 {
   "$schema": "./GlyphGen.Cli/config.schema.json",
-  "rootSeed": 20266454,
+  "rootSeed": 20260927,
   "outputDirectory": "./output",
   "languages": [
     {
@@ -256,7 +256,6 @@
               "shapes": [
                 "strokes"
               ],
-              
               "optional": false
             }
           ]
@@ -808,18 +807,15 @@
         "arrangement": {
           "placements": [
             {
-              "glyph": "placeBase",
-              "mode": "Fixed"
-            },
-            {
-              "glyph": "actionBase",
+              "glyph": "*",
               "mode": "Fixed"
             }
           ],
           "crossing": {
-            "mode": "Anywhere"
+            "mode": "AnywhereButRespectStrict"
           }
-        }
+        },
+        "maxRetriesPerRecipe": 20
       },
       "shapes": [
         {
@@ -936,7 +932,8 @@
             "fixedOrigin": [
               0,
               0
-            ]
+            ],
+            "maxPlacementAttempts": 50
           },
           "arrangement": {
             "crossing": {
@@ -970,14 +967,22 @@
           "placement": {
             "mode": "RandomValid",
             "maxPlacementAttempts": 50,
-            "startOnExistingNode": false
+            "startOnExistingNode": false,
+            "bounds": {
+              "minX": 2,
+              "minY": 2,
+              "maxX": 22,
+              "maxY": 24
+            }
           },
           "arrangement": {
             "spacing": {
-              "minNodeDistance": 2
+              "enabled": true,
+              "minNodeDistance": 2.5,
+              "minEdgeDistance": 2.5
             },
             "crossing": {
-              "mode": "None"
+              "mode": "Strict"
             }
           }
         },
@@ -989,111 +994,60 @@
           ],
           "count": {
             "min": 1,
-            "max": 1
+            "max": 2
           },
           "chain": {
             "length": {
               "min": 2,
-              "max": 2
+              "max": 3
             },
             "connectionRules": [
               {
                 "direction": "Orthogonal",
-                "minLength": 3,
-                "maxLength": 10,
-                "weight": 2
-              },
-              {
-                "direction": "Orthogonal",
-                "minLength": 3,
-                "maxLength": 7,
-                "weight": 1,
-                "curve": {
-                  "chanceToBeCurved": 100,
-                  "mode": "Hybrid",
-                  "tension": {
-                    "options": [
-                      {
-                        "min": 0.1,
-                        "max": 0.1
-                      },
-                      {
-                        "min": 0.4,
-                        "max": 0.5
-                      },
-                      {
-                        "min": 0.2,
-                        "max": 0.4
-                      }
-                    ]
-                  }
-                }
-              },
-              {
-                "direction": "Angle",
-                "minAngle": 10,
-                "maxAngle": 170,
-                "minLength": 2,
-                "maxLength": 7,
-                "weight": 1,
-                "curve": {
-                  "chanceToBeCurved": 70,
-                  "mode": "Hybrid",
-                  "tension": {
-                    "options": [
-                      {
-                        "min": 0.1,
-                        "max": 0.1
-                      },
-                      {
-                        "min": 0.4,
-                        "max": 0.5
-                      },
-                      {
-                        "min": 0.2,
-                        "max": 0.4
-                      }
-                    ]
-                  }
-                }
+                "minLength": 8,
+                "maxLength": 16,
+                "weight": 3
               },
               {
                 "direction": "Diagonal",
-                "minLength": 2,
-                "maxLength": 7,
-                "weight": 1,
+                "minLength": 5,
+                "maxLength": 10,
+                "weight": 2,
                 "curve": {
-                  "chanceToBeCurved": 70,
+                  "chanceToBeCurved": 30,
                   "mode": "Hybrid",
                   "tension": {
                     "options": [
                       {
                         "min": 0.1,
-                        "max": 0.1
+                        "max": 0.2
                       },
                       {
-                        "min": 0.4,
-                        "max": 0.5
-                      },
-                      {
-                        "min": 0.2,
+                        "min": 0.3,
                         "max": 0.4
                       }
                     ]
                   }
+                }
+              },
+              {
+                "direction": "Arc",
+                "minLength": 6,
+                "maxLength": 10,
+                "weight": 2,
+                "arc": {
+                  "angles": "Cardinal",
+                  "minSweep": 180,
+                  "maxSweep": 270
                 }
               }
             ],
             "connectionWeighting": "PerRule",
             "selfSpacing": [
               {
-                "mode": "Existing",
-                "minDistance": 2
-              },
-              {
-                "mode": "Adjacent",
+                "mode": "AllNodes",
                 "lookback": 2,
-                "minDistance": 2
+                "minDistance": 3
               }
             ]
           },
@@ -1104,13 +1058,23 @@
             },
             "spacing": {
               "enabled": true,
-              "ignoreStartNode": true,
-              "minNodeDistance": 2
+              "onlyShapes": [
+                "firstStroke"
+              ],
+              "minNodeDistance": 2.8
             }
           },
           "placement": {
             "startOnExistingNode": true,
-            "startOnExistingNodeChance": 60
+            "startOnShapes": [
+              "bottomLine"
+            ],
+            "bounds": {
+              "minX": 2,
+              "minY": 2,
+              "maxX": 22,
+              "maxY": 20
+            }
           }
         },
         {
@@ -1125,62 +1089,17 @@
           },
           "chain": {
             "length": {
-              "min": 3,
-              "max": 7
+              "min": 2,
+              "max": 3
             },
-            "selfSpacing": [
-              {
-                "mode": "AllNodes",
-                "minDistance": 3
-              },
-              {
-                "mode": "Adjacent",
-                "lookback": 2,
-                "minDistance": 4
-              }
-            ],
             "connectionRules": [
               {
-                "direction": "Orthogonal",
-                "minLength": 3,
-                "maxLength": 6,
-                "weight": 1
-              },
-              {
-                "direction": "Angle",
-                "minAngle": 10,
-                "maxAngle": 170,
-                "minLength": 2,
-                "maxLength": 7,
-                "weight": 3,
-                "curve": {
-                  "chanceToBeCurved": 80,
-                  "mode": "Hybrid",
-                  "tension": {
-                    "options": [
-                      {
-                        "min": 0.1,
-                        "max": 0.1
-                      },
-                      {
-                        "min": 0.4,
-                        "max": 0.5
-                      },
-                      {
-                        "min": 0.2,
-                        "max": 0.4
-                      }
-                    ]
-                  }
-                }
-              },
-              {
                 "direction": "Diagonal",
-                "minLength": 2,
-                "maxLength": 7,
+                "minLength": 3,
+                "maxLength": 9,
                 "weight": 3,
                 "curve": {
-                  "chanceToBeCurved": 80,
+                  "chanceToBeCurved": 20,
                   "mode": "Hybrid",
                   "tension": {
                     "options": [
@@ -1189,39 +1108,69 @@
                         "max": 0.2
                       },
                       {
-                        "min": 0.4,
-                        "max": 0.5
-                      },
-                      {
-                        "min": 0.2,
+                        "min": 0.3,
                         "max": 0.4
                       }
                     ]
                   }
                 }
+              },
+              {
+                "direction": "Arc",
+                "minLength": 3,
+                "maxLength": 8,
+                "weight": 1.5,
+                "arc": {
+                  "angles": "Cardinal",
+                  "minSweep": 180,
+                  "maxSweep": 270
+                }
+              },
+              {
+                "direction": "Orthogonal",
+                "minLength": 3,
+                "maxLength": 10,
+                "weight": 1
               }
             ],
-            "allowNodeRevisit": true,
-            "allowEdgeRevisit": true
+            "selfSpacing": [
+              {
+                "mode": "Adjacent",
+                "lookback": 2,
+                "minDistance": 2
+              }
+            ],
+            "allowNodeRevisit": false,
+            "allowEdgeRevisit": false
           },
           "arrangement": {
             "crossing": {
               "mode": "NodesOnly",
-              "nodeTolerance": 0.3
+              "nodeTolerance": 0.4
             },
             "spacing": {
               "enabled": true,
               "ignoreStartNode": true,
-              "minNodeDistance": 4
+              "excludeShapes": [
+                "bottomLine"
+              ],
+              "minNodeDistance": 3,
+              "minEdgeDistance": 3
             }
           },
           "placement": {
             "startOnExistingNode": true,
             "startOnShapes": [
-              "firstStroke"
+              "firstStroke",
+              "bottomLine"
             ],
-            "redoShape": 50,
-            "redrawGlyph": 50
+            "bounds": {
+              "minX": 2,
+              "minY": 2,
+              "maxX": 22,
+              "maxY": 22
+            },
+            "redoShape": 50
           }
         }
       ],
@@ -1231,9 +1180,37 @@
         "affectSubSymbolLength": false
       },
       "quality": {
-        "maxSimilarity": 0.7,
+        "maxSimilarity": 0.88,
         "rejectStraightLineOnly": true,
-        "maxRegenerationAttempts": 50
+        "maxRegenerationAttempts": 50,
+        "acceptPenalty": 0,
+        "pairRules": [
+          {
+            "id": "NoCirclesTooCloseTOEachOtherRule",
+            "subject": {
+              "glyphs": [
+                "placeBase"
+              ],
+              "shapes": [
+                "dotsOnly"
+              ],
+              "kind": "Dot"
+            },
+            "against": {
+              "glyphs": [
+                "actionBase"
+              ],
+              "shapes": [
+                "dotsOnly"
+              ],
+              "kind": "Dot"
+            },
+            "measure": "Distance",
+            "minDistance": 4,
+            "onFail": "Reject",
+            "redo": "Either"
+          }
+        ]
       },
       "render": {
         "framing": "Grid",
@@ -1247,7 +1224,21 @@
           "kind": "Brush",
           "perGlyphJitter": 0.0,
           "brush": {
-            "mode": "BroadNib"
+            "mode": "BroadNib",
+            "width": {
+              "min": 0.075,
+              "max": 0.075
+            },
+            "thinWidth": {
+              "min": 0.04,
+              "max": 0.04
+            },
+            "nibAngleDegrees": {
+              "min": 35,
+              "max": 35
+            },
+            "nibRoundness": 0.6,
+            "nibAngleWobble": 2
           }
         }
       }
@@ -1485,7 +1476,8 @@
       },
       "quality": {
         "maxSimilarity": 0.9,
-        "rejectStraightLineOnly": false
+        "rejectStraightLineOnly": false,
+        "maxRegenerationAttempts": 50
       },
       "render": {
         "framing": "Grid",
@@ -1531,6 +1523,103 @@
             }
           }
         }
+      }
+    },
+    {
+      "name": "NomaiCoords",
+      "grid": {
+        "width": 5,
+        "height": 5
+      },
+      "canvas": {
+        "sizePx": 512,
+        "marginPx": 32
+      },
+      "glyphs": [
+        "Coord1",
+        "Coord2",
+        "Coord3",
+        "Coord4",
+        "Coord5",
+        "Coord6",
+        "Coord7",
+        "Coord8"
+      ],
+      "shapes": [
+        {
+          "id": "firstStroke",
+          "chain": {
+            "length":{
+              "min": 2,
+              "max": 10
+            },
+            "connectionRules": [
+              {
+                "direction": "Any",
+                "minLength": 1,
+                "maxLength": 10
+              }
+            ]
+          },
+          "arrangement":{
+            "crossing":{
+              "mode": "Anywhere"
+            }
+          },
+          "placement": {
+            "nodes": {
+              "allow": [
+                {
+                  "points": [
+                    [
+                      1,
+                      0
+                    ],
+                    [
+                      3,
+                      0
+                    ],
+                    [
+                      0,
+                      3
+                    ],
+                    [
+                      5,
+                      3
+                    ],
+                    [
+                      1,
+                      5
+                    ],
+                    [
+                      3,
+                      5
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "render": {
+        "framing": "GlyphCentered",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "debugShowNodes": true,
+        "debugColorComponents": true,
+        "debugColorParts": true,
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.045,
+              "max": 0.045
+            }
+          }
+        }
+        
       }
     }
   ]

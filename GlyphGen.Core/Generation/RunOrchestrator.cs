@@ -30,6 +30,9 @@ public interface IGlyphGenerator
 public interface ILanguageGenerator
 {
     IReadOnlyList<Glyph> GenerateAll(LanguageDefinition language, LatticeGrid grid, ulong languageSeed);
+
+    /// <summary>Problems found by quality rules that only warn (see QualityRule.OnFail), from the last <see cref="GenerateAll"/>.</summary>
+    IReadOnlyList<string> Warnings => Array.Empty<string>();
 }
 
 /// <summary>
@@ -45,8 +48,12 @@ public sealed class RunOrchestrator
         _languageGenerator = languageGenerator;
     }
 
+    /// <summary>Warnings of the whole run (quality rules with onFail Warn), for the host to print.</summary>
+    public List<string> Warnings { get; } = new();
+
     public IReadOnlyDictionary<string, IReadOnlyList<Glyph>> Run(RootConfig config)
     {
+        Warnings.Clear();
         var result = new Dictionary<string, IReadOnlyList<Glyph>>();
 
         foreach (var language in config.Languages)
@@ -54,6 +61,7 @@ public sealed class RunOrchestrator
             var grid = new LatticeGrid(language.Grid.Width, language.Grid.Height);
             ulong languageSeed = SeedTree.ForLanguage(config.RootSeed, language.Name);
             result[language.Name] = _languageGenerator.GenerateAll(language, grid, languageSeed);
+            Warnings.AddRange(_languageGenerator.Warnings);
         }
 
         return result;

@@ -349,6 +349,7 @@ public sealed class ChainGenerator : IChainGenerator
         // chain exists, so the placement checks the finished curves instead (faster, and it judges the real stroke).
         bool mayCurve = !candidateEdge.IsCircle && (request.AllEdgesCurved || candidateEdge.Curve is { ChanceToBeCurved: > 0 });
 
+        var own = new List<GridPoint>(chain.Nodes) { candidateEdge.To };
         foreach (var existing in chain.Edges)
         {
             if (IsSameEdge(existing, candidateEdge))
@@ -358,11 +359,11 @@ public sealed class ChainGenerator : IChainGenerator
             }
 
             if (!mayCurve && EdgePaths.Crosses(candidateEdge, existing)) return false;
+            if (!mayCurve && request.MinEdgeDistance > 0 && EdgePaths.TooClose(candidateEdge, existing, request.MinEdgeDistance, own)) return false;
         }
 
         if (mayCurve) return true;
 
-        var own = new List<GridPoint>(chain.Nodes) { candidateEdge.To };
         return !existingGeometry.IsBlocked(candidateEdge, own);
     }
 

@@ -50,7 +50,8 @@ public sealed class CombinationResolver : ICombinationResolver
         ulong languageSeed = 0,
         Action<string>? explainFailure = null,
         Func<string, Glyph?>? rebuildComposite = null,
-        bool isRebuild = false)
+        bool isRebuild = false,
+        IReadOnlyDictionary<string, (CrossingConfig Crossing, double Clearance)>? strictShapes = null)
     {
         var report = new Dictionary<string, ComponentTally>();
         var working = new Dictionary<string, Glyph>();
@@ -95,6 +96,9 @@ public sealed class CombinationResolver : ICombinationResolver
             // composition is deliberate controlled stacking, not free intersection. (A crossing
             // needs BOTH components to allow it; here they all share this arrangement.)
             var geometry = new GeometryContext(arrangement.Crossing);
+            if (arrangement.Crossing.Mode == CrossingMode.AnywhereButRespectStrict && strictShapes is { Count: > 0 })
+                geometry.ChainRules = chain => chain.ShapeTag is { } tag && tag.LastIndexOf('#') > 0
+                    && strictShapes.TryGetValue(tag[..tag.LastIndexOf('#')], out var rules) ? rules : (arrangement.Crossing, 0.0);
             var placedByIndex = new PlacedComponent?[componentNames.Count];
             bool allPlaced = true;
 
@@ -675,9 +679,23 @@ public sealed class CombinationResolver : ICombinationResolver
     private static bool FitsGeometry(List<SubSymbolChain> chains, GeometryContext geometry)
     {
         var ownNodes = chains.SelectMany(c => c.AllNodes()).ToList();
-        foreach (var chain in chains)
-            foreach (var edge in chain.Edges)
-                if (geometry.IsBlocked(edge, ownNodes)) return false;
+        var (defaultCrossing, defaultClearance) = (geometry.Crossing, geometry.CurrentClearance);
+        try
+        {
+            foreach (var chain in chains)
+            {
+                // Per chain settings: a Strict shape's strokes keep their rule inside a combined glyph (AnywhereButRespectStrict).
+                if (geometry.ChainRules is { } rules)
+                {
+                    var (crossing, clearance) = rules(chain);
+                    geometry.SetCurrent(null, crossing, clearance);
+                }
+
+                foreach (var edge in chain.Edges)
+                    if (geometry.IsBlocked(edge, ownNodes)) return false;
+            }
+        }
+        finally { geometry.SetCurrent(null, defaultCrossing, defaultClearance); }
 
         return true;
     }

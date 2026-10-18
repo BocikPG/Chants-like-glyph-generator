@@ -107,6 +107,8 @@ catch (GlyphGenerationException ex)
     return;
 }
 
+foreach (var warning in orchestrator.Warnings) Console.WriteLine($"Warning: {warning}");
+
 var renderer = new LanguageRenderer();
 Directory.CreateDirectory(config.OutputDirectory);
 
