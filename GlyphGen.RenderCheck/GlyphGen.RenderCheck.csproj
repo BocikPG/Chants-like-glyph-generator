@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Checks of the rendering side (needs SkiaSharp): run with `dotnet run -project GlyphGen.RenderCheck`.
+       Kept apart from GlyphGen.SelfCheck, which only needs GlyphGen.Core. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GlyphGen.Core\GlyphGen.Core.csproj" />
+    <ProjectReference Include="..\GlyphGen.Rendering\GlyphGen.Rendering.csproj" />
+  </ItemGroup>
+
+  <!-- On Linux also add the SkiaSharp native assets package, like GlyphGen.Cli does. -->
+
+</Project>

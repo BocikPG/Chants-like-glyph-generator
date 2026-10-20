@@ -60,7 +60,9 @@ public sealed class LanguageRenderer
         return rotate;
     }
 
-    public IReadOnlyList<RenderedGlyph> Render(LanguageDefinition language, IReadOnlyList<Glyph> glyphs, ulong rootSeed)
+    /// <param name="maxParallelism">Threads used to draw the glyphs (pass 2): 1 = one (default), 0 = every core. Every glyph is drawn on its own
+    /// bitmap from its own plan, so the images are exactly the ones a single thread draws, in the same order.</param>
+    public IReadOnlyList<RenderedGlyph> Render(LanguageDefinition language, IReadOnlyList<Glyph> glyphs, ulong rootSeed, int maxParallelism = 1)
     {
         var render = language.Render;
         int size = Math.Max(16, language.Canvas.SizePx);
@@ -118,18 +120,30 @@ public sealed class LanguageRenderer
         var shapeIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var shape in language.Shapes) shapeIndex.TryAdd(shape.Id, shapeIndex.Count);
 
-        // Pass 2: lay out and draw.
-        var results = new List<RenderedGlyph>();
-        foreach (var plan in plans)
+        // Pass 2: lay out and draw. The glyphs do not depend on each other here (each has its own plan and its own bitmap), so they
+        // can be drawn side by side; the results stay in plan order.
+        var gridFallback = languageBounds;
+        RenderedGlyph DrawOne(GlyphPlan plan)
         {
             var gridBounds = new Bounds(0, 0, Math.Max(1, plan.Glyph.GridWidth - 1), Math.Max(1, plan.Glyph.GridHeight - 1));
             var glyphBounds = plan.GlyphBounds ?? gridBounds;
-            var langBounds = languageBounds ?? gridBounds;
+            var langBounds = gridFallback ?? gridBounds;
 
             var transform = LayoutTransform.Compute(render.Framing, gridBounds, glyphBounds, langBounds, size, pad);
             byte[] png = DrawGlyph(plan, transform, typeface, render, size, foreground, background, shapeIndex);
 
-            results.Add(new RenderedGlyph { LanguageName = language.Name, GlyphName = plan.Glyph.Name, Png = png });
+            return new RenderedGlyph { LanguageName = language.Name, GlyphName = plan.Glyph.Name, Png = png };
+        }
+
+        int threads = maxParallelism <= 0 ? Environment.ProcessorCount : maxParallelism;
+        var results = new RenderedGlyph[plans.Count];
+        if (threads <= 1 || plans.Count <= 1)
+        {
+            for (int i = 0; i < plans.Count; i++) results[i] = DrawOne(plans[i]);
+        }
+        else
+        {
+            Parallel.For(0, plans.Count, new ParallelOptions { MaxDegreeOfParallelism = threads }, i => results[i] = DrawOne(plans[i]));
         }
 
         return results;

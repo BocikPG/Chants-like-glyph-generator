@@ -9,6 +9,11 @@
       "type": "string",
       "default": "./output"
     },
+    "maxParallelism": {
+      "type": "integer",
+      "description": "How many threads generation may use. 1 (default) = one thread. 0 = every core. The result is identical whatever the number: threads only try quality retries of a plain/base glyph ahead of time, and the first attempt that passes in attempt order is the one kept.",
+      "default": 1
+    },
     "languages": {
       "type": "array",
       "items": {
@@ -1978,6 +1983,20 @@
           "description": "Reject a glyph whose entire geometry (across all its chains/components) reduces to a single straight line with no bends.",
           "default": true
         },
+        "similarityBasis": {
+          "type": "string",
+          "enum": [
+            "Nodes",
+            "Edges"
+          ],
+          "description": "What MaxSimilarity compares: the nodes (default) or the strokes. Edges is the one to use when glyphs are built on a small fixed set of nodes (a node mask), where nearly every glyph uses the same nodes.",
+          "default": "Nodes"
+        },
+        "comparePosition": {
+          "type": "boolean",
+          "description": "false (default): two glyphs are compared after shifting each so its bounding box starts at the origin, so the same shape in another place counts as alike. true: compared where they lie on the grid (for glyphs whose position means something, like coordinates).",
+          "default": false
+        },
         "maxRegenerationAttempts": {
           "type": "integer",
           "minimum": 1,
@@ -2008,8 +2027,7 @@
           "default": 0
         }
       },
-      "additionalProperties": false,
-      "description": "Post-generation quality gates applied to every finished glyph in a language, checked against every glyph already accepted earlier in the same run. A glyph failing either check is regenerated (fresh seed) up to MaxRegenerationAttempts times before the run fails with a clear error naming the glyph."
+      "additionalProperties": false
     },
     "QualityRule": {
       "type": "object",

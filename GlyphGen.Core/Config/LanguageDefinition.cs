@@ -72,5 +72,11 @@ public sealed class RootConfig
     public ulong RootSeed { get; set; }
 
     public string OutputDirectory { get; set; } = "./output";
+
+    /// <summary>How many threads generation may use. 1 (default) = one thread. 0 = every core. The result is identical whatever the
+    /// number: threads only try quality retries of a plain/base glyph ahead of time, and the first attempt that passes in attempt
+    /// order is the one kept.</summary>
+    public int MaxParallelism { get; set; } = 1;
+
     public List<LanguageDefinition> Languages { get; set; } = new();
 }

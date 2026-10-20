@@ -30,6 +30,9 @@ internal static class ConfigValidator
         if (config.Languages.Count == 0)
             errors.Add("languages must contain at least one language.");
 
+        if (config.MaxParallelism < 0)
+            errors.Add($"maxParallelism must be 0 (all cores) or a thread count of 1 or more (got {config.MaxParallelism}).");
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < config.Languages.Count; i++)
         {
@@ -539,6 +542,10 @@ internal static class ConfigValidator
                     string at = $"{where}.{label}[{r}]";
                     if (region.KindCount != 1) { c.Add(at, "must set exactly one of points, box, pattern, nodesOfShapes, boundsOfShapes."); continue; }
                     if (region.Points is { Count: 0 }) c.Add(at + ".points", "is empty.");
+                    if (label == "allow")
+                        foreach (var pt in region.Points ?? new())
+                            if (pt.X < 0 || pt.Y < 0 || pt.X >= l.Grid.Width || pt.Y >= l.Grid.Height)
+                                c.Add(at + ".points", $"[{pt.X}, {pt.Y}] is outside the grid (nodes run from 0 to {l.Grid.Width - 1} in x and 0 to {l.Grid.Height - 1} in y), so it can never be used - did you mean a larger grid (grid.width / grid.height count nodes, not cells)?");
                     if (region.Box is { } b && (b.MinX > b.MaxX || b.MinY > b.MaxY)) c.Add(at + ".box", "minX/minY must not exceed maxX/maxY.");
                     if (region.Pattern is { } pat)
                     {

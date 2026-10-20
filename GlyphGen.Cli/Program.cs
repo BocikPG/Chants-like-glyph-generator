@@ -150,7 +150,7 @@ foreach (var language in config.Languages)
     language.Render.DebugColorParts = false;
     language.Render.DebugColorShapes = false;
     language.Render.DebugShowUndrawn = false;
-    var rendered = renderer.Render(language, glyphs, config.RootSeed);
+    var rendered = renderer.Render(language, glyphs, config.RootSeed, config.MaxParallelism);
 
     IReadOnlyList<RenderedGlyph>? debugRendered = null;
     if (wantNodes || wantColors || wantParts || wantShapes || wantUndrawn)
@@ -160,7 +160,7 @@ foreach (var language in config.Languages)
         language.Render.DebugColorParts = wantParts;
         language.Render.DebugColorShapes = wantShapes;
         language.Render.DebugShowUndrawn = wantUndrawn;
-        debugRendered = renderer.Render(language, glyphs, config.RootSeed);
+        debugRendered = renderer.Render(language, glyphs, config.RootSeed, config.MaxParallelism);
     }
 
     language.Render.DebugShowNodes = wantNodes;
@@ -178,11 +178,11 @@ foreach (var language in config.Languages)
 
     var sheetSettings = language.Render.ContactSheet;
     WriteContactSheet(languageDir, rendered.Where(r => !baseNames.Contains(r.GlyphName)).ToList(),
-        sheetSettings.Columns, language.Render.Background);
+        sheetSettings.Columns, language.Render.Background, config.MaxParallelism);
     if (sheetSettings.BaseGlyphsSheet && baseNames.Count > 0)
     {
         WriteContactSheet(basesDir, rendered.Where(r => baseNames.Contains(r.GlyphName)).ToList(),
-            sheetSettings.Columns, language.Render.Background);
+            sheetSettings.Columns, language.Render.Background, config.MaxParallelism);
     }
 
     if (debugRendered is not null)
@@ -196,9 +196,9 @@ foreach (var language in config.Languages)
     }
 }
 
-static void WriteContactSheet(string directory, IReadOnlyList<RenderedGlyph> items, int columns, string background)
+static void WriteContactSheet(string directory, IReadOnlyList<RenderedGlyph> items, int columns, string background, int maxParallelism)
 {
-    byte[] sheet = ContactSheet.Create(items, columns, background);
+    byte[] sheet = ContactSheet.Create(items, columns, background, maxParallelism);
     if (sheet.Length == 0) return;
 
     string sheetPath = Path.Combine(directory, "_contact-sheet.png");

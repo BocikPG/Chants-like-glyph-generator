@@ -33,6 +33,9 @@ public interface ILanguageGenerator
 
     /// <summary>Problems found by quality rules that only warn (see QualityRule.OnFail), from the last <see cref="GenerateAll"/>.</summary>
     IReadOnlyList<string> Warnings => Array.Empty<string>();
+
+    /// <summary>Threads generation may use (1 = one, 0 = all cores). Set from RootConfig.MaxParallelism before each run.</summary>
+    int MaxParallelism { get => 1; set { } }
 }
 
 /// <summary>
@@ -54,6 +57,7 @@ public sealed class RunOrchestrator
     public IReadOnlyDictionary<string, IReadOnlyList<Glyph>> Run(RootConfig config)
     {
         Warnings.Clear();
+        _languageGenerator.MaxParallelism = config.MaxParallelism;
         var result = new Dictionary<string, IReadOnlyList<Glyph>>();
 
         foreach (var language in config.Languages)

@@ -65,6 +65,7 @@ A **composite** is made by placing each component (translated, and optionally sc
 |---|---|---|---|
 | `rootSeed` | integer (ulong) | `0` | The only source of randomness; everything is derived from it. |
 | `outputDirectory` | string | `"./output"` | Created if missing. |
+| `maxParallelism` | int | `1` | Threads generation may use: `1` = one thread (default), `0` = every core, `n` = at most n. **The result is identical whatever the number** (same seed, same glyphs); it only changes how fast they arrive. With more than one thread, the first attempt of every independent plain/base glyph (no recipe, no derivation) is drawn at the same time, and a failed quality attempt is followed by the next few attempts drawn together; the quality checks still run one glyph at a time in the usual order and take the first attempt that passes. Composites, derived glyphs and redraws stay sequential, so a language made mostly of composites gains little. Typical gain: a config where most of the time goes into drawing base glyphs (strict spacing, `minEdgeDistance`) runs close to `cores` times faster on that part. Memory use grows with the thread count (a few glyphs in flight). The same setting also speeds up **rendering** in the CLI: the glyph images are drawn side by side (each on its own bitmap, results in glyph order) and the contact sheet's images are decoded in parallel. `dotnet run --project GlyphGen.RenderCheck` checks that 1, 2, 4 and all-core rendering give byte-identical images (it needs the SkiaSharp package, like the CLI). |
 | `languages` | array of language objects | `[]` | Each language is generated and rendered independently. |
 
 ---
@@ -559,6 +560,8 @@ Block: `quality`. Applied to every plain glyph (base glyphs included) against ev
 | Option | Default | Notes |
 |---|---|---|
 | `maxSimilarity` | `0.7` | Jaccard similarity (0-1) at or above which two glyphs count as too alike. `1.0` or higher disables the check. |
+| `similarityBasis` | `Nodes` | What `maxSimilarity` compares. `Nodes`: which nodes two glyphs use - glyphs that touch the same nodes are alike however the nodes are joined. `Edges`: which strokes they draw (lines, circles, arcs and whether bent), so glyphs built on the same few nodes still differ when they join them differently. **Use `Edges` when the shapes are restricted to a small fixed set of nodes** (`placement.nodes`): with `Nodes`, every glyph on the same 6 points scores 1.00 against the others and generation fails with "too similar". |
+| `comparePosition` | `false` | `false`: each glyph is shifted so its bounding box starts at the origin before comparing, so the same shape drawn elsewhere is alike. `true`: compared where they lie on the grid - for glyphs whose position means something (coordinates, constellations). Applies to both bases. |
 | `rejectStraightLineOnly` | `true` | Reject a glyph whose whole geometry is one straight line. |
 | `maxRegenerationAttempts` | `10` | Attempts per glyph. |
 

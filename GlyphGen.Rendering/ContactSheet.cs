@@ -11,11 +11,15 @@ namespace GlyphGen.Rendering;
 /// </summary>
 public static class ContactSheet
 {
-    public static byte[] Create(IReadOnlyList<RenderedGlyph> glyphs, int columns, string backgroundHex)
+    /// <param name="maxParallelism">Threads used to decode the glyph images (1 = one, 0 = every core). The sheet is the same either way.</param>
+    public static byte[] Create(IReadOnlyList<RenderedGlyph> glyphs, int columns, string backgroundHex, int maxParallelism = 1)
     {
         if (glyphs.Count == 0) return Array.Empty<byte>();
 
-        var bitmaps = glyphs.Select(g => SKBitmap.Decode(g.Png)).ToList();
+        int threads = maxParallelism <= 0 ? Environment.ProcessorCount : maxParallelism;
+        var bitmaps = threads <= 1 || glyphs.Count <= 1
+            ? glyphs.Select(g => SKBitmap.Decode(g.Png)).ToList()
+            : glyphs.AsParallel().AsOrdered().WithDegreeOfParallelism(threads).Select(g => SKBitmap.Decode(g.Png)).ToList();
         try
         {
             int cellW = bitmaps.Max(b => b.Width);

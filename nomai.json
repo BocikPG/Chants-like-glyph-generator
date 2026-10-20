@@ -1,6 +1,6 @@
 {
 	"$schema": "./GlyphGen.Cli/config.schema.json",
-	"rootSeed": 2026092783689,
+	"rootSeed": 202609276389,
 	"outputDirectory": "./output",
 	"languages": [
 		{
@@ -58,19 +58,19 @@
 					"chain": {
 						"length": {
 							"min": 3,
-							"max": 12
+							"max": 8
 						},
 						"connectionRules": [
 							{
 								"direction": "Any",
 								"minLength": 1,
-								"maxLength": 6
+								"maxLength": 10
 							}
 						]
 					},
 					"arrangement": {
 						"crossing": {
-							"mode": "Strict"
+							"mode": "Anywhere"
 						}
 					},
 					"placement": {

@@ -6,6 +6,17 @@ namespace GlyphGen.Core.Config;
 /// is regenerated (fresh seed) up to MaxRegenerationAttempts times before the run fails with a
 /// clear error naming the glyph.
 /// </summary>
+/// <summary>What two glyphs are compared by when judging how alike they are.</summary>
+public enum SimilarityBasis
+{
+    /// <summary>Which nodes they use. Two glyphs that touch the same nodes are alike however the nodes are joined (the original behaviour).</summary>
+    Nodes,
+
+    /// <summary>Which strokes they draw: the lines, circles and arcs between nodes. Glyphs on the same few nodes still differ when
+    /// they join them differently.</summary>
+    Edges,
+}
+
 public sealed class QualityConfig
 {
     /// <summary>Jaccard similarity (0-1) of two glyphs' normalized shapes, at or above which
@@ -16,6 +27,15 @@ public sealed class QualityConfig
     /// <summary>Reject a glyph whose entire geometry (across all its chains/components)
     /// reduces to a single straight line with no bends.</summary>
     public bool RejectStraightLineOnly { get; set; } = true;
+
+    /// <summary>What <see cref="MaxSimilarity"/> compares: the nodes (default) or the strokes. Edges is the one to use when glyphs are
+    /// built on a small fixed set of nodes (a node mask), where nearly every glyph uses the same nodes.</summary>
+    public SimilarityBasis SimilarityBasis { get; set; } = SimilarityBasis.Nodes;
+
+    /// <summary>false (default): two glyphs are compared after shifting each so its bounding box starts at the origin, so the same
+    /// shape in another place counts as alike. true: compared where they lie on the grid (for glyphs whose position means something,
+    /// like coordinates).</summary>
+    public bool ComparePosition { get; set; } = false;
 
     public int MaxRegenerationAttempts { get; set; } = 10;
 

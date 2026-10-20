@@ -30,6 +30,13 @@ public sealed class LanguageGenerator : ILanguageGenerator
     public List<string> Warnings { get; } = new();
     IReadOnlyList<string> ILanguageGenerator.Warnings => Warnings;
 
+    /// <summary>Threads used to try quality retries of a plain/base glyph ahead of time (1 = none, 0 = all cores). The glyph kept is the
+    /// first attempt, in attempt order, that passes - the same one a single thread finds.</summary>
+    public int MaxParallelism { get; set; } = 1;
+
+    // First attempts of the independent plain/base glyphs, drawn ahead of time on several threads (see PrefetchPlainGlyphs).
+    private readonly Dictionary<string, (Glyph? Glyph, System.Runtime.ExceptionServices.ExceptionDispatchInfo? Error)> _prefetched = new();
+
     public LanguageGenerator(IGlyphGenerator glyphGenerator)
     {
         _glyphGenerator = glyphGenerator;
@@ -46,11 +53,13 @@ public sealed class LanguageGenerator : ILanguageGenerator
         var acceptedComposites = new List<Glyph>();
         var usageTracker = new GlyphUsageTracker();
         var composites = new HashSet<string>(language.Combination.Recipes.Keys);
+        _prefetched.Clear();
 
         // Every glyph is generated after the glyphs it is built from (a recipe's components, a derivation's
         // source), pulling those in first when they come later in the lists. Without derivations nothing moves.
         var defs = language.BaseGlyphs.Concat(language.Glyphs).GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First());
         var visiting = new HashSet<string>();
+        PrefetchPlainGlyphs(language, grid, languageSeed, defs, composites, generated, usageTracker);
 
         void Ensure(GlyphDefinition glyphDef)
         {
@@ -79,6 +88,34 @@ public sealed class LanguageGenerator : ILanguageGenerator
         }
 
         return language.BaseGlyphs.Concat(language.Glyphs).Select(g => generated[g.Name]).ToList();
+    }
+
+    /// <summary>
+    /// With more than one thread: draws the FIRST attempt of every plain/base glyph that depends on no other glyph (no recipe, no
+    /// derivation) at the same time. Such an attempt depends only on the glyph's own seed, so it is the very glyph the sequential
+    /// run would draw; the quality checks still run one glyph at a time in the usual order and take the prepared draw (or retry).
+    /// </summary>
+    private void PrefetchPlainGlyphs(
+        LanguageDefinition language, LatticeGrid grid, ulong languageSeed, IReadOnlyDictionary<string, GlyphDefinition> defs,
+        HashSet<string> composites, Dictionary<string, Glyph> generated, GlyphUsageTracker usageTracker)
+    {
+        int threads = MaxParallelism <= 0 ? Environment.ProcessorCount : MaxParallelism;
+        if (threads <= 1) return;
+
+        var todo = language.BaseGlyphs.Concat(language.Glyphs)
+            .Select(g => g.Name).Distinct()
+            .Where(n => !composites.Contains(n) && !language.Derivations.ContainsKey(n)).ToArray();
+        var results = new (Glyph? Glyph, System.Runtime.ExceptionServices.ExceptionDispatchInfo? Error)[todo.Length];
+        Parallel.For(0, todo.Length, new ParallelOptions { MaxDegreeOfParallelism = threads }, i =>
+        {
+            try
+            {
+                var def = defs[todo[i]];
+                results[i] = (_glyphGenerator.GenerateGlyph(language, def, grid, SeedTree.ForGlyph(languageSeed, def.Name), generated, usageTracker, variation: 0, languageSeed: languageSeed), null);
+            }
+            catch (Exception e) { results[i] = (null, System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e)); }
+        });
+        for (int i = 0; i < todo.Length; i++) _prefetched[todo[i]] = results[i];
     }
 
     // How many times each base glyph has been redrawn by a quality rule in this run (so every redraw gets a new seed).
@@ -208,19 +245,59 @@ public sealed class LanguageGenerator : ILanguageGenerator
             }
         }
 
+        // Attempt 0 uses the glyph's normal seed; later attempts derive a fresh, still
+        // fully deterministic seed from it, so a quality retry is reproducible too.
+        Glyph Draw(int attemptIndex)
+        {
+            if (attemptIndex == 0 && seedSalt == 0 && _prefetched.Remove(glyphDef.Name, out var drawn))
+            {
+                drawn.Error?.Throw();
+                return drawn.Glyph!;
+            }
+
+            return DrawNow(attemptIndex);
+        }
+
+        Glyph DrawNow(int attemptIndex) => _glyphGenerator.GenerateGlyph(
+            language, glyphDef, grid,
+            attemptIndex == 0 ? baseSeed : SplitMix64.DeriveSeed(baseSeed, $"quality-retry-{attemptIndex}"),
+            generated, usageTracker, variation: attemptIndex, languageSeed: languageSeed);
+
+        // A plain/base glyph's attempts do not depend on each other (only on the finished glyphs, which do not change meanwhile),
+        // so once the first attempt has failed, the next few are drawn at the same time. They are used in attempt order, so the
+        // glyph kept is exactly the one a single thread would have kept. Anything that changes the finished glyphs (a redraw)
+        // throws the prepared attempts away.
+        int threads = MaxParallelism <= 0 ? Environment.ProcessorCount : MaxParallelism;
+        bool speculate = threads > 1 && !isComposite;
+        var prepared = new Dictionary<int, (Glyph? Glyph, GlyphGenerationException? Error)>();
+
+        void Prepare(int from)
+        {
+            int to = Math.Min(maxAttempts, from + threads);
+            var todo = Enumerable.Range(from, to - from).Where(i => !prepared.ContainsKey(i)).ToArray();
+            var results = new (Glyph? Glyph, GlyphGenerationException? Error)[todo.Length];
+            Parallel.For(0, todo.Length, new ParallelOptions { MaxDegreeOfParallelism = threads }, k =>
+            {
+                try { results[k] = (Draw(todo[k]), null); }
+                catch (GlyphGenerationException e) { results[k] = (null, e); }
+            });
+            for (int k = 0; k < todo.Length; k++) prepared[todo[k]] = results[k];
+        }
+
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
-            // Attempt 0 uses the glyph's normal seed; later attempts derive a fresh, still
-            // fully deterministic seed from it, so a quality retry is reproducible too.
-            ulong seed = attempt == 0
-                ? baseSeed
-                : SplitMix64.DeriveSeed(baseSeed, $"quality-retry-{attempt}");
+            if (speculate && attempt > 0 && !prepared.ContainsKey(attempt)) Prepare(attempt);
 
             var before = new Dictionary<string, Glyph>(generated);
             Glyph candidate;
             try
             {
-                candidate = _glyphGenerator.GenerateGlyph(language, glyphDef, grid, seed, generated, usageTracker, variation: attempt, languageSeed: languageSeed);
+                if (prepared.Remove(attempt, out var ready))
+                {
+                    if (ready.Error is not null) throw ready.Error;
+                    candidate = ready.Glyph!;
+                }
+                else candidate = Draw(attempt);
             }
             catch (GlyphGenerationException) when (best is not null)
             {
@@ -263,9 +340,9 @@ public sealed class LanguageGenerator : ILanguageGenerator
             {
                 bool derived = language.Derivations.TryGetValue(glyphDef.Name, out var derivation) && generated.ContainsKey(derivation.From);
                 similar = GlyphQualityChecker.FindTooSimilar(
-                    candidate, derived ? pool.Where(g => g.Name != derivation!.From) : pool, maxSimilarity);
+                    candidate, derived ? pool.Where(g => g.Name != derivation!.From) : pool, maxSimilarity, quality);
                 if (similar is null && derived)
-                    similar = GlyphQualityChecker.FindTooSimilar(candidate, new[] { generated[derivation!.From] }, derivation!.MaxSimilarityToSource);
+                    similar = GlyphQualityChecker.FindTooSimilar(candidate, new[] { generated[derivation!.From] }, derivation!.MaxSimilarityToSource, quality);
             }
 
             if (trivialLine || similar is not null)
@@ -286,6 +363,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
                 {
                     rejections.Add(string.Join(" and ", rejecting.Select(f => $"rule '{f.Rule.Id}' broken ({f.Violations}x): {f.Example}")));
                     RedoComponents(rejecting, attempt);
+                    prepared.Clear();
                     continue;
                 }
 

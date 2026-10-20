@@ -1,3 +1,4 @@
+using GlyphGen.Core.Config;
 using GlyphGen.Core.Grid;
 using GlyphGen.Core.Model;
 
@@ -23,15 +24,17 @@ public static class GlyphQualityChecker
     /// that reaches maxSimilarity - null when the candidate is distinct enough (or the check is
     /// disabled). Lets an error name the glyph it clashed with instead of just failing.</summary>
     public static (Glyph Other, double Similarity)? FindTooSimilar(
-        Glyph candidate, IEnumerable<Glyph> alreadyAccepted, double maxSimilarity)
+        Glyph candidate, IEnumerable<Glyph> alreadyAccepted, double maxSimilarity, QualityConfig? options = null)
     {
         if (maxSimilarity >= 1.0) return null; // check disabled
 
-        var candidateShape = NormalizedShape(candidate);
+        var basis = options?.SimilarityBasis ?? SimilarityBasis.Nodes;
+        bool position = options?.ComparePosition ?? false;
+        var candidateShape = NormalizedShape(candidate, basis, position);
         (Glyph Other, double Similarity)? worst = null;
         foreach (var other in alreadyAccepted)
         {
-            double similarity = JaccardSimilarity(candidateShape, NormalizedShape(other));
+            double similarity = JaccardSimilarity(candidateShape, NormalizedShape(other, basis, position));
             if (similarity >= maxSimilarity && (worst is null || similarity > worst.Value.Similarity))
                 worst = (other, similarity);
         }
@@ -66,22 +69,38 @@ public static class GlyphQualityChecker
         return true;
     }
 
-    private static HashSet<(int X, int Y)> NormalizedShape(Glyph glyph)
+    private static HashSet<(int, int, int, int, int, int, int)> NormalizedShape(Glyph glyph, SimilarityBasis basis, bool comparePosition)
     {
         var nodes = GlyphGeometryUtils.GetAllNodes(glyph).ToList();
-        if (nodes.Count == 0) return new HashSet<(int X, int Y)>();
+        var set = new HashSet<(int, int, int, int, int, int, int)>();
+        if (nodes.Count == 0) return set;
 
-        int minX = nodes.Min(p => p.X), minY = nodes.Min(p => p.Y);
-        return nodes.Select(p => (X: p.X - minX, Y: p.Y - minY)).ToHashSet();
+        int minX = comparePosition ? 0 : nodes.Min(p => p.X), minY = comparePosition ? 0 : nodes.Min(p => p.Y);
+        if (basis == SimilarityBasis.Nodes)
+        {
+            foreach (var p in nodes) set.Add((p.X - minX, p.Y - minY, -1, -1, -1, -1, -1));
+            return set;
+        }
+
+        foreach (var chain in GlyphGeometryUtils.GetAllChains(glyph))
+            foreach (var e in chain.Edges)
+            {
+                var a = (X: e.From.X - minX, Y: e.From.Y - minY);
+                var b = (X: e.To.X - minX, Y: e.To.Y - minY);
+                // An undirected line or circle is the same either way round; an arc's span belongs to its direction.
+                if (!e.IsArc && (b.X < a.X || (b.X == a.X && b.Y < a.Y))) (a, b) = (b, a);
+                set.Add((a.X, a.Y, b.X, b.Y, (int)e.Kind * 2 + (e.IsCurved ? 1 : 0), e.Arc?.RelStart ?? -1, e.Arc?.Sweep ?? -1));
+            }
+        return set;
     }
 
-    private static double JaccardSimilarity(HashSet<(int X, int Y)> a, HashSet<(int X, int Y)> b)
+    private static double JaccardSimilarity(HashSet<(int, int, int, int, int, int, int)> a, HashSet<(int, int, int, int, int, int, int)> b)
     {
         if (a.Count == 0 && b.Count == 0) return 1.0;
 
-        var intersection = new HashSet<(int X, int Y)>(a);
+        var intersection = new HashSet<(int, int, int, int, int, int, int)>(a);
         intersection.IntersectWith(b);
-        var union = new HashSet<(int X, int Y)>(a);
+        var union = new HashSet<(int, int, int, int, int, int, int)>(a);
         union.UnionWith(b);
 
         return union.Count == 0 ? 0.0 : (double)intersection.Count / union.Count;
