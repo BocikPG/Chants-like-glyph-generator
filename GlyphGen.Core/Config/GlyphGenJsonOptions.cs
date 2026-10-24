@@ -52,10 +52,13 @@ public static class RootConfigLoader
         if (config is null) throw new JsonException("Config deserialized to null.");
 
         var structural = new List<string>();
-        ConfigStructureChecker.Check(json, structural);
+        var warnings = new List<string>();
+        ConfigStructureChecker.Check(json, structural, warnings);
         if (structural.Count > 0) throw Invalid(structural);
+        config.Warnings.AddRange(warnings);
 
         ResolveRecipeArrangements(config);
+        ResolveChainFrom(config);
 
         var errors = new List<string>();
         ConfigValidator.Validate(config, errors);
@@ -88,6 +91,38 @@ public static class RootConfigLoader
                 }
 
                 recipe.EffectiveArrangement = merged.Deserialize<CombinationArrangementRules>(GlyphGenJsonOptions.Default);
+            }
+        }
+    }
+
+    /// <summary>A shape with chainFrom takes a copy of the named shape's chain block (followed through chainFrom links). A name that
+    /// does not exist, a loop, or a source that is not a generative shape is left alone here: the validator reports it.</summary>
+    private static void ResolveChainFrom(RootConfig config)
+    {
+        foreach (var language in config.Languages)
+        {
+            var byId = new Dictionary<string, ShapeDefinition>(StringComparer.Ordinal);
+            foreach (var shape in language.Shapes)
+                if (!string.IsNullOrWhiteSpace(shape.Id)) byId.TryAdd(shape.Id, shape);
+
+            ChainRules? SourceChain(ShapeDefinition shape)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var at = shape;
+                while (at.ChainFrom is { } next)
+                {
+                    if (!seen.Add(at.Id) || !byId.TryGetValue(next, out var source)) return null;
+                    at = source;
+                }
+                return at == shape ? null : at.Chain;
+            }
+
+            foreach (var shape in language.Shapes)
+            {
+                if (shape.ChainFrom is null) continue;
+                var chain = SourceChain(shape);
+                if (chain is null) continue;
+                shape.Chain = JsonSerializer.SerializeToNode(chain, GlyphGenJsonOptions.Default).Deserialize<ChainRules>(GlyphGenJsonOptions.Default)!;
             }
         }
     }

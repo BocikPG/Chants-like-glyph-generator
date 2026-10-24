@@ -6,7 +6,7 @@ namespace GlyphGen.Core.Config;
 /// Overlay-composition rules for combined glyphs (e.g. Anchorite-style stacking). A composite
 /// glyph's components are generated independently first, then translated (and optionally
 /// scaled/rotated) onto the composite's own grid. On placement failure, the least-used
-/// dependency (via GlyphUsageTracker) is regenerated first, escalating through the recipe's
+/// dependency (the least-used glyph) is regenerated first, escalating through the recipe's
 /// components up to MaxRetriesPerRecipe before the run fails with a named error.
 /// </summary>
 public sealed class CombinationConfig
@@ -17,15 +17,17 @@ public sealed class CombinationConfig
     /// "components" and an optional per-recipe "arrangement".</summary>
     public Dictionary<string, RecipeConfig> Recipes { get; set; } = new();
 
+    /// <summary>Whether a component may be scaled when it is placed in a composite. The ratios come from allowedScales. Default false.</summary>
     public bool AllowScale { get; set; } = false;
 
-    /// <summary>Discrete, lattice-validated factors only — see ScaleFactorConfig for why a
-    /// continuous float range isn't safe here.</summary>
+    /// <summary>Discrete ratios only (each an exact fraction such as 2/3): a shrinking ratio is only usable when every node of the component divides exactly, which a continuous range could not guarantee.</summary>
     public List<ScaleFactorConfig> AllowedScales { get; set; } = new();
 
+    /// <summary>Whether a component may be rotated when it is placed in a composite. The angles come from rotation.allowed. Default false.</summary>
     public bool AllowRotate { get; set; } = false;
     public RotationConfig Rotation { get; set; } = new();
 
+    /// <summary>How many times a composite is retried (regenerating its least-used components first) before the run fails with a named error. Default 5.</summary>
     public int MaxRetriesPerRecipe { get; set; } = 5;
 
     /// <summary>How a composite's components relate to each other: crossing (default: none -

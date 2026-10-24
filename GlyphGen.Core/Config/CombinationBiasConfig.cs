@@ -6,9 +6,13 @@ namespace GlyphGen.Core.Config;
 /// "Size" is the bounding box of the combined nodes, in grid units.</summary>
 public enum CombinationBiasMode
 {
+    /// <summary>Prefer the combined glyph to be as tall as possible.</summary>
     Tallest,
+    /// <summary>Prefer the combined glyph to be as short as possible.</summary>
     Shortest,
+    /// <summary>Prefer the combined glyph to be as wide as possible.</summary>
     Widest,
+    /// <summary>Prefer the combined glyph to be as narrow as possible.</summary>
     Narrowest,
     /// <summary>Width and height as close to equal as possible (by ratio, so it holds at any size).</summary>
     Squarest,

@@ -20,7 +20,7 @@ public sealed class GeometryContext : IIntersectionContext
     private readonly List<GridEdge> _edges = new();
     private readonly List<string?> _edgeShapes = new(); // the shape id that drew each of _edges (null = unknown)
     private readonly List<CrossingConfig> _edgeCrossing = new(); // crossing settings of the shape that drew each of _edges
-    private readonly List<EdgePaths.PathBox> _edgeBoxes = new();
+    private readonly List<EdgePaths.PathBox?> _edgeBoxes = new(); // bounding box of each of _edges, filled on first use
     private readonly List<(double X, double Y)[]?> _edgePaths = new(); // Polyline of each of _edges, filled on first use
     private readonly List<double> _edgeClearance = new(); // spacing.minEdgeDistance of the shape that drew each of _edges
     private readonly List<SpacingConfig?> _edgeSpacing = new(); // spacing (its shape filter) of the shape that drew each of _edges
@@ -66,6 +66,49 @@ public sealed class GeometryContext : IIntersectionContext
             if (_edgeShapes[i] is { } id && shapeIds.Contains(id)) yield return _edges[i];
     }
 
+    /// <summary>The nodes of an already drawn glyph by name ("*" = all earlier plain glyphs), for nodesOfGlyph masks; null where no glyph registry exists.</summary>
+    public Func<string, IEnumerable<GridPoint>>? GlyphNodes { get; set; }
+
+    /// <summary>Components committed so far in a composite: their glyph name and transformed chains.</summary>
+    public List<(string Glyph, IReadOnlyList<SubSymbolChain> Chains)> PlacedComponents { get; } = new();
+
+    /// <summary>The component being placed must have a node on this mask (see ComponentPlacementRule.Nodes); null = no requirement.</summary>
+    public Func<GridPoint, bool>? StartMask { get; set; }
+
+    /// <summary>True: only the component's very first node (first node of its first stroke) is tested; false: any node.</summary>
+    public bool StartMaskFirstOnly { get; set; }
+
+    /// <summary>Whether the chains satisfy StartMask.</summary>
+    public bool SatisfiesStartMask(IReadOnlyList<SubSymbolChain> chains)
+    {
+        if (StartMask is null) return true;
+        if (StartMaskFirstOnly)
+        {
+            var first = chains.FirstOrDefault(c => c.AllNodes().Count > 0);
+            return first is not null && StartMask(first.AllNodes()[0]);
+        }
+        return chains.Any(c => c.AllNodes().Any(StartMask));
+    }
+
+    /// <summary>The nodes of placed components (all, or only those of the named glyphs), optionally only of the named shapes inside them.</summary>
+    public IEnumerable<GridPoint> NodesOfComponents(IReadOnlyCollection<string>? glyphs, IReadOnlyCollection<string>? shapes)
+    {
+        foreach (var (glyph, chains) in PlacedComponents)
+        {
+            if (glyphs is { Count: > 0 } && !glyphs.Contains(glyph)) continue;
+            foreach (var chain in chains)
+            {
+                if (shapes is { Count: > 0 })
+                {
+                    var tag = chain.ShapeTag;
+                    int at = tag?.LastIndexOf('#') ?? -1;
+                    if (tag is null || !shapes.Contains(at > 0 ? tag[..at] : tag)) continue;
+                }
+                foreach (var n in chain.AllNodes()) yield return n;
+            }
+        }
+    }
+
     /// <summary>The nodes drawn by the given shapes so far.</summary>
     public IEnumerable<GridPoint> NodesOfShapes(IReadOnlyCollection<string> shapeIds)
     {
@@ -73,23 +116,34 @@ public sealed class GeometryContext : IIntersectionContext
             if (id is not null && shapeIds.Contains(id)) yield return point;
     }
 
+    /// <summary>Bounding box of an edge's path. A straight edge needs no path for it (its ends are the box).</summary>
+    private static EdgePaths.PathBox BoxOf(GridEdge e) =>
+        (e.Kind == GridEdgeKind.Line && !e.IsCurved) || e.IsDot
+            ? new EdgePaths.PathBox(Math.Min(e.From.X, e.To.X), Math.Min(e.From.Y, e.To.Y), Math.Max(e.From.X, e.To.X), Math.Max(e.From.Y, e.To.Y))
+            : EdgePaths.PathBox.Of(EdgePaths.Polyline(e));
+
+    private EdgePaths.PathBox BoxOfExisting(int i) => _edgeBoxes[i] ??= BoxOf(_edges[i]);
+
     public bool IsBlocked(GridEdge edge, IReadOnlyList<GridPoint> ownNodes)
     {
         var current = Crossing;
         (double X, double Y)[]? edgePath = null;
-        EdgePaths.PathBox edgeBox = default;
+        var edgeBox = BoxOf(edge);
         for (int i = 0; i < _edges.Count; i++)
         {
             var other = _edgeCrossing[i];
             double mine = _currentSpacing is null || _currentSpacing.Covers(_edgeShapes[i]) ? CurrentClearance : 0;
             double theirs = _edgeSpacing[i] is null || _edgeSpacing[i]!.Covers(CurrentShapeId) ? _edgeClearance[i] : 0;
             double clearance = Math.Max(mine, theirs);
-            if (clearance > 0)
+            var otherBox = BoxOfExisting(i);
+            if (clearance > 0 && edgeBox.Near(otherBox, clearance))
             {
-                if (edgePath is null) { edgePath = EdgePaths.Polyline(edge); edgeBox = EdgePaths.PathBox.Of(edgePath); }
-                if (_edgePaths[i] is null) { _edgePaths[i] = EdgePaths.Polyline(_edges[i]); _edgeBoxes[i] = EdgePaths.PathBox.Of(_edgePaths[i]!); }
-                if (edgeBox.Near(_edgeBoxes[i], clearance) && EdgePaths.TooClose(edge, edgePath, _edges[i], _edgePaths[i]!, clearance, ownNodes)) return true;
+                edgePath ??= EdgePaths.Polyline(edge);
+                _edgePaths[i] ??= EdgePaths.Polyline(_edges[i]);
+                if (EdgePaths.TooClose(edge, edgePath, _edges[i], _edgePaths[i]!, clearance, ownNodes)) return true;
             }
+            // Edges whose boxes are apart (by more than the contact radius) cannot cross or touch.
+            if (!edgeBox.Near(otherBox, 0.1)) continue;
             if (IsAnywhere(current.Mode) && IsAnywhere(other.Mode)) continue;
             if ((current.Mode == CrossingMode.Strict || other.Mode == CrossingMode.Strict) && EdgePaths.Touches(edge, _edges[i])) return true;
             if (!EdgePaths.Crosses(edge, _edges[i])) continue;
@@ -155,6 +209,35 @@ public sealed class GeometryContext : IIntersectionContext
     /// middles of the components already placed. null = no rule for it.</summary>
     public IReadOnlyList<GlyphSide>? CurrentSides { get; set; }
 
+    /// <summary>Combination placement: how many contacts (shared nodes / crossings, see ContactKind) the component being placed must
+    /// make with the ones already placed. 0 = no requirement.</summary>
+    public int RequiredContacts { get; set; }
+
+    public GlyphGen.Core.Config.ContactKind ContactKind { get; set; } = GlyphGen.Core.Config.ContactKind.Either;
+
+    /// <summary>The contacts of a candidate component with what is already placed: nodes it shares, and edges it crosses.</summary>
+    public int CountContacts(IEnumerable<SubSymbolChain> chains, GlyphGen.Core.Config.ContactKind kind)
+    {
+        var list = chains.ToList();
+        int count = 0;
+        if (kind != GlyphGen.Core.Config.ContactKind.Crossing)
+        {
+            var placed = new HashSet<GridPoint>(_nodeGroups.SelectMany(g => g));
+            var mine = new HashSet<GridPoint>(list.SelectMany(c => c.AllNodes()));
+            count += mine.Count(placed.Contains);
+        }
+
+        if (kind != GlyphGen.Core.Config.ContactKind.Junction)
+        {
+            var existing = _edges.ToList();
+            foreach (var edge in list.SelectMany(c => c.Edges))
+                foreach (var other in existing)
+                    if (EdgePaths.Crosses(edge, other)) count++;
+        }
+
+        return count;
+    }
+
     /// <summary>Combination only: middle (bounding-box centre) and side rule of every component placed so far.</summary>
     public List<(double X, double Y, IReadOnlyList<GlyphSide> Sides)> PlacedSides { get; } = new();
 
@@ -165,7 +248,7 @@ public sealed class GeometryContext : IIntersectionContext
     /// <summary>Moves everything committed so far by whole lattice steps (the glyph is being shifted as a whole).</summary>
     public void Translate(int dx, int dy)
     {
-        for (int i = 0; i < _edges.Count; i++) { _edges[i] = Moved(_edges[i], dx, dy); _edgePaths[i] = null; }
+        for (int i = 0; i < _edges.Count; i++) { _edges[i] = Moved(_edges[i], dx, dy); _edgePaths[i] = null; _edgeBoxes[i] = null; }
         for (int i = 0; i < _nodes.Count; i++) _nodes[i] = (_nodes[i].Point.Translate(dx, dy), _nodes[i].ShapeId);
         foreach (var group in _nodeGroups)
             for (int i = 0; i < group.Count; i++) group[i] = group[i].Translate(dx, dy);
@@ -203,6 +286,7 @@ public sealed class GeometryContext : IIntersectionContext
         foreach (var chain in chains)
         {
             var (chainCrossing, chainClearance) = ChainRules?.Invoke(chain) ?? (crossing, 0.0);
+            chainClearance = Math.Max(chainClearance, CurrentClearance); // combination.arrangement.spacing.minEdgeDistance
             _edges.AddRange(chain.Edges);
             for (int i = 0; i < chain.Edges.Count; i++) { _edgeShapes.Add(null); _edgeCrossing.Add(chainCrossing); _edgeClearance.Add(chainClearance); _edgeSpacing.Add(null); _edgePaths.Add(null); _edgeBoxes.Add(default); }
             var all = chain.AllNodes();

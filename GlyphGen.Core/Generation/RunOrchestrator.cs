@@ -57,6 +57,7 @@ public sealed class RunOrchestrator
     public IReadOnlyDictionary<string, IReadOnlyList<Glyph>> Run(RootConfig config)
     {
         Warnings.Clear();
+        Warnings.AddRange(config.Warnings);
         _languageGenerator.MaxParallelism = config.MaxParallelism;
         var result = new Dictionary<string, IReadOnlyList<Glyph>>();
 

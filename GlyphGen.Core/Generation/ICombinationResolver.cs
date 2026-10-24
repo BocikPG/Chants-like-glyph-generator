@@ -54,5 +54,6 @@ public interface ICombinationResolver
         Action<string>? explainFailure = null,
         Func<string, Glyph?>? rebuildComposite = null,
         bool isRebuild = false,
-        IReadOnlyDictionary<string, (CrossingConfig Crossing, double Clearance)>? strictShapes = null);
+        IReadOnlyDictionary<string, (CrossingConfig Crossing, double Clearance)>? strictShapes = null,
+        Func<string, IReadOnlyList<string>>? derivedFrom = null);
 }

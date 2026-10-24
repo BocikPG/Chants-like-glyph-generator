@@ -68,6 +68,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
             var dependencies = new List<string>();
             if (language.Derivations.TryGetValue(glyphDef.Name, out var derivation)) dependencies.Add(derivation.From);
             if (language.Combination.Recipes.TryGetValue(glyphDef.Name, out var recipe)) dependencies.AddRange(recipe.Components);
+            dependencies.AddRange(NodeSources.Of(language, glyphDef.Name));
             foreach (var name in dependencies)
                 if (defs.TryGetValue(name, out var dependency)) Ensure(dependency);
 
@@ -104,7 +105,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
 
         var todo = language.BaseGlyphs.Concat(language.Glyphs)
             .Select(g => g.Name).Distinct()
-            .Where(n => !composites.Contains(n) && !language.Derivations.ContainsKey(n)).ToArray();
+            .Where(n => !composites.Contains(n) && !language.Derivations.ContainsKey(n) && NodeSources.Of(language, n).Count == 0).ToArray();
         var results = new (Glyph? Glyph, System.Runtime.ExceptionServices.ExceptionDispatchInfo? Error)[todo.Length];
         Parallel.For(0, todo.Length, new ParallelOptions { MaxDegreeOfParallelism = threads }, i =>
         {
@@ -151,8 +152,29 @@ public sealed class LanguageGenerator : ILanguageGenerator
             _redraws[def.Name] = _redraws.GetValueOrDefault(def.Name) + 1;
             GenerateInto(language, grid, languageSeed, def, generated, accepted, acceptedComposites, usageTracker, defs, 1000 + _redraws[def.Name]);
 
+            // Glyphs derived from it were cut from the old version: they are derived again from the new one, in order, each through the
+            // same quality loop as any plain glyph.
+            var changed = new HashSet<string> { def.Name };
+            var chain = new List<string>();
+            for (int i = -1; i < chain.Count; i++)
+            {
+                string parent = i < 0 ? def.Name : chain[i];
+                foreach (var (derivedName, d) in language.Derivations)
+                    if (d.From == parent && generated.ContainsKey(derivedName) && !chain.Contains(derivedName)) chain.Add(derivedName);
+                // Glyphs whose shapes read this glyph's nodes (nodesOfGlyph) were drawn against the old one.
+                foreach (var other in language.BaseGlyphs.Concat(language.Glyphs).Select(g => g.Name).Distinct())
+                    if (other != def.Name && !language.Combination.Recipes.ContainsKey(other) && generated.ContainsKey(other) && !chain.Contains(other)
+                        && NodeSources.Of(language, other).Contains(parent)) chain.Add(other);
+            }
+            foreach (var derivedName in chain)
+            {
+                accepted.Remove(generated[derivedName]);
+                GenerateInto(language, grid, languageSeed, defs[derivedName], generated, accepted, acceptedComposites, usageTracker, defs, 1000 + _redraws[def.Name]);
+                changed.Add(derivedName);
+            }
+
             var dependents = language.Combination.Recipes
-                .Where(r => r.Value.Components.Contains(def.Name) && generated.ContainsKey(r.Key))
+                .Where(r => r.Value.Components.Any(changed.Contains) && generated.ContainsKey(r.Key))
                 .Select(r => r.Key).ToList();
             foreach (var name in dependents)
             {
@@ -284,6 +306,45 @@ public sealed class LanguageGenerator : ILanguageGenerator
             for (int k = 0; k < todo.Length; k++) prepared[todo[k]] = results[k];
         }
 
+
+        // Glyphs that building this one regenerated, moved or rebuilt do not pass through this loop, so each is held to what the loop
+        // applies to a glyph of its kind: not a single straight line, similarity (to the source, for a derived glyph), compositeMaxSimilarity
+        // for a composite, every Reject rule, the Score penalty limit, and the pair rules. Null when it passes.
+        string? WhyChangedGlyphBroken(string key, Glyph g)
+        {
+            bool composite = language.Combination.Recipes.ContainsKey(key);
+            bool derived = !composite && language.Derivations.TryGetValue(key, out var dv) && generated.ContainsKey(dv.From);
+            if (!composite)
+            {
+                if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g))
+                    return $"'{key}' as a single straight line";
+                string? source = derived ? language.Derivations[key].From : null;
+                var others = generated.Where(kv => kv.Key != key && kv.Key != source && !language.Combination.Recipes.ContainsKey(kv.Key)).Select(kv => kv.Value);
+                if (GlyphQualityChecker.FindTooSimilar(g, others, quality.MaxSimilarity, quality) is { } sim)
+                    return $"'{key}' too similar to '{sim.Other.Name}' ({sim.Similarity:0.00})";
+                if (source is not null && GlyphQualityChecker.FindTooSimilar(g, new[] { generated[source] }, language.Derivations[key].MaxSimilarityToSource, quality) is { } srcSim)
+                    return $"'{key}' too similar to its source '{srcSim.Other.Name}' ({srcSim.Similarity:0.00})";
+            }
+            else if (quality.CompositeMaxSimilarity < 1.0)
+            {
+                var others = generated.Where(kv => kv.Key != key && language.Combination.Recipes.ContainsKey(kv.Key)).Select(kv => kv.Value);
+                if (GlyphQualityChecker.FindTooSimilar(g, others, quality.CompositeMaxSimilarity, quality) is { } sim)
+                    return $"'{key}' too similar to '{sim.Other.Name}' ({sim.Similarity:0.00})";
+            }
+
+            if (quality.Rules.Count > 0 || quality.PairRules.Count > 0)
+            {
+                var findings = quality.Rules.Count > 0 ? QualityRuleChecker.Evaluate(g, quality.Rules, composite, _coverage) : new List<QualityFinding>();
+                findings.AddRange(QualityRuleChecker.EvaluatePairs(g, generated, quality.PairRules, _coverage));
+                var reject = findings.FirstOrDefault(f => f.Rule.OnFail == QualityAction.Reject);
+                if (reject is not null) return $"'{key}' so that rule '{reject.Rule.Id}' broke: {reject.Example}";
+                double penalty = findings.Where(f => f.Rule.OnFail == QualityAction.Score).Sum(f => f.Penalty);
+                if (penalty > quality.AcceptPenalty) return $"'{key}' with penalty {penalty:0.##} above acceptPenalty {quality.AcceptPenalty:0.##}";
+            }
+
+            return null;
+        }
+
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             if (speculate && attempt > 0 && !prepared.ContainsKey(attempt)) Prepare(attempt);
@@ -307,20 +368,20 @@ public sealed class LanguageGenerator : ILanguageGenerator
             // Building this glyph may have regenerated a component and rebuilt finished composites around it. Those rebuilds
             // do not pass through this loop, so hold them to the Reject rules here; if one breaks, undo all of it.
             var changed = generated.Where(kv => before.TryGetValue(kv.Key, out var old) && !ReferenceEquals(old, kv.Value)).ToList();
-            if (changed.Count > 0 && (quality.Rules.Count > 0 || quality.PairRules.Count > 0))
+            if (changed.Count > 0)
             {
-                var broken = changed
-                    .Where(kv => language.Combination.Recipes.ContainsKey(kv.Key))
-                    .SelectMany(kv => QualityRuleChecker.Evaluate(kv.Value, quality.Rules, true, _coverage)
-                        .Where(f => f.Rule.OnFail == QualityAction.Reject).Select(f => (kv.Key, f)))
-                    .Concat(changed.SelectMany(kv => QualityRuleChecker.EvaluatePairs(kv.Value, generated, quality.PairRules, _coverage)
-                        .Where(f => f.Rule.OnFail == QualityAction.Reject).Select(f => (kv.Key, f))))
-                    .ToList();
-                if (broken.Count > 0)
+                string? brokenWhy = null;
+                foreach (var (key, glyph) in changed)
+                {
+                    brokenWhy = WhyChangedGlyphBroken(key, glyph);
+                    if (brokenWhy is not null) break;
+                }
+
+                if (brokenWhy is not null)
                 {
                     generated.Clear();
                     foreach (var (k, v) in before) generated[k] = v;
-                    rejections.Add("it rebuilt '" + broken[0].Key + $"' so that rule '{broken[0].f.Rule.Id}' broke: {broken[0].f.Example}");
+                    rejections.Add("it rebuilt " + brokenWhy);
                     continue;
                 }
             }

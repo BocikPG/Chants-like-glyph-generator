@@ -51,7 +51,8 @@ public sealed class CombinationResolver : ICombinationResolver
         Action<string>? explainFailure = null,
         Func<string, Glyph?>? rebuildComposite = null,
         bool isRebuild = false,
-        IReadOnlyDictionary<string, (CrossingConfig Crossing, double Clearance)>? strictShapes = null)
+        IReadOnlyDictionary<string, (CrossingConfig Crossing, double Clearance)>? strictShapes = null,
+        Func<string, IReadOnlyList<string>>? derivedFrom = null)
     {
         var report = new Dictionary<string, ComponentTally>();
         var working = new Dictionary<string, Glyph>();
@@ -92,50 +93,101 @@ public sealed class CombinationResolver : ICombinationResolver
             // rebuilt) is already in the shared registry: always build from the current originals, never from an older copy.
             foreach (var componentName in componentNames) working[componentName] = generated[componentName];
 
-            // Components don't cross each other unless the arrangement says so - overlay
-            // composition is deliberate controlled stacking, not free intersection. (A crossing
-            // needs BOTH components to allow it; here they all share this arrangement.)
-            var geometry = new GeometryContext(arrangement.Crossing);
-            if (arrangement.Crossing.Mode == CrossingMode.AnywhereButRespectStrict && strictShapes is { Count: > 0 })
-                geometry.ChainRules = chain => chain.ShapeTag is { } tag && tag.LastIndexOf('#') > 0
-                    && strictShapes.TryGetValue(tag[..tag.LastIndexOf('#')], out var rules) ? rules : (arrangement.Crossing, 0.0);
-            var placedByIndex = new PlacedComponent?[componentNames.Count];
-            bool allPlaced = true;
+            // Contact requirement (arrangement.contact): rolled once per composite and variation, so a rebuild of the same
+            // composite is held to the same requirement.
+            int requiredContacts = 0;
+            if (arrangement.Contact is { } contact && componentNames.Count > 1 && contact.Min > 0)
+            {
+                var contactRng = languageSeed != 0
+                    ? new DeterministicRandom(SplitMix64.DeriveSeed(languageSeed, $"contact-{compositeName}-{variation}"))
+                    : rng.Derive("contact");
+                if (contact.Chance >= 100.0 || contactRng.NextDouble() * 100.0 < contact.Chance) requiredContacts = contact.Min;
+            }
 
-            // Components with a placement rule go first (Fixed ones before side rules), so they get the
-            // pick of the grid; the rest are placed around them. Stable, so recipe order breaks ties, and
-            // the finished composite lists its components in recipe order again.
+            // The order components are placed in: ones with a placement rule go first (Fixed ones before side rules), so they get the
+            // pick of the grid; the rest are placed around them. Stable, so recipe order breaks ties, and the finished composite lists
+            // its components in recipe order again.
             int Priority(int i)
             {
                 var rule = arrangement.RuleFor(componentNames[i]);
                 if (rule is { Mode: ComponentPlacementMode.Fixed }) return 0;
                 return sides.ContainsKey(componentNames[i]) ? 1 : 2;
             }
+            var order = Enumerable.Range(0, componentNames.Count).OrderBy(Priority).ToList();
 
-            foreach (int index in Enumerable.Range(0, componentNames.Count).OrderBy(Priority))
+            // Which position in the order is made to touch what is already there: the last component first (the others stay as the
+            // search put them); if that finds nothing, each earlier movable one in turn, with everything placed again. A component
+            // with a Fixed placement is never the one moved. Without a requirement there is one pass, exactly as before.
+            var forcedPositions = new List<int> { -1 };
+            if (requiredContacts > 0)
             {
-                var name = componentNames[index];
-                sides.TryGetValue(name, out var pull);
-                geometry.CurrentSides = pull.Sides;
-                if (!report.TryGetValue(name, out var tally)) report[name] = tally = new ComponentTally();
-                var placed = TryPlaceComponent(working[name], name, config, grid, attemptRng, geometry, arrangement, pull.Sides, pull.Weight, variation, tally);
-                if (placed is null && !isRebuild && rebuildComposite is not null
-                    && arrangement.RuleFor(name) is { Mode: ComponentPlacementMode.Fixed, IfBlocked: FixedBlockedAction.Translate } moveRule)
+                forcedPositions.Clear();
+                for (int pos = order.Count - 1; pos >= 1; pos--)
+                    if (arrangement.RuleFor(componentNames[order[pos]]) is not { Mode: ComponentPlacementMode.Fixed }) forcedPositions.Add(pos);
+                // Every component but the first has a Fixed placement: nothing can be moved or sensibly redrawn to touch, so the requirement
+                // cannot be met by this arrangement and is not asked of the recipe (instead of failing it every time).
+                if (forcedPositions.Count == 0) { forcedPositions.Add(-1); requiredContacts = 0; }
+            }
+
+            var placedByIndex = new PlacedComponent?[componentNames.Count];
+            bool allPlaced = false;
+            foreach (int forcedPos in forcedPositions)
+            {
+                var passRng = forcedPos == forcedPositions[0] ? attemptRng : rng.Derive($"combine-attempt-{attempt}-contact-{forcedPos}");
+
+                // Components don't cross each other unless the arrangement says so - overlay
+                // composition is deliberate controlled stacking, not free intersection. (A crossing
+                // needs BOTH components to allow it; here they all share this arrangement.)
+                var geometry = new GeometryContext(arrangement.Crossing);
+                geometry.SetCurrent(null, arrangement.Crossing, arrangement.Spacing.EffectiveEdgeDistance); // spacing.minEdgeDistance between components
+                if (arrangement.Crossing.Mode == CrossingMode.AnywhereButRespectStrict && strictShapes is { Count: > 0 })
+                    geometry.ChainRules = chain => chain.ShapeTag is { } tag && tag.LastIndexOf('#') > 0
+                        && strictShapes.TryGetValue(tag[..tag.LastIndexOf('#')], out var rules) ? rules : (arrangement.Crossing, 0.0);
+                Array.Clear(placedByIndex);
+                allPlaced = true;
+                int contactsSoFar = 0;
+
+                for (int pos = 0; pos < order.Count; pos++)
                 {
-                    placed = TryMoveOriginal(name, moveRule, working, generated, compositeName, config, grid, attemptRng, geometry, arrangement, variation, tally, rebuildComposite);
+                    int index = order[pos];
+                    var name = componentNames[index];
+                    sides.TryGetValue(name, out var pull);
+                    geometry.CurrentSides = pull.Sides;
+                    geometry.ContactKind = arrangement.Contact?.Kind ?? ContactKind.Either;
+                    geometry.RequiredContacts = pos == forcedPos ? Math.Max(0, requiredContacts - contactsSoFar) : 0;
+                    if (!report.TryGetValue(name, out var tally)) report[name] = tally = new ComponentTally();
+                    var placed = TryPlaceComponent(working[name], name, config, grid, passRng, geometry, arrangement, pull.Sides, pull.Weight, variation, tally);
+                    if (placed is null && !isRebuild && rebuildComposite is not null
+                        && arrangement.RuleFor(name) is { Mode: ComponentPlacementMode.Fixed, IfBlocked: FixedBlockedAction.Translate } moveRule)
+                    {
+                        placed = TryMoveOriginal(name, moveRule, working, generated, compositeName, config, grid, passRng, geometry, arrangement, variation, tally, rebuildComposite);
+                    }
+
+                    if (placed is null)
+                    {
+                        tally.Failures++;
+                        allPlaced = false;
+                        break;
+                    }
+
+                    if (requiredContacts > 0 && pos > 0) contactsSoFar += geometry.CountContacts(placed.TransformedChains, geometry.ContactKind);
+                    geometry.CommitAsOneShape(placed.TransformedChains, arrangement.Crossing);
+                    geometry.PlacedComponents.Add((name, placed.TransformedChains.ToList()));
+                    var (cx, cy) = CenterOf(placed.TransformedChains);
+                    geometry.PlacedSides.Add((cx, cy, (IReadOnlyList<GlyphSide>)(pull.Sides ?? new List<GlyphSide>())));
+                    placedByIndex[index] = placed;
                 }
 
-                if (placed is null)
+                // Placed, but not touching enough (nothing could be made to touch): this pass counts as failed.
+                if (allPlaced && requiredContacts > 0 && contactsSoFar < requiredContacts)
                 {
-                    tally.Failures++;
                     allPlaced = false;
-                    break;
+                    if (!report.TryGetValue(componentNames[order[^1]], out var last)) report[componentNames[order[^1]]] = last = new ComponentTally();
+                    last.Failures++;
+                    last.Contact++;
                 }
 
-                geometry.CommitAsOneShape(placed.TransformedChains, arrangement.Crossing);
-                var (cx, cy) = CenterOf(placed.TransformedChains);
-                geometry.PlacedSides.Add((cx, cy, (IReadOnlyList<GlyphSide>)(pull.Sides ?? new List<GlyphSide>())));
-                placedByIndex[index] = placed;
+                if (allPlaced) break;
             }
 
             var placedComponents = placedByIndex.Where(p => p is not null).Select(p => p!).ToList();
@@ -160,14 +212,26 @@ public sealed class CombinationResolver : ICombinationResolver
             var leastUsedFirst = componentNames.OrderBy(usageTracker.GetUsageCount).ToList();
             var toRegenerate = leastUsedFirst[attempt % leastUsedFirst.Count];
 
-            var regenerated = regenerateComponent(toRegenerate, attempt);
+            Glyph regenerated;
+            try { regenerated = regenerateComponent(toRegenerate, attempt); }
+            catch (GlyphGenerationException) { continue; } // that component cannot be drawn again with this seed: try the next attempt (another component or seed)
             working[toRegenerate] = regenerated;
             generated[toRegenerate] = regenerated;
+
+            // Glyphs derived from the one just redrawn were cut from the old version: they are derived again from the new one
+            // (in order, a derived glyph may itself have derived glyphs), and count as changed below.
+            var changed = new HashSet<string> { toRegenerate };
+            foreach (var derivedName in derivedFrom?.Invoke(toRegenerate) ?? Array.Empty<string>())
+            {
+                if (!generated.ContainsKey(derivedName)) continue;
+                generated[derivedName] = regenerateComponent(derivedName, attempt);
+                changed.Add(derivedName);
+            }
 
             foreach (var (otherName, otherRecipe) in config.Recipes)
             {
                 if (otherName == compositeName) continue; // this recipe's own loop handles itself
-                if (!otherRecipe.Components.Contains(toRegenerate)) continue;
+                if (!otherRecipe.Components.Any(changed.Contains)) continue;
                 if (!generated.ContainsKey(otherName)) continue; // not built yet - will pick up
                                                                    // the new canonical version
                                                                    // naturally when its turn comes
@@ -255,6 +319,39 @@ public sealed class CombinationResolver : ICombinationResolver
     }
 
     private static PlacedComponent? TryPlaceComponent(
+        Glyph source,
+        string sourceName,
+        CombinationConfig config,
+        LatticeGrid grid,
+        DeterministicRandom rng,
+        GeometryContext geometry,
+        CombinationArrangementRules arrangement,
+        List<GlyphSide>? preferSides,
+        double sideWeight,
+        int variation,
+        ComponentTally tally)
+    {
+        var rule = arrangement.RuleFor(sourceName);
+        // The first component has nothing to start on, so the mask does not apply to it.
+        var mask = rule is { Mode: not ComponentPlacementMode.Fixed } && geometry.PlacedComponents.Count > 0 ? NodeMaskBuilder.Build(rule.Nodes, geometry) : null;
+        if (mask is null) return PlaceComponentCore(source, sourceName, config, grid, rng, geometry, arrangement, preferSides, sideWeight, variation, tally);
+
+        geometry.StartMask = mask;
+        try
+        {
+            if (rule!.Anchor != ComponentNodeAnchor.AnyNode)
+            {
+                geometry.StartMaskFirstOnly = true;
+                var first = PlaceComponentCore(source, sourceName, config, grid, rng.Derive("start-first"), geometry, arrangement, preferSides, sideWeight, variation, tally);
+                if (first is not null || rule.Anchor == ComponentNodeAnchor.FirstNode) return first;
+            }
+            geometry.StartMaskFirstOnly = false;
+            return PlaceComponentCore(source, sourceName, config, grid, rng.Derive("start-any"), geometry, arrangement, preferSides, sideWeight, variation, tally);
+        }
+        finally { geometry.StartMask = null; geometry.StartMaskFirstOnly = false; }
+    }
+
+    private static PlacedComponent? PlaceComponentCore(
         Glyph source,
         string sourceName,
         CombinationConfig config,
@@ -372,6 +469,8 @@ public sealed class CombinationResolver : ICombinationResolver
         if (!FitsGeometry(transformedChains, geometry)) { if (tally is not null) tally.Crossing++; return null; }
         if (!SatisfiesSides(transformedChains, geometry)) { if (tally is not null) tally.Sides++; return null; }
         if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, arrangement.Spacing)) { if (tally is not null) tally.Spacing++; return null; }
+        if (geometry.RequiredContacts > 0 && geometry.CountContacts(transformedChains, geometry.ContactKind) < geometry.RequiredContacts) { if (tally is not null) tally.Contact++; return null; }
+        if (!geometry.SatisfiesStartMask(transformedChains)) { if (tally is not null) tally.StartNode++; return null; }
 
         var placed = new PlacedComponent
         {
@@ -407,12 +506,16 @@ public sealed class CombinationResolver : ICombinationResolver
     /// extreme. Horizontal and vertical are compared separately, so a corner means both.</summary>
     private static bool SatisfiesSides(List<SubSymbolChain> chains, GeometryContext geometry)
     {
-        var mine = geometry.CurrentSides ?? Array.Empty<GlyphSide>();
-        if (mine.Count == 0 && geometry.PlacedSides.All(p => p.Sides.Count == 0)) return true;
+        // Center is only a pull, never a hard rule.
+        static IReadOnlyList<GlyphSide> Hard(IReadOnlyList<GlyphSide>? sides) =>
+            sides is null || !sides.Contains(GlyphSide.Center) ? sides ?? Array.Empty<GlyphSide>() : sides.Where(x => x != GlyphSide.Center).ToList();
+        var mine = Hard(geometry.CurrentSides);
+        if (mine.Count == 0 && geometry.PlacedSides.All(p => Hard(p.Sides).Count == 0)) return true;
 
         var (cx, cy) = CenterOf(chains);
-        foreach (var (qx, qy, qSides) in geometry.PlacedSides)
+        foreach (var (qx, qy, qSidesAll) in geometry.PlacedSides)
         {
+            var qSides = Hard(qSidesAll);
             foreach (var side in mine)
                 if (!qSides.Contains(side) && !Beyond(side, cx, cy, qx, qy)) return false;
 
@@ -704,7 +807,7 @@ public sealed class CombinationResolver : ICombinationResolver
 /// tried and which rule rejected each (counted once, under the first rule it broke).</summary>
 internal sealed class ComponentTally
 {
-    public int Failures, Tried, OffGrid, Crossing, Sides, Spacing;
+    public int Failures, Tried, OffGrid, Crossing, Sides, Spacing, Contact, StartNode;
 
     public static string Describe(
         Dictionary<string, ComponentTally> report, int attempts, CombinationArrangementRules arrangement, LatticeGrid grid)
@@ -720,6 +823,8 @@ internal sealed class ComponentTally
             if (t.Crossing > 0) reasons.Add($"{t.Crossing} crossed another component");
             if (t.Sides > 0) reasons.Add($"{t.Sides} broke a side rule");
             if (t.Spacing > 0) reasons.Add($"{t.Spacing} broke arrangement.spacing");
+            if (t.StartNode > 0) reasons.Add($"{t.StartNode} missed the placement.nodes mask");
+            if (t.Contact > 0) reasons.Add($"{t.Contact} did not touch the others as arrangement.contact asks");
 
             bool fixedRule = arrangement.RuleFor(name) is { Mode: ComponentPlacementMode.Fixed, IfBlocked: FixedBlockedAction.Regenerate };
             lines.Add($"'{name}' could not be placed in {t.Failures} of {attempts} attempt(s)" +
@@ -728,12 +833,14 @@ internal sealed class ComponentTally
         }
 
         var worst = failing[0].Value;
-        int top = new[] { worst.OffGrid, worst.Crossing, worst.Sides, worst.Spacing }.Max();
+        int top = new[] { worst.OffGrid, worst.Crossing, worst.Sides, worst.Spacing, worst.Contact, worst.StartNode }.Max();
         string hint =
             top == 0 ? ""
           : worst.Crossing == top ? " Components cross each other by default: set arrangement.crossing.mode, or give the recipe components that are smaller or sparser."
           : worst.Sides == top ? " The side rules are hard: check that the sides do not contradict each other and leave room on a grid of " + grid.Width + " x " + grid.Height + "."
           : worst.Spacing == top ? " Spacing rejects most placements: relax arrangement.spacing."
+          : worst.StartNode == top ? " Few placements put a node of the component on the placement.nodes mask: widen the mask, use anchor AnyNode, or check that the components it names are placed earlier."
+          : worst.Contact == top ? " Few placements make the components touch: lower arrangement.contact.min or chance, allow crossings (arrangement.crossing.mode), or use components that reach each other."
           : " The components are too big for the grid at the sizes allowed: turn on combination.allowScale with smaller allowedScales, or use a larger grid.";
         return string.Join(" ", lines) + hint;
     }

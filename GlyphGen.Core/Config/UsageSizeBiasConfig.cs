@@ -8,7 +8,9 @@ namespace GlyphGen.Core.Config;
 /// untouched, frequently-used ones end up bigger on average.)
 ///
 /// Mechanism: each use adds Strength "extra draws" - the glyph rolls its count/length that many
-/// extra times (the usual range, the usual rules) and keeps the lowest result. A fractional
+/// extra times (the usual range, the usual rules) and keeps the lowest result. A NEGATIVE strength
+/// does the opposite: it rolls as many extra times as the same positive strength would, but keeps the
+/// HIGHEST result (-1 pushes frequently-used glyphs towards big, as 1 pushes them towards small). A fractional
 /// number of extra draws is honoured probabilistically. The result is always inside the
 /// configured min..max, so this only reshapes the odds; it never overrides a range or any other
 /// constraint. "Uses" = how many times the glyph's name appears across Combination.Recipes.
@@ -21,20 +23,23 @@ namespace GlyphGen.Core.Config;
 /// </summary>
 public sealed class UsageSizeBiasConfig
 {
-    /// <summary>Extra draws added per use. 0 = off.</summary>
+    /// <summary>Extra draws added per use. 0 = off. Positive: keep the lowest of the draws (smaller counts and lengths); negative: the same
+    /// number of draws (its absolute value) but keep the highest (larger counts and lengths).</summary>
     public double Strength { get; set; } = 0.0;
 
+    /// <summary>Whether the bias is applied to the number of strokes (the shape's count). Default true.</summary>
     public bool AffectSubSymbolCount { get; set; } = true;
+    /// <summary>Whether the bias is applied to the chain length. Default true.</summary>
     public bool AffectSubSymbolLength { get; set; } = true;
 
     public double ExtraDraws(int usageCount) =>
-        Strength > 0 && usageCount > 0 ? Strength * usageCount : 0.0;
+        Strength != 0 && usageCount > 0 ? Strength * usageCount : 0.0;
 
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();
-        if (double.IsNaN(Strength) || double.IsInfinity(Strength) || Strength < 0)
-            errors.Add($"{JsonNames.Of(nameof(Strength))} must be a finite number >= 0 (got {Strength}).");
+        if (double.IsNaN(Strength) || double.IsInfinity(Strength))
+            errors.Add($"{JsonNames.Of(nameof(Strength))} must be a finite number (got {Strength}); negative values favour larger counts and lengths.");
         return errors;
     }
 }

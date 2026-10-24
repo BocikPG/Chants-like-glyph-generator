@@ -32,6 +32,7 @@ internal static class ConfigStructureChecker
         (typeof(TypefaceConfig), nameof(TypefaceConfig.Rectangular)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.ThickEnds)),
         (typeof(TypefaceConfig), nameof(TypefaceConfig.Brush)),
+        (typeof(CombinationArrangementRules), nameof(CombinationArrangementRules.Contact)),
         (typeof(PlacementConfig), nameof(PlacementConfig.FixedOrigin)),
         (typeof(PlacementConfig), nameof(PlacementConfig.Rotations)),
     };
@@ -70,7 +71,16 @@ internal static class ConfigStructureChecker
 
     private const string LegacyPrefix = "Old option ";
 
-    public static void Check(string json, List<string> errors)
+    [ThreadStatic] private static List<string>? _warnings;
+
+    public static void Check(string json, List<string> errors, List<string>? warnings = null)
+    {
+        _warnings = warnings;
+        try { CheckCore(json, errors); }
+        finally { _warnings = null; }
+    }
+
+    private static void CheckCore(string json, List<string> errors)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -205,13 +215,20 @@ internal static class ConfigStructureChecker
 
             Walk(property.Value, info.PropertyType, childPath, errors);
         }
+
+        if (_warnings is not null && SchemaRules.HasWarnRules(type))
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(element.GetRawText());
+            if (node is System.Text.Json.Nodes.JsonObject written)
+                _warnings.AddRange(SchemaRules.Warnings(type, written, path));
+        }
     }
 
     /// <summary>Types the walker doesn't descend into: scalars, plus the two types that have
     /// their own JSON converters (which validate their own shape).</summary>
     private static bool IsLeaf(Type type) =>
         type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)
-        || type == typeof(GlyphDefinition) || type == typeof(GridPoint) || type == typeof(OriginChoice) || type == typeof(JsonElement);
+        || type == typeof(GlyphDefinition) || type == typeof(GridPoint) || type == typeof(OriginChoice) || type == typeof(GlyphNames) || type == typeof(JsonElement);
 
     private static bool TryGetMapValueType(Type type, out Type valueType)
     {

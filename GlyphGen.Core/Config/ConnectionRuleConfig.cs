@@ -74,9 +74,13 @@ public enum ConnectionWeighting
 /// </summary>
 public sealed class ConnectionRuleConfig
 {
+    /// <summary>The kind of move this rule makes: a line (Orthogonal, Diagonal, Both, Any, Angle), a Circle, or an Arc.</summary>
     public ConnectionDirection Direction { get; set; }
+    /// <summary>Shortest move, in lattice units (1 = the neighbouring node). For a Circle it is the diameter, where 0 is a dot. Default 1.</summary>
     public int MinLength { get; set; } = 1;
+    /// <summary>Longest move, in lattice units (for a Circle, the diameter). Must not be below minLength. Default 1.</summary>
     public int MaxLength { get; set; } = 1;
+    /// <summary>How likely this rule is to be picked relative to the chain's other rules (see chain.connectionWeighting). 0 = never. Default 1.</summary>
     public double Weight { get; set; } = 1.0;
 
     /// <summary>Smallest allowed turn, in degrees, measured between the previous edge and the new one
@@ -95,6 +99,12 @@ public sealed class ConnectionRuleConfig
     /// and the closing edge must be free of crossings, otherwise the rule just makes its normal move.
     /// Replaces chain.closedLoopWeight.</summary>
     public double BackToStartChance { get; set; } = 0;
+
+    /// <summary>How much of the chain's length this rule uses up each time it is drawn (default 1, which is one node, as before).
+    /// A chain is complete once its used length reaches chain.length, so a rule costing 2 makes a chain 'shorter' by one extra node
+    /// every time it is drawn - e.g. a circle with cost 2 leaves room for one stroke fewer. 0 makes the rule free: it never counts
+    /// towards the length (a chain is still stopped at 64 nodes). The start node always counts 1. Closing a loop does not cost.</summary>
+    public int ChainLengthCost { get; set; } = 1;
 
     /// <summary>direction Arc only: which arcs may be drawn.</summary>
     public ArcConfig Arc { get; set; } = new();

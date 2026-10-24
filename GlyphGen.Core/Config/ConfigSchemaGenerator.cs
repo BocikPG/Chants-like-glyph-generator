@@ -168,7 +168,9 @@ public static class ConfigSchemaGenerator
                     numeric["minimum"] = minimum;
                 }
 
-                string? description = Describe($"P:{type.FullName}.{property.Name}");
+                string? description = Describe($"P:{(property.DeclaringType ?? type).FullName}.{property.Name}");
+                if (SchemaRules.NoteFor(type, property.Name) is { } note)
+                    description = description is null ? note : description + " " + note;
                 JsonNode? defaultValue = defaults is null ? null : DefaultOf(property, defaults);
 
                 // Draft-07 ignores siblings of a $ref, so a $ref is always wrapped (even with no
@@ -197,6 +199,10 @@ public static class ConfigSchemaGenerator
 
             if (Required.TryGetValue(type, out var required))
                 result["required"] = new JsonArray(required.Select(r => (JsonNode)JsonValue.Create(r)!).ToArray());
+
+            var conditions = SchemaRules.ConditionsFor(type, defaults);
+            if (conditions.Count > 0)
+                result["allOf"] = conditions;
 
             return result;
         }
@@ -229,11 +235,23 @@ public static class ConfigSchemaGenerator
 
             if (type.IsEnum)
             {
-                return new JsonObject
+                var names = System.Enum.GetNames(type);
+                var schema = new JsonObject
                 {
                     ["type"] = "string",
-                    ["enum"] = new JsonArray(System.Enum.GetNames(type).Select(n => (JsonNode)JsonValue.Create(n)!).ToArray()),
+                    ["enum"] = new JsonArray(names.Select(n => (JsonNode)JsonValue.Create(n)!).ToArray()),
                 };
+
+                // What each value does, as hover text beside the value list (VS Code reads markdownEnumDescriptions; other editors
+                // read enumDescriptions). Only when at least one member is documented; a missing one gets an empty entry.
+                var explained = names.Select(n => Describe($"F:{type.FullName}.{n}") ?? "").ToArray();
+                if (explained.Any(e => e.Length > 0))
+                {
+                    schema["enumDescriptions"] = new JsonArray(explained.Select(e => (JsonNode)JsonValue.Create(e)!).ToArray());
+                    schema["markdownEnumDescriptions"] = new JsonArray(explained.Select(e => (JsonNode)JsonValue.Create(e)!).ToArray());
+                }
+
+                return schema;
             }
 
             // Types with their own converters, written by hand.
@@ -251,6 +269,18 @@ public static class ConfigSchemaGenerator
                             ["required"] = new JsonArray("name"),
                             ["additionalProperties"] = false,
                         }),
+                };
+            }
+
+            if (type == typeof(GlyphNames))
+            {
+                var name = new JsonObject { ["type"] = "string", ["minLength"] = 1 };
+                return new JsonObject
+                {
+                    ["description"] = "One glyph name, or an array of names.",
+                    ["oneOf"] = new JsonArray(
+                        name.DeepClone(),
+                        new JsonObject { ["type"] = "array", ["items"] = name.DeepClone(), ["minItems"] = 1 }),
                 };
             }
 
@@ -391,7 +421,22 @@ public static class ConfigSchemaGenerator
             return new JsonObject { ["$ref"] = $"#/definitions/{type.Name}" };
         }
 
-        private string? Describe(string key) => _docs.TryGetValue(key, out var text) ? text : null;
+        private string? Describe(string key) => _docs.TryGetValue(key, out var text) ? JsonSpelling(text) : null;
+
+        private static readonly Lazy<HashSet<string>> OptionNames = new(() =>
+        {
+            var types = typeof(ConfigSchemaGenerator).Assembly.GetTypes().Where(t => t.Namespace == typeof(ConfigSchemaGenerator).Namespace);
+            var values = new HashSet<string>(types.Where(t => t.IsEnum).SelectMany(t => System.Enum.GetNames(t)));
+            return new HashSet<string>(types.Where(t => !t.IsEnum).SelectMany(Bindable).Select(p => p.Name).Where(n => !values.Contains(n)));
+        });
+
+        private static readonly System.Text.RegularExpressions.Regex Spelled =
+            new(@"`[^`]*`|\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>Descriptions are written next to C# properties; an option named there in its C# spelling (MaxDistanceMode) is shown the
+        /// way it is written in a config (`maxDistanceMode`). Values of enums are left alone.</summary>
+        private static string JsonSpelling(string text) => Spelled.Replace(text, m =>
+            m.Value[0] == '`' || !OptionNames.Value.Contains(m.Value) ? m.Value : "`" + char.ToLowerInvariant(m.Value[0]) + m.Value[1..] + "`");
 
         private static JsonNode? DefaultOf(PropertyInfo property, object instance)
         {

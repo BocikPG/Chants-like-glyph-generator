@@ -35,8 +35,11 @@ public enum SelfSpacingMode
 /// Distances are in grid units, 0 = that bound is off.</summary>
 public sealed class SelfSpacingRule
 {
+    /// <summary>Which earlier nodes a new node is measured against: Existing, Adjacent (the last few) or AllNodes.</summary>
     public SelfSpacingMode Mode { get; set; } = SelfSpacingMode.Existing;
+    /// <summary>A new node must be at least this far (lattice units) from the nodes the mode checks. 0 = off.</summary>
     public double MinDistance { get; set; } = 0.0;
+    /// <summary>A new node must be within this distance (lattice units) of the nodes the mode checks. 0 = off. Must not be below minDistance.</summary>
     public double MaxDistance { get; set; } = 0.0;
 
     /// <summary>Adjacent mode only: how many of the chain's most recent nodes are checked.</summary>
@@ -71,18 +74,18 @@ public sealed class SelfSpacingRule
 /// <summary>
 /// Spacing enforced between a shape and the shapes already placed, on top of (not instead of)
 /// the ordinary intersection check. Part of a shape's (or a combination's) arrangement rules;
-/// the spacing within one chain is ChainRules.SelfSpacing. Minimums keep things from sitting uncomfortably close
+/// the spacing within one chain is `chain.selfSpacing`. Minimums keep things from sitting uncomfortably close
 /// together; maximums keep them clustered. Disabled by default, since these are additional
 /// constraints that can make placement noticeably harder to satisfy.
 ///
 /// A "shape" is one placed instance of a shapes entry when generating a glyph, and a whole placed
-/// component when combining glyphs per Combination.Recipes - both go through
-/// SubSymbolSpacingChecker. The rules of the shape BEING PLACED are checked against EVERY
-/// already-placed shape (minimums against all; the maximum per MaxDistanceMode), so the result
+/// component when combining glyphs per `combination.recipes` - both are checked the same way. The rules of the shape BEING PLACED are checked against EVERY
+/// already-placed shape (minimums against all; the maximum per `maxDistanceMode`), so the result
 /// depends on placement order.
 /// </summary>
 public sealed class SpacingConfig
 {
+    /// <summary>Switches spacing on. While false the whole block is ignored, numbers included. Default false.</summary>
     public bool Enabled { get; set; } = false;
 
     /// <summary>Minimum distance between the CENTROIDS of two shapes (the average of each
@@ -104,7 +107,7 @@ public sealed class SpacingConfig
     /// between its own strokes), measured along the real curves - arcs, circles and bent lines included - not between nodes.
     /// Where two strokes meet on purpose (a shared node, an allowed crossing) the rule is waived within 1.5x this distance of the
     /// meeting point, so a stroke must leave a junction at an angle of roughly 40 degrees or more. Between two shapes the larger of their
-    /// two values applies. 0 = off. Needs <c>enabled: true</c>. A dot is a point
+    /// two values applies. 0 = off. In a combination (combination.arrangement.spacing) it is the clearance between the strokes of different components: a component's strokes keep this distance from those of the components placed before it, so components cannot lie on top of each other (a stroke of one component running along a stroke of another is too close). Needs <c>enabled: true</c>. A dot is a point
     /// and keeps this distance from other strokes too.</summary>
     public double MinEdgeDistance { get; set; } = 0.0;
 

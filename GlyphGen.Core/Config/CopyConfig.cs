@@ -110,7 +110,7 @@ public sealed class CopyConfig
     /// <summary>Id of the shape to copy. It must be listed before this one.</summary>
     public string Shape { get; set; } = "";
 
-    /// <summary>How the copy is turned over; see CopyFlip.</summary>
+    /// <summary>How the copy is turned over; see the values of `flip`.</summary>
     public CopyFlip Flip { get; set; } = CopyFlip.Auto;
 
     /// <summary>Flip: Random only - the flips to draw from. Default: Horizontal, Vertical, Rotate180.</summary>

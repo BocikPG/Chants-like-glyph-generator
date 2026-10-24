@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Checks of the rendering side (needs SkiaSharp): run with `dotnet run -project GlyphGen.RenderCheck`.
+  <!-- Checks of the rendering side (needs SkiaSharp): run with `dotnet run --project GlyphGen.RenderCheck`.
        Kept apart from GlyphGen.SelfCheck, which only needs GlyphGen.Core. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>

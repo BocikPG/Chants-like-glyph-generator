@@ -67,7 +67,13 @@ public sealed class ShapeDefinition
     /// exactly (the migration tool sets it); leave it out otherwise.</summary>
     public string? SeedLabel { get; set; }
 
-    /// <summary>Makes this entry a copy of an earlier shape instead of drawing it (see CopyConfig). Leave
+    /// <summary>Id of another generative shape whose whole `chain` block (length, connectionRules, weighting, selfSpacing, loops,
+    /// revisits) this shape uses instead of one of its own - the shape keeps its own count, placement, arrangement, glyph filters and
+    /// chance, and draws from its own random stream, so it comes out different. The source may itself use chainFrom (no loops). The
+    /// source can be anywhere in the list. Leave out `chain` on a shape that uses this; it would be ignored. Generative shapes only.</summary>
+    public string? ChainFrom { get; set; }
+
+    /// <summary>Makes this entry a copy of an earlier shape instead of drawing it (see the `copyOf` block). Leave
     /// out kind, count, chain, nodes and placement on such an entry.</summary>
     public CopyConfig? CopyOf { get; set; }
 

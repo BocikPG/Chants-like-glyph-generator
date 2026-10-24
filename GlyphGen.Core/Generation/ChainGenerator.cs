@@ -49,8 +49,11 @@ public sealed class ChainGenerator : IChainGenerator
         var current = request.StartNode;
 
         // TargetLength is interpreted as a node count (including the start node), matching
-        // the "nodes per chain" framing used for subSymbolLength in the config schema.
-        while (chain.Nodes.Count < request.TargetLength)
+        // the "nodes per chain" framing used for subSymbolLength in the config schema. Each drawn move uses up
+        // its rule's ChainLengthCost of it (1 by default, so that is the node count unless a rule says otherwise).
+        int used = 1;
+        const int MaxNodes = 64;
+        while (used < request.TargetLength && chain.Nodes.Count < MaxNodes)
         {
             var moves = new List<Move>();
             var weights = new List<double>();
@@ -88,15 +91,18 @@ public sealed class ChainGenerator : IChainGenerator
             }
 
             chain.Edges.Add(picked.Edge);
-            chain.Nodes.Add(picked.Edge.To);
-            current = picked.Edge.To;
+            var next = picked.Next ?? picked.Edge.To;
+            chain.Nodes.Add(next);
+            current = next;
+            used += picked.Rule.ChainLengthCost;
         }
 
-        bool success = chain.Nodes.Count >= request.TargetLength || chain.IsClosedLoop;
+        bool success = used >= request.TargetLength || chain.Nodes.Count >= MaxNodes || chain.IsClosedLoop;
         return success ? chain : null;
     }
 
-    private readonly record struct Move(GridEdge Edge, ConnectionRuleConfig Rule);
+    /// <param name="Next">Where the chain carries on when that is not the edge's To (an arc with continueFrom ArcEnd).</param>
+    private readonly record struct Move(GridEdge Edge, ConnectionRuleConfig Rule, GridPoint? Next = null);
 
     private static void CollectMoveCandidates(
         LatticeGrid grid,
@@ -207,16 +213,59 @@ public sealed class ChainGenerator : IChainGenerator
         var sweeps = new List<int>();
         for (int sweep = rule.Arc.MinSweep; sweep <= rule.Arc.MaxSweep; sweep += step)
             if (sweep % step == 0 && sweep > 0 && sweep < 360) sweeps.Add(sweep);
-        if (sweeps.Count == 0) return;
-        double share = rule.Weight / (starts.Length * sweeps.Count);
+        if (sweeps.Count == 0 && rule.Arc.Anchor != ArcAnchor.Diameter) return;
+
+        // The arcs one circle offers, as (angle the arc starts at relative to the diameter, sweep). From sits at 180 on the circle
+        // and To at 0 (see GridEdge), so anchoring is just a choice of those numbers.
+        List<(int Relative, int Sweep)>? anchored = rule.Arc.Anchor switch
+        {
+            ArcAnchor.Node => sweeps.SelectMany(sw => new[] { (180, sw), (((180 - sw) % 360 + 360) % 360, sw) }).ToList(),
+            ArcAnchor.Diameter => new List<(int, int)> { (180, 180), (0, 180) },
+            _ => null,
+        };
+        double share = rule.Weight / (anchored?.Count ?? starts.Length * sweeps.Count);
+        bool arcEnd = rule.Arc.Anchor == ArcAnchor.Node && rule.Arc.ContinueFrom == ArcContinueFrom.ArcEnd;
 
         for (int length = Math.Max(1, rule.MinLength); length <= rule.MaxLength; length++)
             foreach (var (dx, dy) in BothDirections)
             {
                 var target = current.Translate(dx * length, dy * length);
                 if (!grid.Contains(target)) continue;
-                if (!request.AllowNodeRevisit && chain.Nodes.Contains(target)) continue;
-                if (!RespectsSelfSpacing(target, current, chain, request.SelfSpacingRules)) continue;
+                // With continueFrom ArcEnd the far end of the diameter is not a node of the chain: the node the arc ends at is (checked below).
+                if (!arcEnd && !request.AllowNodeRevisit && chain.Nodes.Contains(target)) continue;
+                if (!arcEnd && !RespectsSelfSpacing(target, current, chain, request.SelfSpacingRules)) continue;
+
+                if (anchored is not null)
+                {
+                    foreach (var (relative, sweep) in anchored)
+                    {
+                        var edge = new GridEdge(current, target, GridEdgeKind.Circle, rule.Curve, null, new ArcSpan(relative, sweep), rule.OutlineNodes);
+                        var (minX, minY, maxX, maxY) = edge.Extent();
+                        if (!grid.ContainsBox(minX, minY, maxX, maxY)) continue;
+
+                        GridPoint? next = null;
+                        if (arcEnd)
+                        {
+                            // The arc's end that is not on the current node: current sits at relative 180, so an arc starting there ends
+                            // sweep degrees on; any other anchored arc ends on current and starts at the free end.
+                            double angle = relative == 180 ? edge.ArcStartDegrees + sweep : edge.ArcStartDegrees;
+                            var (px, py) = edge.CirclePoint(angle);
+                            var node = new GridPoint((int)Math.Round(px), (int)Math.Round(py));
+                            double off = Math.Sqrt((px - node.X) * (px - node.X) + (py - node.Y) * (py - node.Y));
+                            if (off > rule.Arc.EndTolerance + 1e-9 || node == current || !grid.Contains(node)) continue;
+                            if (!request.AllowNodeRevisit && chain.Nodes.Contains(node)) continue;
+                            if (!RespectsSelfSpacing(node, current, chain, request.SelfSpacingRules)) continue;
+                            next = node;
+                        }
+
+                        if (!IsValidEdge(edge, chain, request, existingGeometry)) continue;
+
+                        moves.Add(new Move(edge, rule, next));
+                        weights.Add(share);
+                    }
+
+                    continue;
+                }
 
                 double diameterAngle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
                 foreach (int start in starts)
@@ -339,6 +388,8 @@ public sealed class ChainGenerator : IChainGenerator
     /// caller before this runs, since the closing-loop move deliberately targets a node
     /// already in the chain (its own start) and must bypass that check.
     /// </summary>
+    [ThreadStatic] private static List<GridPoint>? _ownScratch;
+
     private static bool IsValidEdge(
         GridEdge candidateEdge,
         SubSymbolChain chain,
@@ -349,7 +400,11 @@ public sealed class ChainGenerator : IChainGenerator
         // chain exists, so the placement checks the finished curves instead (faster, and it judges the real stroke).
         bool mayCurve = !candidateEdge.IsCircle && (request.AllEdgesCurved || candidateEdge.Curve is { ChanceToBeCurved: > 0 });
 
-        var own = new List<GridPoint>(chain.Nodes) { candidateEdge.To };
+        // The chain's nodes plus the candidate's end, in a list reused for every candidate (one per thread): it is only read during this call.
+        var own = _ownScratch ??= new List<GridPoint>();
+        own.Clear();
+        own.AddRange(chain.Nodes);
+        own.Add(candidateEdge.To);
         foreach (var existing in chain.Edges)
         {
             if (IsSameEdge(existing, candidateEdge))

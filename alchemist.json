@@ -1,6 +1,10 @@
-
-
 {
+  "$schema": "./GlyphGen.Cli/config.schema.json",
+  "rootSeed": 2026092763,
+  "outputDirectory": "./output",
+  "maxParallelism": 4,
+  "languages": [
+    {
       "name": "Alchemist",
       "grid": {
         "height": 25,
@@ -233,29 +237,92 @@
           "Refectory": [
             "placeBase",
             "refectoryBase"
+          ],
+          "Zero": [
+            "numberBase"
           ]
         },
         "arrangement": {
+          "placements": [
+            {
+              "glyph": [
+                "numberBase",
+                "oneBase",
+                "twoBase",
+                "threeBase",
+                "fourBase",
+                "fiveBase",
+                "sixBase",
+                "sevenBase",
+                "eightBase",
+                "nineBase"
+              ],
+              "mode": "Fixed"
+            },
+            {
+              "glyph": "*",
+              "mode": "Prefer",
+              "sides": [
+                "Center"
+              ],
+              "weight": 0,
+              "anchor": "FirstNode",
+              "nodes": {
+                "allow": [
+                  {
+                    "nodesOfComponents": {}
+                  }
+                ]
+              }
+            }
+          ],
           "crossing": {
-            "mode": "Anywhere"
+            "mode": "NodesOnly",
+            "nodeTolerance": 0.3
+          },
+          "contact": {
+            "chance": 100,
+            "kind": "Junction",
+            "min": 1
+          },
+          "spacing": {
+            "enabled": true,
+            "minEdgeDistance": 1.3
           }
-        }
+        },
+        "maxRetriesPerRecipe": 50
       },
       "derivations": {
         "personBaseCut": {
           "from": "personBase",
           "steps": [
             {
-              "mode": "Cut",
+              "op": "SplitEdges",
+              "parts": {
+                "min": 2,
+                "max": 4
+              },
+              "minEdgeLength": 3
+            },
+            {
+              "op": "DeleteNodes",
+              "mode": "Bridge",
               "amount": {
-                "count": {
-                  "min": 1,
-                  "max": 2
+                "percent": {
+                  "min": 30,
+                  "max": 40
                 }
               },
-              "removeOrphanNodes": true
+              "connectionRules": [
+                {
+                  "direction": "Any",
+                  "minLength": 1,
+                  "maxLength": 15
+                }
+              ]
             }
-          ]
+          ],
+          "maxSimilarityToSource": 0.8
         },
         "personBaseCutRotated": {
           "from": "personBaseCut",
@@ -274,16 +341,32 @@
           "from": "peopleBase",
           "steps": [
             {
-              "mode": "Cut",
+              "op": "SplitEdges",
+              "parts": {
+                "min": 2,
+                "max": 4
+              },
+              "minEdgeLength": 3
+            },
+            {
+              "op": "DeleteNodes",
+              "mode": "Bridge",
               "amount": {
-                "count": {
-                  "min": 1,
-                  "max": 2
+                "percent": {
+                  "min": 30,
+                  "max": 40
                 }
               },
-              "removeOrphanNodes": true
+              "connectionRules": [
+                {
+                  "direction": "Any",
+                  "minLength": 1,
+                  "maxLength": 24
+                }
+              ]
             }
-          ]
+          ],
+          "maxSimilarityToSource": 0.8
         },
         "peopleBaseRotated": {
           "from": "peopleBase",
@@ -313,9 +396,33 @@
             ],
             [
               13,
-              25
+              17
+            ],
+            [
+              13,
+              19
+            ],
+            [
+              13,
+              21
+            ],
+            [
+              13,
+              24
             ]
-          ]
+          ],
+          "placement": {
+            "mode": "Fixed",
+            "fixedOrigin": [
+              0,
+              0
+            ]
+          },
+          "arrangement": {
+            "crossing": {
+              "mode": "Anywhere"
+            }
+          }
         },
         {
           "id": "numbersShapeBase",
@@ -333,18 +440,30 @@
           "kind": "Literal",
           "nodes": [
             [
-              0,
-              4
+              13,
+              17
             ],
             [
-              0,
-              6
+              13,
+              19
             ],
             [
-              0,
-              8
+              13,
+              21
             ]
-          ]
+          ],
+          "placement": {
+            "mode": "Fixed",
+            "fixedOrigin": [
+              0,
+              0
+            ]
+          },
+          "arrangement": {
+            "crossing": {
+              "mode": "Anywhere"
+            }
+          }
         },
         {
           "id": "numbersShape",
@@ -360,24 +479,274 @@
             "nineBase"
           ],
           "placement": {
+            "bounds": {
+              "minX": 13,
+              "minY": 14,
+              "maxX": 24,
+              "maxY": 23
+            },
+            "maxPlacementAttempts": 100,
             "startOnExistingNode": true
           },
+          "arrangement": {
+            "crossing": {
+              "mode": "Anywhere"
+            },
+            "spacing": {
+              "enabled": true,
+              "ignoreStartNode": true,
+              "minNodeDistance": 2
+            }
+          },
+          "count": {
+            "min": 1,
+            "max": 1
+          },
+          "chainFrom": "generalAlchemistShape"
+        },
+        {
+          "id": "simpleOnesHead",
+          "onlyForGlyphs": [
+            "personBase",
+            "peopleBase"
+          ],
+          "count": {
+            "min": 1,
+            "max": 1
+          },
           "chain": {
-            "selfSpacing": [
+            "allowNodeRevisit": true,
+            "allowClosedLoop": true,
+            "length": {
+              "min": 3,
+              "max": 3
+            },
+            "connectionRules": [
               {
-                "mode": "AllNodes",
-                "maxDistance": 6
+                "direction": "Circle",
+                "chainLengthCost": 3,
+                "weight": 1,
+                "minLength": 1,
+                "maxLength": 3,
+                "outlineNodes": {
+                  "mode": "EveryLatticePoint"
+                }
+              },
+              {
+                "direction": "Angle",
+                "anglePreset": "Sharp",
+                "chainLengthCost": 1,
+                "minLength": 2,
+                "maxLength": 2,
+                "backToStartChance": 100
               }
             ]
           }
         },
         {
-          "id": "simpleOnes",
+          "id": "simpleOnesLine",
           "onlyForGlyphs": [
             "personBase",
             "peopleBase"
-          ]
-          
+          ],
+          "count": {
+            "min": 1,
+            "max": 1
+          },
+          "chain": {
+            "allowNodeRevisit": true,
+            "allowClosedLoop": true,
+            "length": {
+              "min": 2,
+              "max": 4
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "weight": 1,
+                "minLength": 4,
+                "maxLength": 22
+              }
+            ]
+          },
+          "placement": {
+            "startOnExistingNode": true
+          }
+        },
+        {
+          "id": "generalAlchemistShape",
+          "excludeGlyphs": [
+            "numberBase",
+            "oneBase",
+            "twoBase",
+            "threeBase",
+            "fourBase",
+            "fiveBase",
+            "sixBase",
+            "sevenBase",
+            "eightBase",
+            "nineBase",
+            "personBase",
+            "peopleBase"
+          ],
+          "count": {
+            "min": 1,
+            "max": 2
+          },
+          "chain": {
+            "allowClosedLoop": true,
+            "length": {
+              "min": 8,
+              "max": 19
+            },
+            "connectionRules": [
+              {
+                "direction": "Angle",
+                "anglePreset": "Sharp",
+                "chainLengthCost": 3,
+                "minLength": 2,
+                "maxLength": 2,
+                "backToStartChance": 100
+              },
+              {
+                "direction": "Circle",
+                "minLength": 1,
+                "maxLength": 5,
+                "chainLengthCost": 3
+              },
+              {
+                "direction": "Circle",
+                "minLength": 5,
+                "maxLength": 12,
+                "chainLengthCost": 12,
+                "weight": 2,
+                "outlineNodes": {
+                  "mode": "EveryLatticePoint"
+                }
+              },
+              {
+                "direction": "Circle",
+                "minLength": 17,
+                "maxLength": 24,
+                "chainLengthCost": 16,
+                "weight": 2,
+                "outlineNodes": {
+                  "mode": "EveryLatticePoint"
+                }
+              },
+              {
+                "direction": "Arc",
+                "minLength": 5,
+                "maxLength": 12,
+                "chainLengthCost": 12,
+                "weight": 2,
+                "arc": {
+                  "anchor": "Node",
+                  "angles": "Both",
+                  "minSweep": 90,
+                  "maxSweep": 270,
+                  "continueFrom": "ArcEnd",
+                  "endTolerance": 0.3
+                },
+                "outlineNodes": {
+                  "mode": "EveryLatticePoint"
+                }
+              },
+              {
+                "direction": "Arc",
+                "minLength": 17,
+                "maxLength": 24,
+                "chainLengthCost": 16,
+                "weight": 2,
+                "arc": {
+                  "anchor": "Node",
+                  "angles": "Both",
+                  "minSweep": 90,
+                  "maxSweep": 270,
+                  "continueFrom": "ArcEnd",
+                  "endTolerance": 0.3
+                },
+                "outlineNodes": {
+                  "mode": "EveryLatticePoint"
+                }
+              },
+              {
+                "direction": "Orthogonal",
+                "minLength": 4,
+                "maxLength": 8,
+                "chainLengthCost": 3,
+                "weight": 2
+              },
+              {
+                "direction": "Orthogonal",
+                "minLength": 3,
+                "maxLength": 3,
+                "chainLengthCost": 1
+              }
+            ]
+          },
+          "placement": {
+            "startOnExistingNode": true,
+            "startOnExistingNodeChance": 100,
+            "maxPlacementAttempts": 50
+          },
+          "arrangement": {
+            "crossing": {
+              "mode": "None"
+            },
+            "spacing": {
+              "enabled": true,
+              "minEdgeDistance": 1.3
+            }
+          }
         }
-      ]
+      ],
+      "usageSizeBias": {
+        "strength": -0.7,
+        "affectSubSymbolLength": true,
+        "affectSubSymbolCount": false
+      },
+      "quality": {
+        "rejectStraightLineOnly": false
+      },
+      "render": {
+        "framing": "GlyphCentered",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "debugShowNodes": true,
+        "debugColorComponents": true,
+        "debugColorParts": true,
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.020,
+              "max": 0.020
+            },
+            "cap": "Square"
+          }
+        },
+        "joins": {
+          "corner": {
+            "outer": {
+              "style": "Miter"
+            },
+            "inner": {
+              "style": "Miter"
+            }
+          },
+          "junction": {
+            "inner": {
+              "style": "Miter"
+            },
+            "outer": {
+              "style": "Miter"
+            },
+            "trimCaps": true
+          }
+        }
+      }
     }
+  ]
+}

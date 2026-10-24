@@ -10,8 +10,12 @@ namespace GlyphGen.Core.Config;
 /// </summary>
 public enum CurveContextMode
 {
+    /// <summary>The normal curve plan is used both alone and as a component.</summary>
     AllCurved,
+    /// <summary>Every edge is a straight line, alone and as a component.</summary>
     AllStraight,
+    /// <summary>Curve plan when drawn alone, straight lines as a component of a composite.</summary>
     CurvedMiniStraightCombined,
+    /// <summary>Straight lines when drawn alone, curve plan as a component of a composite.</summary>
     StraightMiniCurvedCombined,
 }

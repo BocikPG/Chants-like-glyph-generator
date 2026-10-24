@@ -2,9 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace GlyphGen.Core.Config;
 
+/// <summary>The size of each rendered glyph image and the empty border around the drawing.</summary>
 public sealed class CanvasConfig
 {
+    /// <summary>Width and height in pixels of each rendered glyph image. Default 512 (at least 16).</summary>
     public int SizePx { get; set; } = 512;
+    /// <summary>Empty border in pixels kept around the drawing inside the image. Default 32.</summary>
     public int MarginPx { get; set; } = 32;
 }
 
@@ -18,9 +21,12 @@ public sealed class GlyphDefinition
 
 }
 
+/// <summary>One language: its glyph lists, shapes, recipes, derivations, quality checks and rendering.</summary>
 public sealed class LanguageDefinition
 {
+    /// <summary>The language's name. Its random seed is derived from it, so renaming a language changes every glyph.</summary>
     public string Name { get; set; } = "";
+    /// <summary>Size of each rendered glyph image and its margin.</summary>
     public CanvasConfig Canvas { get; set; } = new();
 
     /// <summary>The lattice this language's glyphs are drawn on. Required per language.</summary>
@@ -44,11 +50,13 @@ public sealed class LanguageDefinition
     /// entry without a count; free-form strokes are entries with one.</summary>
     public List<ShapeDefinition> Shapes { get; set; } = new();
 
+    /// <summary>Curve settings that are not per edge: edges no rule made, the proximity guard, and curves in composites.</summary>
     public CurveConfig Curve { get; set; } = new();
+    /// <summary>How composite glyphs are built from components: recipes, scale and rotation, and the arrangement rules.</summary>
     public CombinationConfig Combination { get; set; } = new();
 
     /// <summary>Glyphs made by editing another glyph, by glyph name. A name listed here is not generated
-    /// from shapes and has no recipe. See DerivationConfig.</summary>
+    /// from shapes and has no recipe. Each entry has a `from` glyph and a list of `steps`.</summary>
     public Dictionary<string, DerivationConfig> Derivations { get; set; } = new();
 
     /// <summary>Post-generation gates (similarity to other glyphs, straight-line rejection).</summary>
@@ -58,9 +66,12 @@ public sealed class LanguageDefinition
     public RenderConfig Render { get; set; } = new();
 }
 
+/// <summary>The lattice a language is drawn on: nodes lie at whole coordinates from 0 to width-1 and height-1.</summary>
 public sealed class GridConfig
 {
+    /// <summary>Number of lattice columns (nodes along x). Default 25.</summary>
     public int Width { get; set; } = 25;
+    /// <summary>Number of lattice rows (nodes along y). Default 25.</summary>
     public int Height { get; set; } = 25;
 }
 
@@ -79,4 +90,9 @@ public sealed class RootConfig
     public int MaxParallelism { get; set; } = 1;
 
     public List<LanguageDefinition> Languages { get; set; } = new();
+
+    /// <summary>Options the loader found that have no effect (set while the mode that uses them is off). Filled by the loader,
+    /// printed with the run's warnings; never part of the json.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<string> Warnings { get; } = new();
 }

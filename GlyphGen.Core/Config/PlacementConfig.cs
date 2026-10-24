@@ -35,6 +35,7 @@ public enum SidePullMode
 /// </summary>
 public sealed class SidePull
 {
+    /// <summary>How the sides are chosen: Prefer (the listed ones) or SetRandom (drawn per instance).</summary>
     public SidePullMode Mode { get; set; } = SidePullMode.Prefer;
 
     /// <summary>Prefer only: one or two sides; two means a corner. Left with Right, or Top with Bottom, cancel out.</summary>
@@ -49,12 +50,12 @@ public sealed class SidePull
 }
 
 /// <summary>
-/// One shared schema for "where does this shape go" — used identically by both
-/// guaranteedMotifs[].placement and a language's subSymbolPlacement, so there's a single
-/// validator and a single resolver implementation for both cases.
+/// Where a shape goes: its start point (mode), how often placing it is retried, an optional box it must stay in,
+/// and whether it grows out of nodes that are already in the glyph.
 /// </summary>
 public sealed class PlacementConfig
 {
+    /// <summary>Where the shape starts: RandomValid (default), Fixed (an exact origin) or CenterAnchor (the middle of the grid).</summary>
     public PlacementMode Mode { get; set; } = PlacementMode.RandomValid;
 
     /// <summary>Required when Mode == Fixed, and an error with any other mode (it would be
@@ -98,7 +99,7 @@ public sealed class PlacementConfig
 
     /// <summary>
     /// Failure budget for "find/fit a shape at a location" — distinct from
-    /// CombinationConfig.MaxRetriesPerRecipe, which governs "can this recipe's components
+    /// `combination.maxRetriesPerRecipe`, which governs "can this recipe's components
     /// work together at all". Keeping these separate lets failure messages say precisely
     /// which stage gave up.
     /// </summary>
@@ -116,7 +117,7 @@ public sealed class PlacementConfig
     /// <summary>RandomValid only: start the shape on a node already in the glyph (chosen
     /// uniformly) instead of a random grid point, so shapes grow out of each other. Needs no
     /// crossing permission - edges that merely meet at a node don't count as crossing - but can't
-    /// be combined with SubSymbolSpacing.MinNodeDistance &gt; 0 (a shared node is distance 0).</summary>
+    /// be combined with `arrangement.spacing.minNodeDistance` above 0 (a shared node is distance 0).</summary>
     public bool StartOnExistingNode { get; set; } = false;
 
     /// <summary>With startOnExistingNode: the chance (0-100) that an attempt starts on an existing node; otherwise it
@@ -136,8 +137,12 @@ public sealed class PlacementConfig
 /// <summary>An inclusive box of lattice node coordinates (placement.bounds).</summary>
 public sealed class PlacementBounds
 {
+    /// <summary>Smallest x a node may have (inclusive).</summary>
     public int MinX { get; set; }
+    /// <summary>Smallest y a node may have (inclusive).</summary>
     public int MinY { get; set; }
+    /// <summary>Largest x a node may have (inclusive).</summary>
     public int MaxX { get; set; }
+    /// <summary>Largest y a node may have (inclusive).</summary>
     public int MaxY { get; set; }
 }

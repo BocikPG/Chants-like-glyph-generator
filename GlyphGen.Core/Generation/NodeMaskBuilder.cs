@@ -51,6 +51,20 @@ public static class NodeMaskBuilder
             return p => p.X >= minX && p.X <= maxX && p.Y >= minY && p.Y <= maxY;
         }
 
+        if (region.NodesOfGlyph is { } other)
+        {
+            var shift = other.Offset ?? new GridPoint(0, 0);
+            var set = new HashSet<GridPoint>((geometry.GlyphNodes?.Invoke(other.Glyph) ?? Enumerable.Empty<GridPoint>())
+                .Select(n => new GridPoint(n.X + shift.X, n.Y + shift.Y)));
+            return set.Contains;
+        }
+
+        if (region.NodesOfComponents is { } comps)
+        {
+            var set = new HashSet<GridPoint>(geometry.NodesOfComponents(comps.Components, comps.Shapes));
+            return set.Contains;
+        }
+
         return _ => true;
     }
 }

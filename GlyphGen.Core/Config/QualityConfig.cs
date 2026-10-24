@@ -17,6 +17,7 @@ public enum SimilarityBasis
     Edges,
 }
 
+/// <summary>Checks a finished glyph must pass (similarity, straight lines, declarative rules) and how often it is redrawn when it fails.</summary>
 public sealed class QualityConfig
 {
     /// <summary>Jaccard similarity (0-1) of two glyphs' normalized shapes, at or above which
@@ -37,6 +38,7 @@ public sealed class QualityConfig
     /// like coordinates).</summary>
     public bool ComparePosition { get; set; } = false;
 
+    /// <summary>How many times a glyph that fails a quality check is redrawn before the run fails (or, for Score rules, keeps the best attempt). Default 10.</summary>
     public int MaxRegenerationAttempts { get; set; } = 10;
 
     /// <summary>
@@ -48,11 +50,11 @@ public sealed class QualityConfig
     /// </summary>
     public double CompositeMaxSimilarity { get; set; } = 1.0;
 
-    /// <summary>Declarative checks of every finished glyph (see QualityRule). Evaluated after the similarity and straight-line
+    /// <summary>Declarative checks of every finished glyph (see the fields of a rule). Evaluated after the similarity and straight-line
     /// checks, in order. Default: none.</summary>
     public List<QualityRule> Rules { get; set; } = new();
 
-    /// <summary>Checks BETWEEN glyphs (see QualityRule; the selectors name glyphs): the strokes of one glyph are judged against the
+    /// <summary>Checks BETWEEN glyphs (same fields as `rules`; the selectors name glyphs): the strokes of one glyph are judged against the
     /// strokes of another, e.g. the dots of two base glyphs that never share a composite. Checked when a glyph is accepted, against
     /// every glyph already built. Default: none.</summary>
     public List<QualityRule> PairRules { get; set; } = new();

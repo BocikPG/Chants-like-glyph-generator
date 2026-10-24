@@ -13,9 +13,10 @@ public sealed class RotateOption
     public double Weight { get; set; } = 1.0;
 }
 
-/// <summary>Per-language rendering settings. Pixel size and margin still come from CanvasConfig.</summary>
+/// <summary>Per-language rendering settings. Pixel size and margin still come from the language's `canvas`.</summary>
 public sealed class RenderConfig
 {
+    /// <summary>How a glyph is framed in its image: the whole Grid (default), the Glyph's own box, the whole Language, or GlyphCentered.</summary>
     public FramingMode Framing { get; set; } = FramingMode.Grid;
 
     /// <summary>Turns every glyph by this many degrees, clockwise, around the middle of its grid; the canvas itself stays
@@ -35,6 +36,7 @@ public sealed class RenderConfig
     /// <summary>#RRGGBB or #AARRGGBB; the default is fully transparent.</summary>
     public string Background { get; set; } = "#00000000";
 
+    /// <summary>The stroke style: kind (Rectangular, ThickEnds or Brush) and that kind's own block.</summary>
     public TypefaceConfig Typeface { get; set; } = new();
 
     /// <summary>How strokes are joined where they bend and where they meet, for every typeface.</summary>

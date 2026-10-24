@@ -17,6 +17,7 @@ public enum QualityAction
 /// <summary>Which strokes a selector matches by form.</summary>
 public enum StrokeKind
 {
+    /// <summary>Every stroke.</summary>
     Any,
     /// <summary>A circle of diameter 0 only.</summary>
     Dot,
@@ -76,7 +77,15 @@ public enum QualityRedo
     Either,
 }
 
-public enum QualityAppliesTo { Both, Plain, Composite }
+public enum QualityAppliesTo
+{
+    /// <summary>Plain and composite glyphs.</summary>
+    Both,
+    /// <summary>Plain (non-composite) glyphs only.</summary>
+    Plain,
+    /// <summary>Composite glyphs only.</summary>
+    Composite,
+}
 
 public enum SimilarityMode
 {
@@ -113,14 +122,17 @@ public sealed class StrokeSelector
     /// <summary>Ids of the shapes that drew the strokes. Empty/missing = any shape.</summary>
     public List<string>? Shapes { get; set; }
 
+    /// <summary>Only strokes of this form (Any, Dot, Arc, Circle, Ring, Line, Curve). Default Any.</summary>
     public StrokeKind Kind { get; set; } = StrokeKind.Any;
 
     /// <summary>quality.pairRules only: the glyphs (by name, "*" = any glyph) whose strokes this selector picks from.</summary>
     public List<string>? Glyphs { get; set; }
 }
 
+/// <summary>The area around a stroke that a rule looks at.</summary>
 public sealed class QualityWindow
 {
+    /// <summary>The shape of the searched area around the subject: Square or Circle.</summary>
     public WindowShape Shape { get; set; } = WindowShape.Square;
 
     /// <summary>Lattice units. Default 4.</summary>
@@ -134,6 +146,7 @@ public sealed class CountDiffersConfig
     /// <summary>Id of the shape whose instances are counted in each component.</summary>
     public string Shape { get; set; } = "";
 
+    /// <summary>Skip: leave the pair out of the rule. Loosen: shrink the rule's window and minDistance by factor.</summary>
     public CountDiffersAction Action { get; set; } = CountDiffersAction.Skip;
 
     /// <summary>Loosen: multiplier (0-1) for the window radius and minDistance of that pair. Default 0.5.</summary>
@@ -144,8 +157,10 @@ public sealed class CountDiffersConfig
 /// lies around it among the strokes picked by <c>against</c>, and judge it with <c>measure</c>.</summary>
 public sealed class QualityRule
 {
+    /// <summary>A name for the rule, shown in warnings and errors. Must be unique.</summary>
     public string Id { get; set; } = "";
 
+    /// <summary>Which glyphs the rule checks: Both (default), Plain or Composite.</summary>
     public QualityAppliesTo AppliesTo { get; set; } = QualityAppliesTo.Both;
 
     /// <summary>Only these glyphs (by name). Empty/missing = every glyph.</summary>
@@ -154,10 +169,14 @@ public sealed class QualityRule
     /// <summary>Not these glyphs (by name).</summary>
     public List<string>? ExcludeGlyphs { get; set; }
 
+    /// <summary>The strokes that are checked: filtered by shape, form and (in pairRules) glyph.</summary>
     public StrokeSelector Subject { get; set; } = new();
+    /// <summary>The strokes the subject is compared with. Same filters as subject.</summary>
     public StrokeSelector Against { get; set; } = new();
+    /// <summary>Which strokes count as 'something else' for the subject (see the values). Default Auto.</summary>
     public QualityAmong Among { get; set; } = QualityAmong.Auto;
 
+    /// <summary>What is judged: Count of strokes in the window, Similar strokes in the window, or the Distance to the nearest stroke.</summary>
     public QualityMeasure Measure { get; set; } = QualityMeasure.Count;
 
     /// <summary>Count and Similar: the area around the subject that is searched.</summary>
@@ -178,6 +197,7 @@ public sealed class QualityRule
     /// <summary>Visual similarity: brush width in lattice units. Default 1.5.</summary>
     public double StrokeWidth { get; set; } = 1.5;
 
+    /// <summary>What a failure does: Reject (redraw), Warn (keep and report) or Score (add weight to the glyph's penalty).</summary>
     public QualityAction OnFail { get; set; } = QualityAction.Reject;
 
     /// <summary>Composites, onFail Reject: what is redrawn when the rule fails. Default Composite.</summary>

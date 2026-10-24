@@ -2,11 +2,12 @@ namespace GlyphGen.Core.Config;
 
 /// <summary>
 /// Allowed rotation angles for overlay composition. Only 0, 90, 180 and 270 are supported (they
-/// keep every node on the grid; GridPoint.RotateAround throws for anything else, 45 included) -
+/// keep every node on the grid; any other angle, 45 included, would leave the grid) -
 /// the config loader rejects other angles.
 /// </summary>
 public sealed class RotationConfig
 {
+    /// <summary>Angles (0, 90, 180, 270) a component may be rotated by when combination.allowRotate is on. Default [0].</summary>
     public List<int> Allowed { get; set; } = new() { 0 };
 
     /// <summary>

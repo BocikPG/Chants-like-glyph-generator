@@ -55,6 +55,7 @@ public enum CrossingMode
 /// <summary>Crossing rules of one shape (arrangement.crossing). Curves are taken into account.</summary>
 public sealed class CrossingConfig
 {
+    /// <summary>Whether this shape's strokes may cross others: None, NodesOnly (only near a node) or Anywhere (see the values).</summary>
     public CrossingMode Mode { get; set; } = CrossingMode.None;
 
     /// <summary>NodesOnly: how far (lattice units) from a node a crossing may lie and still count as being at it.

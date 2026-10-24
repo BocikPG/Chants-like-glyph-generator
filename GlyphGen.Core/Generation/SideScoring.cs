@@ -51,6 +51,7 @@ public static class SideScoring
                 GlyphSide.Right => 1.0 - fx,
                 GlyphSide.Top => fy,
                 GlyphSide.Bottom => 1.0 - fy,
+                GlyphSide.Center => Math.Abs(fx - 0.5) + Math.Abs(fy - 0.5), // 0 in the middle, 1 in a corner
                 _ => 0.0,
             };
         }

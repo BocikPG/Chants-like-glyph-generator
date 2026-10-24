@@ -63,6 +63,7 @@ public sealed class JunctionJoinConfig : JoinContextConfig
 /// <summary>One side (outer or inner) of a join.</summary>
 public sealed class JoinSideConfig
 {
+    /// <summary>How the join is drawn (Miter, Bevel, Round, Overlap, Level). Outer and inner sides read the styles differently; see the values.</summary>
     public JoinStyle Style { get; set; } = JoinStyle.Miter;
 
     /// <summary>Outer Miter only: beyond this point-length / half-width ratio a miter falls back to a bevel.</summary>

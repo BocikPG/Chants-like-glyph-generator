@@ -162,7 +162,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             {
                 try
                 {
-                    return BuildPlainGlyph(language, glyphDef, grid, seed, salts);
+                    return BuildPlainGlyph(language, glyphDef, grid, seed, salts, generated);
                 }
                 catch (ShapePlacementException ex)
                 {
@@ -210,7 +210,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
     /// <summary>One go at building a plain glyph. salts: shapes whose random streams are re-keyed (a base shape being redrawn).</summary>
     private Glyph BuildPlainGlyph(
-        LanguageDefinition language, GlyphDefinition glyphDef, LatticeGrid grid, ulong glyphSeed, Dictionary<string, int> salts)
+        LanguageDefinition language, GlyphDefinition glyphDef, LatticeGrid grid, ulong glyphSeed, Dictionary<string, int> salts, IReadOnlyDictionary<string, Glyph> generated)
     {
         var rng = new DeterministicRandom(glyphSeed);
         var glyph = new Glyph
@@ -225,6 +225,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         {
             GridWidth = grid.Width,
             GridHeight = grid.Height,
+            GlyphNodes = GlyphNodeLookup(language, glyphDef.Name, generated),
         };
 
         // Usage bias: glyphs that are components of many recipes roll lower counts/lengths.
@@ -286,6 +287,14 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         return glyph;
     }
 
+    /// <summary>The nodes of already drawn glyphs by name, for nodesOfGlyph masks. "*" = every glyph NodeSources lists for this one.</summary>
+    internal static Func<string, IEnumerable<GridPoint>> GlyphNodeLookup(LanguageDefinition language, string self, IReadOnlyDictionary<string, Glyph> generated)
+    {
+        IEnumerable<GridPoint> Of(string name) =>
+            generated.TryGetValue(name, out var g) ? GlyphGeometryUtils.GetAllChains(g).SelectMany(c => c.AllNodes()) : Enumerable.Empty<GridPoint>();
+        return name => name == GlyphNodes.AllGlyphs ? NodeSources.Of(language, self).SelectMany(Of) : Of(name);
+    }
+
     /// <summary>Places one instance of a shape: asks the placement resolver for a legal placement
     /// and, when the shape's arrangement has an active bias, for up to Candidates of them, keeping
     /// the one whose glyph bounding box scores best. Without a bias this is exactly one resolver
@@ -323,7 +332,8 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             if (grid.UsableNodes().Count == 0)
             {
                 diagnostics.Note = "placement.nodes leaves no usable node at all (inside placement.bounds and the grid" +
-                    (shape.Placement.Nodes!.Allow?.Any(r => r.NodesOfShapes is not null || r.BoundsOfShapes is not null) == true ? "; a node pool or shape box is empty when those shapes are not placed yet - list them earlier in shapes" : "") + ").";
+                    (shape.Placement.Nodes!.Allow?.Any(r => r.NodesOfShapes is not null || r.BoundsOfShapes is not null) == true ? "; a node pool or shape box is empty when those shapes are not placed yet - list them earlier in shapes" : "") +
+                    (shape.Placement.Nodes!.Allow?.Any(r => r.NodesOfGlyph is not null) == true ? "; nodesOfGlyph found no node (the other glyph has none, or its nodes plus offset are outside the grid or placement.bounds)" : "") + ").";
                 return null;
             }
         }
@@ -490,19 +500,20 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
     private static int UsageCount(LanguageDefinition language, string glyphName) =>
         language.Combination.Recipes.Values.Sum(r => r.Components.Count(name => name == glyphName));
 
-    /// <summary>Rolls a range; with extraDraws > 0 rolls it that many more times (a fraction is
-    /// honoured probabilistically) and keeps the lowest. See UsageSizeBiasConfig.</summary>
+    /// <summary>Rolls a range; with extraDraws != 0 rolls it |extraDraws| more times (a fraction is
+    /// honoured probabilistically) and keeps the lowest (positive) or the highest (negative). See UsageSizeBiasConfig.</summary>
     private static int ResolveLowBiased(IntRange range, DeterministicRandom rng, double extraDraws)
     {
         int result = range.Resolve(rng);
-        if (extraDraws <= 0) return result;
+        if (extraDraws == 0) return result;
 
-        int whole = (int)Math.Floor(extraDraws);
-        double fraction = extraDraws - whole;
+        double amount = Math.Abs(extraDraws);
+        int whole = (int)Math.Floor(amount);
+        double fraction = amount - whole;
         if (fraction > 0 && rng.NextDouble() < fraction) whole++;
 
         for (int i = 0; i < whole; i++)
-            result = Math.Min(result, range.Resolve(rng));
+            result = extraDraws > 0 ? Math.Min(result, range.Resolve(rng)) : Math.Max(result, range.Resolve(rng));
 
         return result;
     }
@@ -541,7 +552,29 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
                 ?? language.BaseGlyphs.FirstOrDefault(g => g.Name == name)
                 ?? new GlyphDefinition { Name = name };
             ulong seed = SplitMix64.DeriveSeed(glyphSeed, $"regen-{name}-{attemptIndex}");
-            return GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
+            var first = GenerateGlyphCore(language, componentDef, grid, seed, generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
+
+            // A plain/base glyph drawn again here does not pass through the quality loop, so hold it to the same two checks that loop
+            // applies to every plain glyph (not a single straight line, not too like another plain glyph) - a few extra draws at most.
+            bool composite = language.Combination.Recipes.ContainsKey(name);
+            DerivationConfig? derivation = !composite && language.Derivations.TryGetValue(name, out var dv) && generated.ContainsKey(dv.From) ? dv : null;
+            bool plain = !composite && !language.Derivations.ContainsKey(name);
+            var quality = language.Quality;
+            if (composite || (derivation is null && !plain) || (!quality.RejectStraightLineOnly && quality.MaxSimilarity >= 1.0 && derivation is null)) return first;
+
+            bool Acceptable(Glyph g)
+            {
+                if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g)) return false;
+                var others = generated.Where(kv => kv.Key != name && kv.Key != derivation?.From && !language.Combination.Recipes.ContainsKey(kv.Key)).Select(kv => kv.Value);
+                if (quality.MaxSimilarity < 1.0 && GlyphQualityChecker.FindTooSimilar(g, others, quality.MaxSimilarity, quality) is not null) return false;
+                // A derived glyph is held to its (looser) limit against its source.
+                return derivation is null || GlyphQualityChecker.FindTooSimilar(g, new[] { generated[derivation.From] }, derivation.MaxSimilarityToSource, quality) is null;
+            }
+
+            var candidate = first;
+            for (int k = 1; !Acceptable(candidate) && k < Math.Max(1, quality.MaxRegenerationAttempts); k++)
+                candidate = GenerateGlyphCore(language, componentDef, grid, SplitMix64.DeriveSeed(seed, $"quality-{k}"), generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
+            return candidate;
         }
 
         // The shapes whose own crossing mode is Strict (what combination crossing AnywhereButRespectStrict keeps).
@@ -567,6 +600,19 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             return rebuilt;
         }
 
+        // Glyphs derived (directly or through other derived glyphs) from a glyph, in the order they have to be drawn again.
+        IReadOnlyList<string> DerivedFrom(string name)
+        {
+            var order = new List<string>();
+            for (int i = -1; i < order.Count; i++)
+            {
+                string parent = i < 0 ? name : order[i];
+                foreach (var (derivedName, d) in language.Derivations)
+                    if (d.From == parent && !order.Contains(derivedName)) order.Add(derivedName);
+            }
+            return order;
+        }
+
         string explanation = "";
         var composite = _combinationResolver.TryCombine(
             glyphDef.Name,
@@ -583,7 +629,8 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             text => explanation = text,
             // Moving an original is only done by a composite that is built on its own, not by one rebuilt inside another's cascade.
             inProgress.Count <= 1 ? RebuildComposite : null,
-            strictShapes: StrictShapes(language));
+            strictShapes: StrictShapes(language),
+            derivedFrom: DerivedFrom);
 
         if (composite is null)
         {

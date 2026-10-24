@@ -41,6 +41,32 @@ public enum DerivationOp
 
     /// <summary>Moves some nodes by a step or two.</summary>
     Nudge,
+
+    /// <summary>Cuts straight edges into smaller pieces by adding nodes on them (see DerivationStep.Parts, Distribution, Snap).
+    /// The glyph looks the same afterwards when the nodes are exact; the extra nodes can then be deleted, nudged or used by later steps.</summary>
+    SplitEdges,
+}
+
+/// <summary>Where the new nodes of a SplitEdges step go along an edge.</summary>
+public enum SplitDistribution
+{
+    /// <summary>As evenly as the lattice allows: the pieces are as close to the same length as possible.</summary>
+    Equal,
+
+    /// <summary>At random places along the edge.</summary>
+    Random,
+}
+
+/// <summary>What a SplitEdges step does when the ideal place for a node is not a lattice point.</summary>
+public enum SplitSnap
+{
+    /// <summary>Only nodes that lie exactly on the edge are used (the lattice points the edge passes over). The edge keeps its
+    /// shape; an edge that passes over no free lattice point is left alone. This is the default.</summary>
+    Exact,
+
+    /// <summary>The ideal place is moved to the nearest lattice point, so the edge becomes a slightly bent path through these
+    /// points (an approximation). See maxDeviation.</summary>
+    Nearest,
 }
 
 /// <summary>Which nodes a node step may pick. A node's degree is the number of edge ends on it.</summary>
@@ -100,9 +126,13 @@ public sealed class DerivationAmount
 /// gate. Nodes are the distinct points, including lone ones; a circle or dot is one edge.</summary>
 public sealed class DerivationCondition
 {
+    /// <summary>The step runs only if the glyph has at least this many edges at that point.</summary>
     public int? MinEdges { get; set; }
+    /// <summary>The step runs only if the glyph has at most this many edges at that point.</summary>
     public int? MaxEdges { get; set; }
+    /// <summary>The step runs only if the glyph has at least this many nodes at that point.</summary>
     public int? MinNodes { get; set; }
+    /// <summary>The step runs only if the glyph has at most this many nodes at that point.</summary>
     public int? MaxNodes { get; set; }
 }
 
@@ -112,16 +142,18 @@ public sealed class DerivationCondition
 /// </summary>
 public sealed class DerivationStep
 {
+    /// <summary>What the step does. Each op accepts only its own options.</summary>
     public DerivationOp Op { get; set; }
 
     /// <summary>Only run the step if the glyph has enough / not too many edges and nodes at that point (see
-    /// DerivationCondition). Checked before chance. A skipped step changes nothing and uses no random numbers.</summary>
+    /// the limits of `onlyIf`). Checked before chance. A skipped step changes nothing and uses no random numbers.</summary>
     public DerivationCondition? OnlyIf { get; set; }
 
     /// <summary>Chance (0-100) that the step runs at all. Default 100.</summary>
     public double Chance { get; set; } = 100.0;
 
-    /// <summary>DeleteNodes, DeleteEdges, Keep, Nudge: how many. For Keep it is how many edges stay.</summary>
+    /// <summary>DeleteNodes, DeleteEdges, Keep, Nudge: how many. For Keep it is how many edges stay. SplitEdges: how many edges are
+    /// split (left out = every edge that can be).</summary>
     public DerivationAmount? Amount { get; set; }
 
     /// <summary>DeleteNodes, Nudge: which nodes may be picked. Default Any.</summary>
@@ -169,6 +201,22 @@ public sealed class DerivationStep
 
     /// <summary>Nudge: how far a node may move on each axis. Default 1.</summary>
     public int? Distance { get; set; }
+
+    /// <summary>SplitEdges: into how many pieces each chosen edge is cut, drawn per edge from the range (2 = one new node). Default 2.</summary>
+    public IntRange? Parts { get; set; }
+
+    /// <summary>SplitEdges: Equal (default) or Random places along the edge.</summary>
+    public SplitDistribution? Distribution { get; set; }
+
+    /// <summary>SplitEdges: Exact (default, only nodes lying on the edge) or Nearest (approximate, see maxDeviation).</summary>
+    public SplitSnap? Snap { get; set; }
+
+    /// <summary>SplitEdges with Snap Nearest: a node whose nearest lattice point is further than this from the original edge is not
+    /// used. Default 0.75 (about the most a rounded point can be off).</summary>
+    public double? MaxDeviation { get; set; }
+
+    /// <summary>SplitEdges: only edges at least this long (in lattice units) are split. Default 2.</summary>
+    public double? MinEdgeLength { get; set; }
 }
 
 /// <summary>
