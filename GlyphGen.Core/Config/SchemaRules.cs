@@ -386,9 +386,8 @@ internal static class SchemaRules
             P(nameof(ShapeDefinition.Kind), nameof(ShapeDefinition.Count), nameof(ShapeDefinition.Chain), nameof(ShapeDefinition.ChainFrom), nameof(ShapeDefinition.Nodes), nameof(ShapeDefinition.Placement))),
 
         new ForbidWhenSet(typeof(ShapeDefinition), nameof(ShapeDefinition.ChainFrom), P(nameof(ShapeDefinition.Chain))),
-        new OnlyWhenAt(typeof(ShapeDefinition), new[] { new[] { "Placement", "Rotations" } }, new[] { "Kind" }, V(ShapeKind.Literal)),
-        new OnlyWhenAt(typeof(ShapeDefinition), new[] { new[] { "Arrangement", "Spacing", "IgnoreStartNode" } }, new[] { "Placement", "StartOnExistingNode" }, V(true)),
-        new ForbidAt(typeof(CombinationArrangementRules), new[] { new[] { "Spacing", "IgnoreStartNode" }, new[] { "Spacing", "OnlyShapes" }, new[] { "Spacing", "ExcludeShapes" } },
+        new OnlyWhenAt(typeof(ShapeDefinition), new[] { new[] { "Placement", "Rotation", "Angles" } }, new[] { "Kind" }, V(ShapeKind.Literal)),
+        new ForbidAt(typeof(CombinationArrangementRules), new[] { new[] { "Spacing", "OnlyShapes" }, new[] { "Spacing", "ExcludeShapes" } },
             "applies to shapes only"),
         new ForbidAt(typeof(CombinationArrangementRules), new[] { new[] { "Candidates" } }, "components are placed by searching every position, so there is no best-of-N"),
         new Raw(typeof(ChainRules), nameof(ChainRules.ConnectionRules), "A rule's `backToStartChance` above 0 needs `allowClosedLoop` to be true.", () => new System.Text.Json.Nodes.JsonObject
@@ -422,9 +421,9 @@ internal static class SchemaRules
             { "if": { "properties": { "maxNodeDistance": { "exclusiveMinimum": 0 } }, "required": ["maxNodeDistance"] },
               "else": { "properties": { "maxDistanceMode": false } } }
             """)!),
-        new Raw(typeof(QualityConfig), nameof(QualityConfig.SimilarityBasis), "Only used when `maxSimilarity` is below 1 (1 turns the similarity check off).", () => System.Text.Json.Nodes.JsonNode.Parse("""
-            { "if": { "properties": { "maxSimilarity": { "minimum": 1 } }, "required": ["maxSimilarity"] },
-              "then": { "properties": { "similarityBasis": false, "comparePosition": false } } }
+        new Raw(typeof(SimilarityConfig), nameof(SimilarityConfig.Basis), "Only used when `max` is below 1 (1 turns the similarity check off).", () => System.Text.Json.Nodes.JsonNode.Parse("""
+            { "if": { "properties": { "max": { "minimum": 1 } }, "required": ["max"] },
+              "then": { "properties": { "basis": false, "comparePosition": false } } }
             """)!),
         new Raw(typeof(QualityConfig), nameof(QualityConfig.AcceptPenalty), "Only used when a rule or pair rule has `onFail` Score.", () => System.Text.Json.Nodes.JsonNode.Parse("""
             { "if": { "anyOf": [
@@ -439,10 +438,13 @@ internal static class SchemaRules
             """)!),
 
         // ---- placement ----
-        new RequiredWhen(typeof(PlacementConfig), nameof(PlacementConfig.FixedOrigin), nameof(PlacementConfig.Mode), V(PlacementMode.Fixed)),
-        new OnlyWhen(typeof(PlacementConfig), P(nameof(PlacementConfig.FixedOrigin), nameof(PlacementConfig.DiscardUsedOrigins)), nameof(PlacementConfig.Mode), V(PlacementMode.Fixed)),
-        new OnlyWhen(typeof(PlacementConfig), P(nameof(PlacementConfig.Side), nameof(PlacementConfig.StartOnExistingNode)), nameof(PlacementConfig.Mode), V(PlacementMode.RandomValid)),
-        new OnlyWhen(typeof(PlacementConfig), P(nameof(PlacementConfig.StartOnExistingNodeChance), nameof(PlacementConfig.StartOnShapes)), nameof(PlacementConfig.StartOnExistingNode), V(true)),
+        new RequiredWhen(typeof(PlacementStart), nameof(PlacementStart.Origin), nameof(PlacementStart.Mode), V(PlacementMode.Fixed)),
+        new OnlyWhen(typeof(PlacementStart), P(nameof(PlacementStart.Origin), nameof(PlacementStart.DiscardUsed)), nameof(PlacementStart.Mode), V(PlacementMode.Fixed)),
+        new OnlyWhen(typeof(PlacementStart), P(nameof(PlacementStart.OnExistingNode), nameof(PlacementStart.OnPartnerNode)), nameof(PlacementStart.Mode), V(PlacementMode.RandomValid)),
+        new Raw(typeof(PlacementConfig), nameof(PlacementConfig.Side), "Only used with `start.mode` RandomValid (Fixed and CenterAnchor always use the same origin).", () => System.Text.Json.Nodes.JsonNode.Parse("""
+            { "if": { "properties": { "start": { "properties": { "mode": { "enum": ["Fixed", "CenterAnchor"] } }, "required": ["mode"] } }, "required": ["start"] },
+              "then": { "properties": { "side": false } } }
+            """)!),
         new OnlyWhen(typeof(SidePull), P(nameof(SidePull.Sides)), nameof(SidePull.Mode), V(SidePullMode.Prefer)),
         new OnlyWhen(typeof(SidePull), P(nameof(SidePull.Pick)), nameof(SidePull.Mode), V(SidePullMode.SetRandom)),
         new ExactlyOne(typeof(NodeRegion), P(nameof(NodeRegion.Points), nameof(NodeRegion.Box), nameof(NodeRegion.Pattern), nameof(NodeRegion.NodesOfShapes), nameof(NodeRegion.BoundsOfShapes), nameof(NodeRegion.NodesOfComponents), nameof(NodeRegion.NodesOfGlyph))),
@@ -451,7 +453,7 @@ internal static class SchemaRules
         // ---- connection rules ----
         new OnlyWhen(typeof(ConnectionRuleConfig), P(nameof(ConnectionRuleConfig.Arc)), nameof(ConnectionRuleConfig.Direction), V(ConnectionDirection.Arc)),
         new OnlyWhen(typeof(ConnectionRuleConfig), P(nameof(ConnectionRuleConfig.OutlineNodes)), nameof(ConnectionRuleConfig.Direction), V(ConnectionDirection.Circle, ConnectionDirection.Arc)),
-        new OnlyWhen(typeof(ConnectionRuleConfig), P(nameof(ConnectionRuleConfig.MinAngle), nameof(ConnectionRuleConfig.MaxAngle), nameof(ConnectionRuleConfig.AnglePreset), nameof(ConnectionRuleConfig.Curve)),
+        new OnlyWhen(typeof(ConnectionRuleConfig), P(nameof(ConnectionRuleConfig.MinAngle), nameof(ConnectionRuleConfig.MaxAngle), nameof(ConnectionRuleConfig.AnglePreset), nameof(ConnectionRuleConfig.Curve), nameof(ConnectionRuleConfig.Split)),
             nameof(ConnectionRuleConfig.Direction), V(ConnectionDirection.Orthogonal, ConnectionDirection.Diagonal, ConnectionDirection.Both, ConnectionDirection.Any, ConnectionDirection.Angle)),
         new RequiredAnyWhen(typeof(ConnectionRuleConfig), P(nameof(ConnectionRuleConfig.MinAngle), nameof(ConnectionRuleConfig.MaxAngle), nameof(ConnectionRuleConfig.AnglePreset)),
             nameof(ConnectionRuleConfig.Direction), V(ConnectionDirection.Angle)),
@@ -459,6 +461,7 @@ internal static class SchemaRules
         new OnlyWhen(typeof(ArcConfig), P(nameof(ArcConfig.ContinueFrom)), nameof(ArcConfig.Anchor), V(ArcAnchor.Node)),
         new OnlyWhen(typeof(ArcConfig), P(nameof(ArcConfig.EndTolerance)), nameof(ArcConfig.ContinueFrom), V(ArcContinueFrom.ArcEnd)),
         new OnlyWhen(typeof(SelfSpacingRule), P(nameof(SelfSpacingRule.Lookback)), nameof(SelfSpacingRule.Mode), V(SelfSpacingMode.Adjacent)),
+        new OnlyWhen(typeof(EdgeSplitConfig), P(nameof(EdgeSplitConfig.MaxDeviation)), nameof(EdgeSplitConfig.Snap), V(SplitSnap.Nearest)),
         new OnlyWhen(typeof(OutlineNodesConfig), P(nameof(OutlineNodesConfig.Angles), nameof(OutlineNodesConfig.Snap)), nameof(OutlineNodesConfig.Mode), V(OutlineNodeMode.AtAngles)),
         new OnlyWhen(typeof(OutlineNodesConfig), P(nameof(OutlineNodesConfig.Tolerance)), nameof(OutlineNodesConfig.Mode), V(OutlineNodeMode.AtAngles, OutlineNodeMode.EveryLatticePoint)),
         new OnlyWhen(typeof(EdgeCurveConfig), P(nameof(EdgeCurveConfig.ExplicitJitterDegrees)), nameof(EdgeCurveConfig.Mode), V(CurveMode.Explicit, CurveMode.Hybrid)),
@@ -467,7 +470,7 @@ internal static class SchemaRules
         new OnlyWhen(typeof(CrossingConfig), P(nameof(CrossingConfig.NodeTolerance), nameof(CrossingConfig.NodesOfShapes)), nameof(CrossingConfig.Mode), V(CrossingMode.NodesOnly)),
         new OnlyWhen(typeof(SpacingConfig),
             P(nameof(SpacingConfig.MinCenterDistance), nameof(SpacingConfig.MinNodeDistance), nameof(SpacingConfig.MaxNodeDistance), nameof(SpacingConfig.MinEdgeDistance),
-              nameof(SpacingConfig.OnlyShapes), nameof(SpacingConfig.ExcludeShapes), nameof(SpacingConfig.MaxDistanceMode), nameof(SpacingConfig.IgnoreStartNode)),
+              nameof(SpacingConfig.OnlyShapes), nameof(SpacingConfig.ExcludeShapes), nameof(SpacingConfig.MaxDistanceMode)),
             nameof(SpacingConfig.Enabled), V(true)),
         new NotTogether(typeof(SpacingConfig), P(nameof(SpacingConfig.OnlyShapes), nameof(SpacingConfig.ExcludeShapes))),
         new OnlyWhen(typeof(ComponentPlacementRule), P(nameof(ComponentPlacementRule.Sides)), nameof(ComponentPlacementRule.Mode), V(ComponentPlacementMode.Prefer)),

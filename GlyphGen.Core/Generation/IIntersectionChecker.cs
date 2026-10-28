@@ -25,6 +25,11 @@ public interface IIntersectionContext
     /// <summary>The existing edges that were drawn by the given shapes (ids). Contexts that do not know which shape
     /// drew what return everything.</summary>
     IEnumerable<GridEdge> EdgesOfShapes(IReadOnlyCollection<string> shapeIds) => ExistingEdges;
+
+    /// <summary>The nodes of the partner glyphs (combination.partners) this glyph is drawn against: one partner (null = all of them), only
+    /// the nodes of some of its shapes (null = every node). Contexts without partners return nothing.</summary>
+    IEnumerable<GlyphGen.Core.Grid.GridPoint> PartnerNodes(string? partner, IReadOnlyCollection<string>? shapes) =>
+        Enumerable.Empty<GlyphGen.Core.Grid.GridPoint>();
 }
 
 /// <summary>

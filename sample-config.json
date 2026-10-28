@@ -1,18 +1,16 @@
 {
   "$schema": "./GlyphGen.Cli/config.schema.json",
-  "maxParallelism": 4,
-  "rootSeed": 20260927,
-  "outputDirectory": "./output",
+  "run": {
+    "seed": 20260927,
+    "outputDirectory": "./output",
+    "maxParallelism": 4
+  },
   "languages": [
     {
       "name": "Devotee",
       "grid": {
         "width": 15,
         "height": 15
-      },
-      "canvas": {
-        "sizePx": 512,
-        "marginPx": 32
       },
       "glyphs": [
         "Man/Human",
@@ -179,7 +177,6 @@
         },
         "allowScale": false,
         "allowRotate": false,
-        "maxRetriesPerRecipe": 50,
         "arrangement": {
           "placements": [
             {
@@ -218,7 +215,8 @@
             ],
             "includeScaleAndRotation": false
           }
-        }
+        },
+        "retries": 50
       },
       "derivations": {
         "devotee_base": {
@@ -298,7 +296,9 @@
                   "maxSweep": 180,
                   "anchor": "Node"
                 },
-                "outlineNodes":{"mode": "EveryLatticePoint"}
+                "outlineNodes": {
+                  "mode": "EveryLatticePoint"
+                }
               },
               {
                 "direction": "Circle",
@@ -329,32 +329,34 @@
             },
             "spacing": {
               "enabled": true,
-              "minNodeDistance": 3,
-              "ignoreStartNode": true
+              "minNodeDistance": 3
             }
           },
           "placement": {
-            "startOnExistingNode": true
+            "start": {
+              "onExistingNode": {
+                "ignoreStartNode": true
+              }
+            }
           }
         }
       ],
       "usageSizeBias": {
         "strength": 0.8,
-        "affectSubSymbolCount": true,
-        "affectSubSymbolLength": false
+        "affectCount": true,
+        "affectLength": false
       },
       "quality": {
-        "maxSimilarity": 0.7,
         "rejectStraightLineOnly": true,
-        "maxRegenerationAttempts": 50
+        "similarity": {
+          "max": 0.7
+        },
+        "retries": 50
       },
       "render": {
         "framing": "GlyphCentered",
         "foreground": "#FFFFFFFF",
         "background": "#00000000",
-        "debugShowNodes": true,
-        "debugColorComponents": true,
-        "debugColorParts": true,
         "typeface": {
           "kind": "Rectangular",
           "perGlyphJitter": 0.0,
@@ -384,6 +386,15 @@
             },
             "trimCaps": true
           }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": true,
+          "colorComponents": true,
+          "colorParts": true
         }
       }
     },
@@ -392,10 +403,6 @@
       "grid": {
         "width": 25,
         "height": 25
-      },
-      "canvas": {
-        "sizePx": 512,
-        "marginPx": 32
       },
       "glyphs": [
         "Question",
@@ -544,7 +551,7 @@
             "mode": "AnywhereButRespectStrict"
           }
         },
-        "maxRetriesPerRecipe": 20
+        "retries": 20
       },
       "shapes": [
         {
@@ -657,12 +664,16 @@
             ]
           ],
           "placement": {
-            "mode": "Fixed",
-            "fixedOrigin": [
-              0,
-              0
-            ],
-            "maxPlacementAttempts": 50
+            "start": {
+              "mode": "Fixed",
+              "origin": [
+                0,
+                0
+              ]
+            },
+            "retries": {
+              "placement": 50
+            }
           },
           "arrangement": {
             "crossing": {
@@ -694,14 +705,19 @@
             ]
           },
           "placement": {
-            "mode": "RandomValid",
-            "maxPlacementAttempts": 50,
-            "startOnExistingNode": false,
-            "bounds": {
-              "minX": 2,
-              "minY": 2,
-              "maxX": 22,
-              "maxY": 24
+            "start": {
+              "mode": "RandomValid"
+            },
+            "area": {
+              "bounds": {
+                "minX": 2,
+                "minY": 2,
+                "maxX": 22,
+                "maxY": 24
+              }
+            },
+            "retries": {
+              "placement": 50
             }
           },
           "arrangement": {
@@ -793,15 +809,20 @@
             }
           },
           "placement": {
-            "startOnExistingNode": true,
-            "startOnShapes": [
-              "bottomLine"
-            ],
-            "bounds": {
-              "minX": 2,
-              "minY": 2,
-              "maxX": 22,
-              "maxY": 20
+            "start": {
+              "onExistingNode": {
+                "shapes": [
+                  "bottomLine"
+                ]
+              }
+            },
+            "area": {
+              "bounds": {
+                "minX": 2,
+                "minY": 2,
+                "maxX": 22,
+                "maxY": 20
+              }
             }
           }
         },
@@ -878,7 +899,6 @@
             },
             "spacing": {
               "enabled": true,
-              "ignoreStartNode": true,
               "excludeShapes": [
                 "bottomLine"
               ],
@@ -887,30 +907,36 @@
             }
           },
           "placement": {
-            "startOnExistingNode": true,
-            "startOnShapes": [
-              "firstStroke",
-              "bottomLine"
-            ],
-            "bounds": {
-              "minX": 2,
-              "minY": 2,
-              "maxX": 22,
-              "maxY": 22
+            "start": {
+              "onExistingNode": {
+                "shapes": [
+                  "firstStroke",
+                  "bottomLine"
+                ],
+                "ignoreStartNode": true
+              }
             },
-            "redoShape": 50
+            "area": {
+              "bounds": {
+                "minX": 2,
+                "minY": 2,
+                "maxX": 22,
+                "maxY": 22
+              }
+            },
+            "retries": {
+              "shape": 50
+            }
           }
         }
       ],
       "usageSizeBias": {
         "strength": 0.8,
-        "affectSubSymbolCount": true,
-        "affectSubSymbolLength": false
+        "affectCount": true,
+        "affectLength": false
       },
       "quality": {
-        "maxSimilarity": 0.88,
         "rejectStraightLineOnly": true,
-        "maxRegenerationAttempts": 50,
         "acceptPenalty": 0,
         "pairRules": [
           {
@@ -938,16 +964,16 @@
             "onFail": "Reject",
             "redo": "Either"
           }
-        ]
+        ],
+        "similarity": {
+          "max": 0.88
+        },
+        "retries": 50
       },
       "render": {
         "framing": "Grid",
         "foreground": "#FFFFFFFF",
         "background": "#00000000",
-        "debugShowNodes": true,
-        "debugColorComponents": true,
-        "debugColorParts": true,
-        "debugColorShapes": true,
         "typeface": {
           "kind": "Brush",
           "perGlyphJitter": 0.0,
@@ -968,6 +994,16 @@
             "nibRoundness": 0.6,
             "nibAngleWobble": 2
           }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": true,
+          "colorComponents": true,
+          "colorParts": true,
+          "colorShapes": true
         }
       }
     },
@@ -976,10 +1012,6 @@
       "grid": {
         "width": 7,
         "height": 7
-      },
-      "canvas": {
-        "sizePx": 512,
-        "marginPx": 32
       },
       "glyphs": [
         "Ascend",
@@ -1063,7 +1095,6 @@
             "Plural"
           ]
         },
-        "maxRetriesPerRecipe": 50,
         "arrangement": {
           "crossing": {
             "mode": "None"
@@ -1075,7 +1106,8 @@
               "ifBlocked": "Translate"
             }
           ]
-        }
+        },
+        "retries": 50
       },
       "shapes": [
         {
@@ -1105,27 +1137,31 @@
             }
           },
           "placement": {
-            "mode": "Fixed",
-            "discardUsedOrigins": true,
-            "fixedOrigin": [
-              [
-                2,
-                1
+            "start": {
+              "mode": "Fixed",
+              "origin": [
+                [
+                  2,
+                  1
+                ],
+                [
+                  4,
+                  1
+                ],
+                [
+                  2,
+                  5
+                ],
+                [
+                  4,
+                  5
+                ]
               ],
-              [
-                4,
-                1
-              ],
-              [
-                2,
-                5
-              ],
-              [
-                4,
-                5
-              ]
-            ],
-            "maxPlacementAttempts": 50
+              "discardUsed": true
+            },
+            "retries": {
+              "placement": 50
+            }
           }
         },
         {
@@ -1154,67 +1190,69 @@
             "allowEdgeRevisit": true
           },
           "placement": {
-            "mode": "Fixed",
-            "fixedOrigin": [
-              [
-                0,
-                0
-              ],
-              [
-                3,
-                0
-              ],
-              [
-                6,
-                0
-              ],
-              [
-                0,
-                3
-              ],
-              [
-                3,
-                3
-              ],
-              [
-                6,
-                3
-              ],
-              [
-                0,
-                6
-              ],
-              [
-                3,
-                6
-              ],
-              [
-                6,
-                6
+            "start": {
+              "mode": "Fixed",
+              "origin": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  3,
+                  0
+                ],
+                [
+                  6,
+                  0
+                ],
+                [
+                  0,
+                  3
+                ],
+                [
+                  3,
+                  3
+                ],
+                [
+                  6,
+                  3
+                ],
+                [
+                  0,
+                  6
+                ],
+                [
+                  3,
+                  6
+                ],
+                [
+                  6,
+                  6
+                ]
               ]
-            ],
-            "maxPlacementAttempts": 50
+            },
+            "retries": {
+              "placement": 50
+            }
           }
         }
       ],
       "usageSizeBias": {
-        "affectSubSymbolCount": true,
-        "affectSubSymbolLength": true,
-        "strength": 0.5
+        "strength": 0.5,
+        "affectCount": true,
+        "affectLength": true
       },
       "quality": {
-        "maxSimilarity": 0.9,
         "rejectStraightLineOnly": false,
-        "maxRegenerationAttempts": 50
+        "similarity": {
+          "max": 0.9
+        },
+        "retries": 50
       },
       "render": {
         "framing": "Grid",
         "foreground": "#FFFFFFFF",
         "background": "#00000000",
-        "debugShowNodes": true,
-        "debugColorComponents": true,
-        "debugColorParts": true,
-        "debugShowUndrawn": true,
         "typeface": {
           "kind": "Rectangular",
           "perGlyphJitter": 0.0,
@@ -1250,6 +1288,16 @@
               "axis": "Both"
             }
           }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": true,
+          "colorComponents": true,
+          "colorParts": true,
+          "showUndrawn": true
         }
       }
     }

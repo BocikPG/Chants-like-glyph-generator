@@ -9,7 +9,7 @@ namespace GlyphGen.Core.Generation;
 /// Builds composite glyphs via overlay composition: translates (and, if configured,
 /// scales/rotates) already-generated component glyphs onto one grid. On a placement failure,
 /// regenerates the least-used dependency first (via GlyphUsageTracker), escalating through the
-/// recipe's remaining components up to CombinationConfig.MaxRetriesPerRecipe before giving up.
+/// recipe's remaining components up to CombinationConfig.Retries before giving up.
 ///
 /// generated is the run's shared, mutable glyph registry (not just this recipe's own
 /// components) - when a dependency is regenerated, this resolver writes the new version back
@@ -35,7 +35,7 @@ public interface ICombinationResolver
     /// Builds a composite glyph by placing each component of a recipe (translate/scale/rotate
     /// per config) without crossing the others. arrangement governs how each placed component
     /// relates to the others (crossing, spacing, bias). Returns null if the recipe
-    /// can't be satisfied within config.MaxRetriesPerRecipe attempts. variation 0 is the normal
+    /// can't be satisfied within config.Retries attempts. variation 0 is the normal
     /// search, which prefers the plain (0,0) overlay; a higher value (a quality retry) drops that
     /// preference so the same components come out arranged differently.
     /// </summary>

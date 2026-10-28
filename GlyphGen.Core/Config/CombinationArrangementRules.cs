@@ -181,4 +181,9 @@ public sealed class ContactRequirement
 
     /// <summary>What counts as a contact. Default Either.</summary>
     public ContactKind Kind { get; set; } = ContactKind.Either;
+
+    /// <summary>Ids of shapes (shapes[].id, not glyph names) that a contact has to involve. A shared node counts when it is a node of a
+    /// listed shape (in either component), a crossing counts when one of the two crossing edges belongs to a listed shape. Missing or empty
+    /// = every contact counts.</summary>
+    public List<string>? NodesOfShapes { get; set; }
 }

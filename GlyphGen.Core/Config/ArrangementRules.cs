@@ -42,7 +42,7 @@ public enum CrossingMode
 
     /// <summary>No contact at all: no crossing, and not even a shared node or an edge ending on another. Nothing of this shape
     /// may touch any other shape (a pair is judged by the stricter of the two, so a Strict shape also keeps later shapes off it).
-    /// Own consecutive edges still meet at their nodes. Cannot be combined with placement.startOnExistingNode.</summary>
+    /// Own consecutive edges still meet at their nodes. Cannot be combined with placement.start.onExistingNode.</summary>
     Strict,
 
     /// <summary>For <c>combination.arrangement</c> (and a recipe's override) only. Components may cross anywhere, as with

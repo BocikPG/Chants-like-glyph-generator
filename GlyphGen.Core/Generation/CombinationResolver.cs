@@ -85,7 +85,7 @@ public sealed class CombinationResolver : ICombinationResolver
             if (chosen.Count > 0) sides[componentName] = (chosen, rule.Weight);
         }
 
-        for (int attempt = 0; attempt < (isRebuild ? 1 : config.MaxRetriesPerRecipe); attempt++)
+        for (int attempt = 0; attempt < (isRebuild ? 1 : config.Retries); attempt++)
         {
             var attemptRng = rng.Derive($"combine-attempt-{attempt}");
 
@@ -154,6 +154,7 @@ public sealed class CombinationResolver : ICombinationResolver
                     sides.TryGetValue(name, out var pull);
                     geometry.CurrentSides = pull.Sides;
                     geometry.ContactKind = arrangement.Contact?.Kind ?? ContactKind.Either;
+                    geometry.ContactShapes = arrangement.Contact?.NodesOfShapes;
                     geometry.RequiredContacts = pos == forcedPos ? Math.Max(0, requiredContacts - contactsSoFar) : 0;
                     if (!report.TryGetValue(name, out var tally)) report[name] = tally = new ComponentTally();
                     var placed = TryPlaceComponent(working[name], name, config, grid, passRng, geometry, arrangement, pull.Sides, pull.Weight, variation, tally);
@@ -212,6 +213,7 @@ public sealed class CombinationResolver : ICombinationResolver
             var leastUsedFirst = componentNames.OrderBy(usageTracker.GetUsageCount).ToList();
             var toRegenerate = leastUsedFirst[attempt % leastUsedFirst.Count];
 
+            var snapshot = new Dictionary<string, Glyph>(generated);
             Glyph regenerated;
             try { regenerated = regenerateComponent(toRegenerate, attempt); }
             catch (GlyphGenerationException) { continue; } // that component cannot be drawn again with this seed: try the next attempt (another component or seed)
@@ -221,11 +223,20 @@ public sealed class CombinationResolver : ICombinationResolver
             // Glyphs derived from the one just redrawn were cut from the old version: they are derived again from the new one
             // (in order, a derived glyph may itself have derived glyphs), and count as changed below.
             var changed = new HashSet<string> { toRegenerate };
+            bool derivedFailed = false;
             foreach (var derivedName in derivedFrom?.Invoke(toRegenerate) ?? Array.Empty<string>())
             {
                 if (!generated.ContainsKey(derivedName)) continue;
-                generated[derivedName] = regenerateComponent(derivedName, attempt);
+                try { generated[derivedName] = regenerateComponent(derivedName, attempt); }
+                catch (GlyphGenerationException) { derivedFailed = true; break; } // e.g. a partner glyph that cannot reach its partner again
                 changed.Add(derivedName);
+            }
+            if (derivedFailed)
+            {
+                generated.Clear();
+                foreach (var (k, v) in snapshot) generated[k] = v;
+                working[toRegenerate] = snapshot[toRegenerate];
+                continue;
             }
 
             foreach (var (otherName, otherRecipe) in config.Recipes)
@@ -240,7 +251,7 @@ public sealed class CombinationResolver : ICombinationResolver
             }
         }
 
-        explainFailure?.Invoke(ComponentTally.Describe(report, config.MaxRetriesPerRecipe, arrangement, grid));
+        explainFailure?.Invoke(ComponentTally.Describe(report, config.Retries, arrangement, grid));
         return null;
     }
 
@@ -466,11 +477,12 @@ public sealed class CombinationResolver : ICombinationResolver
 
         if (tally is not null) tally.Tried++;
         if (!AllNodesInBounds(transformedChains, grid)) { if (tally is not null) tally.OffGrid++; return null; } // safety net; range math should already guarantee this
-        if (!FitsGeometry(transformedChains, geometry)) { if (tally is not null) tally.Crossing++; return null; }
-        if (!SatisfiesSides(transformedChains, geometry)) { if (tally is not null) tally.Sides++; return null; }
-        if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, arrangement.Spacing)) { if (tally is not null) tally.Spacing++; return null; }
-        if (geometry.RequiredContacts > 0 && geometry.CountContacts(transformedChains, geometry.ContactKind) < geometry.RequiredContacts) { if (tally is not null) tally.Contact++; return null; }
+        // Cheapest checks first: the start mask and the side rules only look at nodes, the spacing's edge distance measures curves.
         if (!geometry.SatisfiesStartMask(transformedChains)) { if (tally is not null) tally.StartNode++; return null; }
+        if (!SatisfiesSides(transformedChains, geometry)) { if (tally is not null) tally.Sides++; return null; }
+        if (!FitsGeometry(transformedChains, geometry)) { if (tally is not null) tally.Crossing++; return null; }
+        if (geometry.RequiredContacts > 0 && geometry.CountContacts(transformedChains, geometry.ContactKind) < geometry.RequiredContacts) { if (tally is not null) tally.Contact++; return null; }
+        if (!SubSymbolSpacingChecker.SatisfiesSpacingAsOneShape(transformedChains, geometry.NodeGroups, arrangement.Spacing)) { if (tally is not null) tally.Spacing++; return null; }
 
         var placed = new PlacedComponent
         {
@@ -738,6 +750,10 @@ public sealed class CombinationResolver : ICombinationResolver
         return true;
     }
 
+    /// <summary>Copies of the chains exactly as they are (no move, turn or scale): a component placed where it was drawn.</summary>
+    internal static List<SubSymbolChain> IdentityChains(IEnumerable<SubSymbolChain> source) =>
+        TransformChains(source.ToList(), 1, 1, 0, new GridPoint(0, 0));
+
     private static List<SubSymbolChain> TransformChains(
         List<SubSymbolChain> source,
         int numerator,
@@ -781,8 +797,13 @@ public sealed class CombinationResolver : ICombinationResolver
 
     private static bool FitsGeometry(List<SubSymbolChain> chains, GeometryContext geometry)
     {
-        var ownNodes = chains.SelectMany(c => c.AllNodes()).ToList();
+        // With crossing.nodesOfShapes, a crossing at the component's own node only counts when that node belongs to a listed shape.
+        var listed = geometry.Crossing.Mode == CrossingMode.NodesOnly && geometry.Crossing.NodesOfShapes is { Count: > 0 } l ? l : null;
+        var ownNodes = chains
+            .Where(c => listed is null || (c.ShapeTag is { } tag && tag.LastIndexOf('#') > 0 && listed.Contains(tag[..tag.LastIndexOf('#')])))
+            .SelectMany(c => c.AllNodes()).ToList();
         var (defaultCrossing, defaultClearance) = (geometry.Crossing, geometry.CurrentClearance);
+        geometry.OwnNodesPreFiltered = listed is not null;
         try
         {
             foreach (var chain in chains)
@@ -798,7 +819,7 @@ public sealed class CombinationResolver : ICombinationResolver
                     if (geometry.IsBlocked(edge, ownNodes)) return false;
             }
         }
-        finally { geometry.SetCurrent(null, defaultCrossing, defaultClearance); }
+        finally { geometry.SetCurrent(null, defaultCrossing, defaultClearance); geometry.OwnNodesPreFiltered = false; }
 
         return true;
     }

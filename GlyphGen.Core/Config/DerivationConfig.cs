@@ -226,7 +226,7 @@ public sealed class DerivationStep
 /// </summary>
 public sealed class DerivationConfig
 {
-    /// <summary>When the derived glyph is drawn at its source's render.rotateOptions angle instead of drawing its own.
+    /// <summary>When the derived glyph is drawn at its source's render.transform.rotateOptions angle instead of drawing its own.
     /// Only steps that actually ran count (one skipped by chance or onlyIf does not).</summary>
     public DerivedRotation FinalOutputRotation { get; set; } = DerivedRotation.FollowMoves;
 
@@ -237,7 +237,7 @@ public sealed class DerivationConfig
     public List<DerivationStep> Steps { get; set; } = new();
 
     /// <summary>Quality gate against the source only: the derived glyph may resemble it by at most this much
-    /// (0-1, same measure as quality.maxSimilarity), so it can't be a copy. 1 turns it off. Against every OTHER glyph the
-    /// normal quality.maxSimilarity applies. Default 0.9.</summary>
+    /// (0-1, same measure as quality.similarity.max), so it can't be a copy. 1 turns it off. Against every OTHER glyph the
+    /// normal quality.similarity.max applies. Default 0.9.</summary>
     public double MaxSimilarityToSource { get; set; } = 0.9;
 }

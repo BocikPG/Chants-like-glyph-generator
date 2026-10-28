@@ -90,7 +90,15 @@ public sealed class ChainGenerator : IChainGenerator
                 break;
             }
 
-            chain.Edges.Add(picked.Edge);
+            var cut = picked.Rule.Split is { } split && !picked.Edge.IsCircle
+                ? TrySplit(picked.Edge, split, chain, request, existingGeometry, grid, rng)
+                : null;
+            if (cut is { } pieces)
+            {
+                chain.Edges.AddRange(pieces.Pieces);
+                chain.Nodes.AddRange(pieces.Points);
+            }
+            else chain.Edges.Add(picked.Edge);
             var next = picked.Next ?? picked.Edge.To;
             chain.Nodes.Add(next);
             current = next;
@@ -99,6 +107,50 @@ public sealed class ChainGenerator : IChainGenerator
 
         bool success = used >= request.TargetLength || chain.Nodes.Count >= MaxNodes || chain.IsClosedLoop;
         return success ? chain : null;
+    }
+
+    /// <summary>Cuts a straight edge into pieces by adding nodes on it (connection rule <c>split</c>). Null = the edge stays whole: the chance
+    /// roll failed, the edge is too short, offers no free place for a node, or (snap Nearest) a piece would be blocked.</summary>
+    private static (List<GridEdge> Pieces, List<GridPoint> Points)? TrySplit(
+        GridEdge edge, EdgeSplitConfig split, SubSymbolChain chain, ChainGenerationRequest request,
+        IIntersectionContext existingGeometry, LatticeGrid grid, DeterministicRandom rng)
+    {
+        double dx = edge.To.X - edge.From.X, dy = edge.To.Y - edge.From.Y;
+        if (Math.Sqrt(dx * dx + dy * dy) < split.MinEdgeLength - 1e-9) return null;
+
+        // Its own random stream, keyed by where in the chain this is: a rule without split draws nothing extra.
+        var splitRng = rng.Derive($"split-{chain.Nodes.Count}");
+        if (split.Chance < 100.0 && !splitRng.NextBool(Math.Clamp(split.Chance / 100.0, 0, 1))) return null;
+
+        // A new node never lands on a node that is already there (the chain's own, or any placed stroke's).
+        var occupied = new HashSet<GridPoint>(chain.Nodes);
+        foreach (var other in existingGeometry.ExistingEdges)
+            foreach (var end in other.DrawnEnds()) occupied.Add(end);
+
+        var points = EdgeSplitting.PickPoints(edge, Math.Max(2, split.Parts.Resolve(splitRng)), split.Distribution, split.Snap, split.MaxDeviation, occupied, grid, splitRng);
+        if (points.Count == 0) return null;
+
+        if (split.Mode == SplitMode.ExtraNodes)
+        {
+            // The edge stays as drawn; each node is recorded as a fraction of its way plus how far beside it the node lies (0 for snap Exact).
+            double lenSq = dx * dx + dy * dy, len = Math.Sqrt(lenSq);
+            var marks = points.Select(p => new LineNode(((p.X - edge.From.X) * dx + (p.Y - edge.From.Y) * dy) / lenSq,
+                ((p.Y - edge.From.Y) * dx - (p.X - edge.From.X) * dy) / len)).Where(m => m.T > 1e-9 && m.T < 1 - 1e-9).ToList();
+            if (marks.Count == 0) return null;
+            return (new List<GridEdge> { edge.WithLineNodes(marks) }, new List<GridPoint>());
+        }
+
+        var pieces = new List<GridEdge>();
+        var from = edge.From;
+        foreach (var to in points.Append(edge.To))
+        {
+            pieces.Add(edge.WithPoints(from, to).WithoutLineNodes());
+            from = to;
+        }
+
+        // Exact nodes lie on the edge, which was checked as one piece. Nearest ones bend it, so each piece is checked on its own.
+        if (split.Snap == SplitSnap.Nearest && pieces.Any(p => !IsValidEdge(p, chain, request, existingGeometry))) return null;
+        return (pieces, points);
     }
 
     /// <param name="Next">Where the chain carries on when that is not the edge's To (an arc with continueFrom ArcEnd).</param>

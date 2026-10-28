@@ -1,16 +1,17 @@
+using System.Text.Json.Serialization;
 using GlyphGen.Core.Grid;
 
 namespace GlyphGen.Core.Config;
 
 public enum PlacementMode
 {
-    /// <summary>Exact origin every time (FixedOrigin is required, and must lie on the grid - the
+    /// <summary>Exact origin every time (origin is required, and must lie on the grid - the
     /// config loader checks both). With nothing else varying (a Literal motif, no rotation) the
-    /// resolver makes a single attempt whatever MaxPlacementAttempts says, since retrying would
+    /// resolver makes a single attempt whatever retries.placement says, since retrying would
     /// just re-check an identical result.</summary>
     Fixed,
 
-    /// <summary>Random anchor point, retried up to MaxPlacementAttempts on collision.</summary>
+    /// <summary>Random anchor point, retried up to retries.placement on collision.</summary>
     RandomValid,
 
     /// <summary>Anchored exactly at (Width / 2, Height / 2) of the grid (integer division, so the
@@ -49,89 +50,173 @@ public sealed class SidePull
     public double Weight { get; set; } = 1.0;
 }
 
-/// <summary>
-/// Where a shape goes: its start point (mode), how often placing it is retried, an optional box it must stay in,
-/// and whether it grows out of nodes that are already in the glyph.
-/// </summary>
-public sealed class PlacementConfig
+/// <summary>placement.start: where the shape starts.</summary>
+public sealed class PlacementStart
 {
     /// <summary>Where the shape starts: RandomValid (default), Fixed (an exact origin) or CenterAnchor (the middle of the grid).</summary>
     public PlacementMode Mode { get; set; } = PlacementMode.RandomValid;
 
-    /// <summary>Required when Mode == Fixed, and an error with any other mode (it would be
+    /// <summary>Required when mode is Fixed, and an error with any other mode (it would be
     /// ignored). Written as { "x": 7, "y": 9 } or [7, 9] - or as an array of such points, in which case one is picked at random for
     /// each glyph (a failed try moves on to the next of a shuffled order, so every origin is tried before giving up).</summary>
-    public OriginChoice? FixedOrigin { get; set; }
+    public OriginChoice? Origin { get; set; }
 
-    /// <summary>Fixed with several fixedOrigin points: an origin an earlier instance of this shape (same glyph) was placed at is
+    /// <summary>Fixed with several origin points: an origin an earlier instance of this shape (same glyph) was placed at is
     /// not used again, so a shape with count N and N origins fills each of them once. When every origin is used the instance cannot
     /// be placed. Default false.</summary>
-    public bool DiscardUsedOrigins { get; set; } = false;
+    public bool DiscardUsed { get; set; } = false;
 
-    internal PlacementConfig WithOrigins(IEnumerable<GridPoint> origins)
-    {
-        var copy = (PlacementConfig)MemberwiseClone();
-        copy.FixedOrigin = new OriginChoice(origins.ToArray());
-        return copy;
-    }
+    /// <summary>RandomValid only. Present = start the shape on a node already in the glyph (chosen uniformly) instead of a random grid
+    /// point, so shapes grow out of each other. Needs no crossing permission - edges that merely meet at a node don't count as crossing -
+    /// but can't be combined with `arrangement.spacing.minNodeDistance` above 0 unless <c>ignoreStartNode</c> is set (a shared node is
+    /// distance 0). Left out = never.</summary>
+    public ExistingNodeStart? OnExistingNode { get; set; }
 
+    /// <summary>RandomValid only. Present = start the shape on a node of a partner glyph (see combination.partners) instead of a random grid
+    /// point, so the glyph grows out of the glyph it is drawn against. Not together with <c>onExistingNode</c>. Left out = never.</summary>
+    public PartnerNodeStart? OnPartnerNode { get; set; }
+
+    internal PlacementStart Clone() => (PlacementStart)MemberwiseClone();
+}
+
+/// <summary>placement.start.onExistingNode: starting a shape on a node that is already there.</summary>
+public sealed class ExistingNodeStart
+{
+    /// <summary>The chance (0-100) that an attempt starts on an existing node; otherwise it starts on a random grid point as usual.
+    /// Rolled per attempt. Default 100 = always start on a node.</summary>
+    public double Chance { get; set; } = 100.0;
+
+    /// <summary>Only the nodes of these shapes (ids of EARLIER shapes) count as places to start on. null (default) = every node already
+    /// in the glyph. When none of the listed shapes was drawn in this glyph, there is nothing to attach to and the shape is placed like
+    /// the first one, at a random point.</summary>
+    public List<string>? Shapes { get; set; }
+
+    /// <summary>Leave the node the shape starts on out of the spacing checks (centroid, minimum and maximum node distance), since that node
+    /// is shared with an existing shape and so sits at distance 0 from it. Every other node of the shape is still measured. Default false.</summary>
+    public bool IgnoreStartNode { get; set; } = false;
+}
+
+/// <summary>What a shape does when the partner glyph has no node to start on.</summary>
+public enum PartnerFallback
+{
+    /// <summary>Start on a random grid point instead (default).</summary>
+    Anywhere,
+
+    /// <summary>Do not draw the shape in this glyph.</summary>
+    Skip,
+
+    /// <summary>The glyph cannot be drawn: the run stops with an error naming the shape and the partner.</summary>
+    Fail,
+}
+
+/// <summary>placement.start.onPartnerNode: starting a shape on a node of a partner glyph (combination.partners).</summary>
+public sealed class PartnerNodeStart
+{
+    /// <summary>The partner whose nodes count (it has to be one of the partners of the glyph being drawn). Left out = the nodes of every
+    /// partner of the glyph. For a glyph drawn against several partners, give one shape per partner to touch each of them.</summary>
+    public string? Partner { get; set; }
+
+    /// <summary>Only the nodes of these shapes (ids) of the partner count. Left out = every node of the partner.</summary>
+    public List<string>? Shapes { get; set; }
+
+    /// <summary>The chance (0-100) that an attempt starts on a partner node; otherwise that attempt starts on a random grid point. Rolled
+    /// per attempt. Default 100.</summary>
+    public double Chance { get; set; } = 100.0;
+
+    /// <summary>What happens when there is no such node (the partner has none of those shapes, or it is not a partner of this glyph).
+    /// Default Anywhere.</summary>
+    public PartnerFallback IfNone { get; set; } = PartnerFallback.Anywhere;
+}
+
+/// <summary>placement.area: where the shape may be.</summary>
+public sealed class PlacementArea
+{
     /// <summary>A box smaller than the grid that this shape must stay inside, treated as the edge of the grid while the
     /// shape is generated and placed (nodes, and circles' whole outlines). Inclusive node coordinates, e.g.
     /// { "minX": 4, "minY": 4, "maxX": 10, "maxY": 10 }. Other shapes are not limited by it. null = the whole grid.</summary>
     public PlacementBounds? Bounds { get; set; }
 
-    /// <summary>Which nodes this shape may use, beyond <see cref="Bounds"/>: direct nodes, boxes, odd/even/every-n patterns, the
-    /// nodes of other shapes, or the box around other shapes. Every node of the shape's strokes (circle nodes included) must pass,
-    /// and so must the node it starts on. Not applied to copyOf shapes. null = no restriction.</summary>
+    /// <summary>Which nodes this shape may use, beyond <c>bounds</c>: direct nodes, boxes, odd/even/every-n patterns, the
+    /// nodes of other shapes, the nodes of another glyph, or the box around other shapes. Every node of the shape's strokes (circle nodes
+    /// included) must pass, and so must the node it starts on. Not applied to copyOf shapes. null = no restriction.</summary>
     public NodeMaskConfig? Nodes { get; set; }
+}
 
-    /// <summary>Allows a random rotation per attempt, from Rotations (below). Only Literal
-    /// motifs are affected: a generated chain is already random and ignores the rotation.</summary>
-    public bool AllowRotationOnPlace { get; set; } = true;
+/// <summary>placement.rotation: turning a Literal shape when it is placed.</summary>
+public sealed class PlacementRotation
+{
+    /// <summary>Allows a random rotation per attempt, from <c>angles</c> (below). Only Literal shapes are affected: a generated chain is
+    /// already random and ignores the rotation. Default true.</summary>
+    public bool Allowed { get; set; } = true;
 
     /// <summary>
-    /// The angles (0/90/180/270) this placement may rotate by - meaningful only for a Literal
-    /// motif's placement; the loader rejects it anywhere else. null (default) = inherit
-    /// Combination.Rotation when Combination.AllowRotate is on, which is the original coupling;
+    /// The angles (0/90/180/270) this placement may rotate by - meaningful only for a Literal shape's placement; the loader rejects it
+    /// anywhere else. null (default) = inherit combination.rotation when combination.allowRotate is on, which is the original coupling;
     /// a list = use exactly these; an empty list = never rotate.
     /// </summary>
-    public List<int>? Rotations { get; set; }
+    public List<int>? Angles { get; set; }
+}
 
-    /// <summary>
-    /// Failure budget for "find/fit a shape at a location" — distinct from
-    /// `combination.maxRetriesPerRecipe`, which governs "can this recipe's components
-    /// work together at all". Keeping these separate lets failure messages say precisely
-    /// which stage gave up.
-    /// </summary>
-    public int MaxPlacementAttempts { get; set; } = 20;
+/// <summary>placement.retries: what is tried, in this order, when a shape cannot be placed.</summary>
+public sealed class PlacementRetries
+{
+    /// <summary>Failure budget for "find/fit a shape at a location" - how many positions are tried for one instance. Distinct from
+    /// `combination.retries`, which governs "can this recipe's components work together at all". Default 100.</summary>
+    public int Placement { get; set; } = 100;
 
-    /// <summary>When an instance of this shape cannot be placed within maxPlacementAttempts: how many times to redraw
-    /// ALL instances of this shape (new chains, new positions) before giving up on this try of the glyph. Earlier
-    /// shapes stay as they are. Default 0 = no redraw (the glyph fails, as before).</summary>
-    public int RedoShape { get; set; } = 0;
+    /// <summary>When an instance of this shape cannot be placed within <c>placement</c>: how many times to redraw ALL instances of this
+    /// shape (new chains, new positions) before giving up on this try of the glyph. Earlier shapes stay as they are. Default 100.</summary>
+    public int Shape { get; set; } = 100;
 
-    /// <summary>After redoShape is spent: how many times to redraw the WHOLE glyph from a fresh seed (every shape
-    /// again) before the failure is reported. Default 0.</summary>
-    public int RedrawGlyph { get; set; } = 0;
+    /// <summary>After <c>shape</c> is spent: how many times to redraw the WHOLE glyph from a fresh seed (every shape again) before the
+    /// failure is reported. Default 100.</summary>
+    public int Glyph { get; set; } = 100;
+}
 
-    /// <summary>RandomValid only: start the shape on a node already in the glyph (chosen
-    /// uniformly) instead of a random grid point, so shapes grow out of each other. Needs no
-    /// crossing permission - edges that merely meet at a node don't count as crossing - but can't
-    /// be combined with `arrangement.spacing.minNodeDistance` above 0 (a shared node is distance 0).</summary>
-    public bool StartOnExistingNode { get; set; } = false;
+/// <summary>
+/// Where a shape goes: how it starts (placement.start), the area it may use (area), whether a Literal shape may turn (rotation),
+/// how often placing it is retried (retries) and a pull towards a side (side).
+/// </summary>
+public sealed class PlacementConfig
+{
+    /// <summary>Where and how the shape starts.</summary>
+    public PlacementStart Start { get; set; } = new();
 
-    /// <summary>With startOnExistingNode: the chance (0-100) that an attempt starts on an existing node; otherwise it
-    /// starts on a random grid point as usual. Rolled per attempt. Default 100 = always start on a node.</summary>
-    public double StartOnExistingNodeChance { get; set; } = 100.0;
+    /// <summary>The bounds and node mask the shape must stay in.</summary>
+    public PlacementArea Area { get; set; } = new();
 
-    /// <summary>With startOnExistingNode: only the nodes of these shapes (ids of EARLIER shapes) count as places to
-    /// start on. null (default) = every node already in the glyph. When none of the listed shapes was drawn in this
-    /// glyph, there is nothing to attach to and the shape is placed like the first one, at a random point.</summary>
-    public List<string>? StartOnShapes { get; set; }
+    /// <summary>Turning a Literal shape on placement.</summary>
+    public PlacementRotation Rotation { get; set; } = new();
+
+    /// <summary>The retry budgets: positions, shape redraws and glyph redraws.</summary>
+    public PlacementRetries Retries { get; set; } = new();
 
     /// <summary>RandomValid only: pull the shape towards a side or corner of the glyph. null = no pull. It ranks
     /// the shape's best-of-N candidates (arrangement.candidates), so raise that for a stronger pull.</summary>
     public SidePull? Side { get; set; }
+
+    // C# shortcuts to the nested options, so the generators read as before. Not json options.
+    [JsonIgnore] public PlacementMode Mode { get => Start.Mode; set => Start.Mode = value; }
+    [JsonIgnore] public OriginChoice? FixedOrigin { get => Start.Origin; set => Start.Origin = value; }
+    [JsonIgnore] public bool DiscardUsedOrigins { get => Start.DiscardUsed; set => Start.DiscardUsed = value; }
+    [JsonIgnore] public bool StartOnExistingNode { get => Start.OnExistingNode is not null; set => Start.OnExistingNode = value ? Start.OnExistingNode ?? new() : null; }
+    [JsonIgnore] public double StartOnExistingNodeChance { get => Start.OnExistingNode?.Chance ?? 100.0; set => (Start.OnExistingNode ??= new()).Chance = value; }
+    [JsonIgnore] public List<string>? StartOnShapes { get => Start.OnExistingNode?.Shapes; set => (Start.OnExistingNode ??= new()).Shapes = value; }
+    [JsonIgnore] public PlacementBounds? Bounds { get => Area.Bounds; set => Area.Bounds = value; }
+    [JsonIgnore] public NodeMaskConfig? Nodes { get => Area.Nodes; set => Area.Nodes = value; }
+    [JsonIgnore] public bool AllowRotationOnPlace { get => Rotation.Allowed; set => Rotation.Allowed = value; }
+    [JsonIgnore] public List<int>? Rotations { get => Rotation.Angles; set => Rotation.Angles = value; }
+    [JsonIgnore] public int MaxPlacementAttempts { get => Retries.Placement; set => Retries.Placement = value; }
+    [JsonIgnore] public int RedoShape { get => Retries.Shape; set => Retries.Shape = value; }
+    [JsonIgnore] public int RedrawGlyph { get => Retries.Glyph; set => Retries.Glyph = value; }
+
+    internal PlacementConfig WithOrigins(IEnumerable<GridPoint> origins)
+    {
+        var copy = (PlacementConfig)MemberwiseClone();
+        copy.Start = Start.Clone();
+        copy.Start.Origin = new OriginChoice(origins.ToArray());
+        return copy;
+    }
 }
 
 /// <summary>An inclusive box of lattice node coordinates (placement.bounds).</summary>

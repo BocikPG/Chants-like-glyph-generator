@@ -25,13 +25,16 @@ internal static class ConfigValidator
     public static void Validate(RootConfig config, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(config.OutputDirectory))
-            errors.Add("outputDirectory must not be empty.");
+            errors.Add("run.outputDirectory must not be empty.");
 
         if (config.Languages.Count == 0)
             errors.Add("languages must contain at least one language.");
 
         if (config.MaxParallelism < 0)
-            errors.Add($"maxParallelism must be 0 (all cores) or a thread count of 1 or more (got {config.MaxParallelism}).");
+            errors.Add($"run.maxParallelism must be 0 (all cores) or a thread count of 1 or more (got {config.MaxParallelism}).");
+
+        if (config.Run.ContactSheet.Columns < 1)
+            errors.Add($"run.contactSheet.columns must be at least 1 (got {config.Run.ContactSheet.Columns}).");
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < config.Languages.Count; i++)
@@ -52,11 +55,11 @@ internal static class ConfigValidator
     {
         // Canvas
         if (l.Canvas.SizePx < 16)
-            c.Add("canvas.sizePx", $"must be at least 16 (got {l.Canvas.SizePx}).");
+            c.Add("render.canvas.sizePx", $"must be at least 16 (got {l.Canvas.SizePx}).");
         if (l.Canvas.MarginPx < 0)
-            c.Add("canvas.marginPx", $"must be >= 0 (got {l.Canvas.MarginPx}).");
+            c.Add("render.canvas.marginPx", $"must be >= 0 (got {l.Canvas.MarginPx}).");
         else if (2L * l.Canvas.MarginPx >= l.Canvas.SizePx)
-            c.Add("canvas.marginPx", $"({l.Canvas.MarginPx}) leaves no room to draw on a {l.Canvas.SizePx}px canvas.");
+            c.Add("render.canvas.marginPx", $"({l.Canvas.MarginPx}) leaves no room to draw on a {l.Canvas.SizePx}px canvas.");
 
         // Grid
         if (l.Grid.Width < 1 || l.Grid.Height < 1)
@@ -73,14 +76,16 @@ internal static class ConfigValidator
 
         ValidateCurve(l, c);
         ValidateCombinationSettings(l.Combination, c);
+        ValidateCombinationCrossingShapes(l, c);
+        ValidatePartners(l, c);
 
         if (!double.IsFinite(l.Quality.MaxSimilarity) || l.Quality.MaxSimilarity <= 0)
-            c.Add("quality.maxSimilarity", $"must be a finite number above 0 (1 or more disables the check; got {l.Quality.MaxSimilarity}).");
+            c.Add("quality.similarity.max", $"must be a finite number above 0 (1 or more disables the check; got {l.Quality.MaxSimilarity}).");
         if (!double.IsFinite(l.Quality.CompositeMaxSimilarity) || l.Quality.CompositeMaxSimilarity <= 0)
-            c.Add("quality.compositeMaxSimilarity", $"must be a finite number above 0 (1 or more disables the check; got {l.Quality.CompositeMaxSimilarity}).");
+            c.Add("quality.similarity.compositeMax", $"must be a finite number above 0 (1 or more disables the check; got {l.Quality.CompositeMaxSimilarity}).");
         ValidateQualityRules(l, c);
-        if (l.Quality.MaxRegenerationAttempts < 1)
-            c.Add("quality.maxRegenerationAttempts", $"must be at least 1 (got {l.Quality.MaxRegenerationAttempts}).");
+        if (l.Quality.Retries < 1)
+            c.Add("quality.retries", $"must be at least 1 (got {l.Quality.Retries}).");
 
         ValidateRender(l.Render, c);
 
@@ -340,10 +345,88 @@ internal static class ConfigValidator
         }
     }
 
+    /// <summary>combination.partners: who is drawn against whom, and the recipes that contain such glyphs.</summary>
+    private static void ValidatePartners(LanguageDefinition l, Ctx c)
+    {
+        var partners = l.Combination.Partners;
+        if (partners.Count == 0) return;
+        var known = new HashSet<string>(l.BaseGlyphs.Concat(l.Glyphs).Select(g => g.Name), StringComparer.Ordinal);
+
+        foreach (var (glyph, list) in partners)
+        {
+            string where = $"combination.partners['{glyph}']";
+            if (!known.Contains(glyph)) c.Add(where, "is not listed in glyphs or baseGlyphs.");
+            else if (l.Combination.Recipes.ContainsKey(glyph)) c.Add(where, "is a composite: only a glyph drawn from shapes can be drawn against partners.");
+            else if (l.Derivations.ContainsKey(glyph)) c.Add(where, "is a derived glyph: it is cut from its source, not drawn, so it cannot have partners.");
+
+            if (list is null || list.Count == 0) { c.Add(where, "has no partners - remove the entry."); continue; }
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var partner in list)
+            {
+                if (!seen.Add(partner)) c.Add(where, $"lists '{partner}' twice.");
+                else if (partner == glyph) c.Add(where, "cannot be drawn against itself.");
+                else if (!known.Contains(partner)) c.Add(where, $"'{partner}' is not listed in glyphs or baseGlyphs.");
+                else if (l.Combination.Recipes.ContainsKey(partner)) c.Add(where, $"'{partner}' is a composite: a partner has to be a drawn or derived glyph.");
+            }
+        }
+
+        foreach (var (key, recipe) in l.Combination.Recipes)
+        {
+            var components = recipe.Components.Distinct().ToList();
+            var bound = components.Where(partners.ContainsKey).ToList();
+            if (bound.Count == 0) continue;
+
+            string where = $"combination.recipes['{key}']";
+            foreach (var glyph in bound)
+                foreach (var partner in partners[glyph] ?? new List<string>())
+                    if (!components.Contains(partner))
+                        c.Add(where, $"contains '{glyph}', which is drawn against '{partner}' (combination.partners): list '{partner}' in the recipe too.");
+
+            // Several roots are fine: each stays where it was drawn and the partner glyph is drawn against all of them.
+            if (!components.Any(n => !partners.ContainsKey(n)))
+                c.Add(where, "has no component without partners: at least one component (a root) has to be drawn on its own for the others to be drawn against.");
+        }
+    }
+
+    /// <summary>crossing.nodesOfShapes on the combination (and on recipes) names shapes, not glyphs: a glyph name there matches no node at all.</summary>
+    private static void ValidateCombinationCrossingShapes(LanguageDefinition l, Ctx c)
+    {
+        void Check(string path, CrossingConfig crossing)
+        {
+            foreach (var id in crossing.NodesOfShapes ?? new List<string>())
+            {
+                if (l.Shapes.Any(x => x.Id == id)) continue;
+                bool glyph = l.BaseGlyphs.Any(g => g.Name == id) || l.Glyphs.Any(g => g.Name == id);
+                c.Add(path + ".crossing.nodesOfShapes", glyph
+                    ? $"'{id}' is a glyph name, not a shape id; list the ids of the shapes whose nodes may be crossed at (shapes[].id). Nothing would match, so no crossing would ever be allowed."
+                    : $"'{id}' is not the id of any shape.");
+            }
+        }
+
+        void CheckContact(string path, ContactRequirement? contact)
+        {
+            foreach (var id in contact?.NodesOfShapes ?? new List<string>())
+            {
+                if (l.Shapes.Any(x => x.Id == id)) continue;
+                bool glyph = l.BaseGlyphs.Any(g => g.Name == id) || l.Glyphs.Any(g => g.Name == id);
+                c.Add(path + ".contact.nodesOfShapes", glyph ? $"'{id}' is a glyph name, not a shape id (shapes[].id)." : $"'{id}' is not the id of any shape.");
+            }
+        }
+
+        Check("combination.arrangement", l.Combination.Arrangement.Crossing);
+        CheckContact("combination.arrangement", l.Combination.Arrangement.Contact);
+        foreach (var (key, recipe) in l.Combination.Recipes)
+            if (recipe.Arrangement is not null)
+            {
+                Check($"combination.recipes['{key}'].arrangement", recipe.Arrangement.Crossing);
+                CheckContact($"combination.recipes['{key}'].arrangement", recipe.Arrangement.Contact);
+            }
+    }
+
     private static void ValidateCombinationSettings(CombinationConfig combination, Ctx c)
     {
-        if (combination.MaxRetriesPerRecipe < 1)
-            c.Add("combination.maxRetriesPerRecipe", $"must be at least 1 (got {combination.MaxRetriesPerRecipe}).");
+        if (combination.Retries < 1)
+            c.Add("combination.retries", $"must be at least 1 (got {combination.Retries}).");
 
         ValidateArrangement(c, "combination.arrangement", combination.Arrangement, forShape: false);
         ValidateContact(c, "combination.arrangement", combination.Arrangement);
@@ -429,6 +512,19 @@ internal static class ConfigValidator
             Number(c, where + ".outlineNodes.tolerance", rule.OutlineNodes.Tolerance, 0, 0.5);
             if (rule.OutlineNodes.Mode != OutlineNodeMode.None && !(circle || arc))
                 c.Add(where + ".outlineNodes", "only applies to a Circle or Arc rule.");
+            if (rule.Split is { } split)
+            {
+                if (circle || arc) c.Add(where + ".split", "only applies to a straight rule (not Circle or Arc).");
+                Number(c, where + ".split.chance", split.Chance, 0, 100);
+                Enum(c, where + ".split.distribution", split.Distribution);
+                Enum(c, where + ".split.snap", split.Snap);
+                Enum(c, where + ".split.mode", split.Mode);
+                if (split.Parts.Min < 2) c.Add(where + ".split.parts.min", $"must be at least 2 (one new node cuts an edge into 2 pieces; got {split.Parts.Min}).");
+                if (split.Parts.Max < split.Parts.Min) c.Add(where + ".split.parts", $"max ({split.Parts.Max}) is smaller than min ({split.Parts.Min}).");
+                Number(c, where + ".split.maxDeviation", split.MaxDeviation, 0, 2);
+                if (!(split.MinEdgeLength >= 0) || double.IsInfinity(split.MinEdgeLength)) c.Add(where + ".split.minEdgeLength", $"must be 0 or more (got {split.MinEdgeLength}).");
+            }
+
             Number(c, where + ".backToStartChance", rule.BackToStartChance, 0, 100);
             if (rule.ChainLengthCost < 0) c.Add(where + ".chainLengthCost", "must be 0 or more (got " + rule.ChainLengthCost + ").");
             ValidateEdgeCurve(c, where + ".curve", rule.Curve);
@@ -638,7 +734,7 @@ internal static class ConfigValidator
             if (state.GetValueOrDefault(name) == 2) return;
             if (state.GetValueOrDefault(name) == 1)
             {
-                c.Add("shapes", $"nodesOfGlyph makes glyphs depend on each other in a circle ({string.Join(" -> ", path.SkipWhile(x => x != name).Append(name))}); each glyph must be drawn after the ones it reads.");
+                c.Add("shapes", $"nodesOfGlyph / combination.partners make glyphs depend on each other in a circle ({string.Join(" -> ", path.SkipWhile(x => x != name).Append(name))}); each glyph must be drawn after the ones it reads.");
                 reported = true;
                 return;
             }
@@ -737,6 +833,30 @@ internal static class ConfigValidator
                 c.Add(where + ".seedLabel", $"'{shape.SeedLabel}' is used by more than one shape.");
 
             Number(c, where + ".chance", shape.Chance, 0, 100);
+            if (shape.Requires is { } requires)
+            {
+                string at = where + ".requires";
+                Number(c, at + ".chance", requires.Chance, 0, 100);
+                Enum(c, at + ".matchPresent", requires.MatchPresent);
+                Enum(c, at + ".matchAbsent", requires.MatchAbsent);
+                if (requires.Present is not { Count: > 0 } && requires.Absent is not { Count: > 0 })
+                    c.Add(at, "needs a present or an absent list (a block with only a chance is what the shape's own chance is for).");
+                foreach (var (field, list) in new[] { ("present", requires.Present), ("absent", requires.Absent) })
+                    foreach (var other in list ?? new List<string>())
+                    {
+                        int idx = l.Shapes.FindIndex(x => x.Id == other);
+                        if (idx < 0) c.Add(at + "." + field, $"'{other}' is not the id of a shape.");
+                        else if (idx >= i) c.Add(at + "." + field, idx == i
+                            ? "a shape cannot depend on itself."
+                            : $"'{other}' is not listed before this shape, so it is not decided yet when this shape is.");
+                    }
+                if (requires.Present is { } both && requires.Absent is { } none && both.Intersect(none).Any())
+                    c.Add(at, $"'{both.Intersect(none).First()}' is in both present and absent, so the shape could never be drawn.");
+                if (requires.MatchPresent == RequireMatch.Any && requires.Present is not { Count: > 0 })
+                    c.Add(at + ".matchPresent", "only applies together with a present list.");
+                if (requires.MatchAbsent == RequireMatch.Any && requires.Absent is not { Count: > 0 })
+                    c.Add(at + ".matchAbsent", "only applies together with an absent list.");
+            }
 
             if (shape.CopyOf is not null)
             {
@@ -877,8 +997,8 @@ internal static class ConfigValidator
             }
         }
 
-        if (copy.RegenerateBase < 0) c.Add(path + ".regenerateBase", $"must be 0 or more (got {copy.RegenerateBase}).");
-        if (copy.RedrawGlyph < 0) c.Add(path + ".redrawGlyph", $"must be 0 or more (got {copy.RedrawGlyph}).");
+        if (copy.RegenerateBase < 0) c.Add(path + ".retries.base", $"must be 0 or more (got {copy.RegenerateBase}).");
+        if (copy.RedrawGlyph < 0) c.Add(path + ".retries.glyph", $"must be 0 or more (got {copy.RedrawGlyph}).");
 
         if (copy.Gap.Max < copy.Gap.Min) c.Add(path + ".gap", $"max ({copy.Gap.Max}) is smaller than min ({copy.Gap.Min}).");
         IntRange(c, path + ".shift", copy.Shift, 0, "the sign is drawn at random");
@@ -1012,9 +1132,6 @@ internal static class ConfigValidator
         if (a.Candidates < 1)
             c.Add(path + ".candidates", $"must be at least 1 (got {a.Candidates}).");
 
-        if (!forShape && a.Spacing.IgnoreStartNode)
-            c.Add(path + ".spacing.ignoreStartNode", "only applies to a shape with placement.startOnExistingNode.");
-
         if (!forShape && a.Spacing.HasShapeFilter)
             c.Add(path + ".spacing.onlyShapes", "onlyShapes / excludeShapes only apply to shapes; a combination's spacing measures whole components.");
 
@@ -1045,97 +1162,112 @@ internal static class ConfigValidator
 
     private static void ValidatePlacement(LanguageDefinition l, Ctx c, string path, PlacementConfig p, bool rotationApplies, ArrangementRules arrangement, int shapeIndex = -1)
     {
+        string start = path + ".start";
+
         if (p.Bounds is { } box)
         {
             if (box.MinX > box.MaxX || box.MinY > box.MaxY)
-                c.Add(path + ".bounds", "minX/minY must not be larger than maxX/maxY.");
+                c.Add(path + ".area.bounds", "minX/minY must not be larger than maxX/maxY.");
             else if (box.MinX < 0 || box.MinY < 0 || box.MaxX >= l.Grid.Width || box.MaxY >= l.Grid.Height)
-                c.Add(path + ".bounds", $"must lie inside the grid (x 0..{l.Grid.Width - 1}, y 0..{l.Grid.Height - 1}).");
+                c.Add(path + ".area.bounds", $"must lie inside the grid (x 0..{l.Grid.Width - 1}, y 0..{l.Grid.Height - 1}).");
             else if (p.Mode == PlacementMode.Fixed && p.FixedOrigin is { } fo && fo.Points.Any(o => o.X < box.MinX || o.X > box.MaxX || o.Y < box.MinY || o.Y > box.MaxY))
-                c.Add(path + ".bounds", "does not contain every fixedOrigin.");
+                c.Add(path + ".area.bounds", "does not contain every start.origin.");
         }
-        if (p.RedoShape < 0) c.Add(path + ".redoShape", $"must be 0 or more (got {p.RedoShape}).");
-        if (p.RedrawGlyph < 0) c.Add(path + ".redrawGlyph", $"must be 0 or more (got {p.RedrawGlyph}).");
-        Enum(c, path + ".mode", p.Mode);
+        if (p.RedoShape < 0) c.Add(path + ".retries.shape", $"must be 0 or more (got {p.RedoShape}).");
+        if (p.RedrawGlyph < 0) c.Add(path + ".retries.glyph", $"must be 0 or more (got {p.RedrawGlyph}).");
+        Enum(c, start + ".mode", p.Mode);
 
         if (p.Side is not null)
         {
             if (p.Mode != PlacementMode.RandomValid)
-                c.Add(path + ".side", "only applies with mode RandomValid: Fixed and CenterAnchor always use the same origin, so there is nothing to pull.");
+                c.Add(path + ".side", "only applies with start.mode RandomValid: Fixed and CenterAnchor always use the same origin, so there is nothing to pull.");
             ValidateSidePull(c, path + ".side", p.Side);
         }
 
         if (p.Rotations is not null)
         {
             if (!rotationApplies)
-                c.Add(path + ".rotations", "only affects Literal shapes - a generated shape ignores rotation, so this would do nothing here.");
+                c.Add(path + ".rotation.angles", "only affects Literal shapes - a generated shape ignores rotation, so this would do nothing here.");
             else if (!p.AllowRotationOnPlace)
-                c.Add(path + ".rotations", "is set but allowRotationOnPlace is false, so it would be ignored.");
+                c.Add(path + ".rotation.angles", "is set but rotation.allowed is false, so it would be ignored.");
 
             foreach (var angle in p.Rotations)
             {
                 if (Array.IndexOf(LatticeRotations, angle) < 0)
-                    c.Add(path + ".rotations", $"{angle} is not supported; only 0, 90, 180 and 270 keep nodes on the grid.");
+                    c.Add(path + ".rotation.angles", $"{angle} is not supported; only 0, 90, 180 and 270 keep nodes on the grid.");
             }
         }
 
         if (p.MaxPlacementAttempts < 1)
-            c.Add(path + ".maxPlacementAttempts", $"must be at least 1 (got {p.MaxPlacementAttempts}).");
+            c.Add(path + ".retries.placement", $"must be at least 1 (got {p.MaxPlacementAttempts}).");
 
         if (p.Mode == PlacementMode.Fixed)
         {
             if (p.FixedOrigin is null || p.FixedOrigin.Points.Count == 0)
-                c.Add(path, "mode is Fixed but fixedOrigin is not set.");
+                c.Add(start, "mode is Fixed but origin is not set.");
             else
                 for (int k = 0; k < p.FixedOrigin.Points.Count; k++)
                 {
                     var o = p.FixedOrigin.Points[k];
                     if (o.X < 0 || o.X >= l.Grid.Width || o.Y < 0 || o.Y >= l.Grid.Height)
-                        c.Add(path + ".fixedOrigin", $"{o} is outside the {l.Grid.Width}x{l.Grid.Height} grid.");
+                        c.Add(start + ".origin", $"{o} is outside the {l.Grid.Width}x{l.Grid.Height} grid.");
                 }
         }
         else if (p.FixedOrigin is not null)
         {
-            c.Add(path + ".fixedOrigin", $"is set but mode is {p.Mode}, so it would be ignored (use mode Fixed).");
+            c.Add(start + ".origin", $"is set but mode is {p.Mode}, so it would be ignored (use mode Fixed).");
         }
 
         if (p.DiscardUsedOrigins && p.Mode != PlacementMode.Fixed)
-            c.Add(path + ".discardUsedOrigins", $"only applies to mode Fixed (mode is {p.Mode}).");
-        if (arrangement.Crossing.Mode == CrossingMode.Strict && p.StartOnExistingNode)
-            c.Add(path + ".startOnExistingNode", "cannot be combined with crossing.mode Strict (a shared node is a contact).");
+            c.Add(start + ".discardUsed", $"only applies to mode Fixed (mode is {p.Mode}).");
 
-        if (p.StartOnShapes is not null)
+        if (p.Start.OnPartnerNode is { } onPartner)
         {
-            if (!p.StartOnExistingNode)
-                c.Add(path + ".startOnShapes", "only applies together with startOnExistingNode: true.");
-            if (p.StartOnShapes.Count == 0)
-                c.Add(path + ".startOnShapes", "is empty, so there would be nothing to start on - list shape ids, or remove it for every shape.");
-            foreach (var id in p.StartOnShapes)
+            string pat = start + ".onPartnerNode";
+            if (p.Mode != PlacementMode.RandomValid) c.Add(pat, $"only applies when start.mode is RandomValid (is {p.Mode}).");
+            if (p.Start.OnExistingNode is not null) c.Add(pat, "cannot be combined with onExistingNode: a shape starts on its own glyph's nodes or on a partner's.");
+            if (arrangement.Crossing.Mode == CrossingMode.Strict) c.Add(pat, "cannot be combined with crossing.mode Strict (a shared node is a contact).");
+            Number(c, pat + ".chance", onPartner.Chance, 0, 100);
+            Enum(c, pat + ".ifNone", onPartner.IfNone);
+            if (l.Combination.Partners.Count == 0) c.Add(pat, "needs combination.partners: no glyph is drawn against partners, so there is nothing to start on.");
+            if (onPartner.Partner is { } named && !l.Combination.Partners.Values.Any(v => v.Contains(named)))
+                c.Add(pat + ".partner", $"'{named}' is not the partner of any glyph in combination.partners.");
+            if (onPartner.Shapes is not null)
             {
-                int at = l.Shapes.FindIndex(x => x.Id == id);
-                if (at < 0) c.Add(path + ".startOnShapes", $"'{id}' is not the id of a shape.");
-                else if (shapeIndex >= 0 && at >= shapeIndex) c.Add(path + ".startOnShapes", $"'{id}' is not listed before this shape, so it is not drawn yet when this shape is placed.");
+                if (onPartner.Shapes.Count == 0) c.Add(pat + ".shapes", "is empty, so there would be nothing to start on - list shape ids, or remove it for every node of the partner.");
+                foreach (var id in onPartner.Shapes)
+                    if (l.Shapes.All(x => x.Id != id)) c.Add(pat + ".shapes", $"'{id}' is not the id of a shape.");
             }
         }
 
-        if (arrangement.Spacing.IgnoreStartNode && !p.StartOnExistingNode)
-            c.Add(path.Replace(".placement", ".arrangement.spacing") + ".ignoreStartNode", "only applies to a shape with placement.startOnExistingNode: true.");
+        if (p.Start.OnExistingNode is not { } existing) return;
 
-        Number(c, path + ".startOnExistingNodeChance", p.StartOnExistingNodeChance, 0, 100);
-        if (!p.StartOnExistingNode && p.StartOnExistingNodeChance < 100.0)
-            c.Add(path + ".startOnExistingNodeChance", "only applies together with startOnExistingNode: true.");
+        string at = start + ".onExistingNode";
+        if (arrangement.Crossing.Mode == CrossingMode.Strict)
+            c.Add(at, "cannot be combined with crossing.mode Strict (a shared node is a contact).");
 
-        if (p.StartOnExistingNode)
+        if (existing.Shapes is not null)
         {
-            if (p.Mode != PlacementMode.RandomValid)
-                c.Add(path + ".startOnExistingNode", $"only applies when mode is RandomValid (is {p.Mode}).");
-
-            // A shape starting on an existing node shares that node, i.e. is at distance 0 from it.
-            // Unless every shape it may start on is one the spacing does not measure (onlyShapes / excludeShapes).
-            bool startsOnlyOnUnmeasured = p.StartOnShapes is { Count: > 0 } starts && starts.All(id => !arrangement.Spacing.Covers(id));
-            if (arrangement.Spacing is { Enabled: true, MinNodeDistance: > 0, IgnoreStartNode: false } && p.StartOnExistingNodeChance >= 100.0 && !startsOnlyOnUnmeasured)
-                c.Add(path + ".startOnExistingNode", "can never satisfy arrangement.spacing.minNodeDistance > 0 (a shared node is at distance 0) - set arrangement.spacing.ignoreStartNode to leave the start node out of the check.");
+            if (existing.Shapes.Count == 0)
+                c.Add(at + ".shapes", "is empty, so there would be nothing to start on - list shape ids, or remove it for every shape.");
+            foreach (var id in existing.Shapes)
+            {
+                int idx = l.Shapes.FindIndex(x => x.Id == id);
+                if (idx < 0) c.Add(at + ".shapes", $"'{id}' is not the id of a shape.");
+                else if (shapeIndex >= 0 && idx >= shapeIndex) c.Add(at + ".shapes", $"'{id}' is not listed before this shape, so it is not drawn yet when this shape is placed.");
+            }
         }
+
+        Number(c, at + ".chance", existing.Chance, 0, 100);
+
+        if (p.Mode != PlacementMode.RandomValid)
+            c.Add(at, $"only applies when start.mode is RandomValid (is {p.Mode}).");
+
+        // A shape starting on an existing node shares that node, i.e. is at distance 0 from it.
+        // Unless every shape it may start on is one the spacing does not measure (onlyShapes / excludeShapes).
+        bool startsOnlyOnUnmeasured = existing.Shapes is { Count: > 0 } starts && starts.All(id => !arrangement.Spacing.Covers(id));
+        if (arrangement.Spacing is { Enabled: true, MinNodeDistance: > 0, IgnoreStartNode: false } && existing.Chance >= 100.0 && !startsOnlyOnUnmeasured)
+            c.Add(at, "can never satisfy arrangement.spacing.minNodeDistance > 0 (a shared node is at distance 0) - set ignoreStartNode here to leave the start node out of the check.");
     }
 
     // ---- curves ------------------------------------------------------------------------------
@@ -1187,21 +1319,18 @@ internal static class ConfigValidator
     {
         Enum(c, "render.framing", render.Framing);
         if (!double.IsFinite(render.RotateDegrees))
-            c.Add("render.rotateDegrees", $"must be a finite number of degrees (got {render.RotateDegrees}).");
+            c.Add("render.transform.rotateDegrees", $"must be a finite number of degrees (got {render.RotateDegrees}).");
         for (int i = 0; i < render.RotateOptions.Count; i++)
         {
             var option = render.RotateOptions[i];
-            string where = $"render.rotateOptions[{i}]";
+            string where = $"render.transform.rotateOptions[{i}]";
             if (option is null) { c.Add(where, "must not be null."); continue; }
             if (!double.IsFinite(option.Min) || !double.IsFinite(option.Max)) c.Add(where, "min and max must be finite numbers of degrees.");
             else if (option.Max < option.Min) c.Add(where, $"max ({option.Max}) is smaller than min ({option.Min}).");
             Number(c, where + ".weight", option.Weight, 0, double.MaxValue);
         }
         if (render.RotateOptions.Count > 0 && render.RotateOptions.All(o => o is not null && !(o.Weight > 0)))
-            c.Add("render.rotateOptions", "every weight is 0, so no option could ever be drawn.");
-
-        if (render.ContactSheet.Columns < 1)
-            c.Add("render.contactSheet.columns", $"must be at least 1 (got {render.ContactSheet.Columns}).");
+            c.Add("render.transform.rotateOptions", "every weight is 0, so no option could ever be drawn.");
 
         if (!HexColor.IsMatch(render.Foreground))
             c.Add("render.foreground", $"'{render.Foreground}' is not a hex colour (#RRGGBB or #AARRGGBB).");

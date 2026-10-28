@@ -33,6 +33,11 @@ public sealed class ShapeDefinition
     /// shape whose original was skipped has nothing to copy and is skipped too.</summary>
     public double Chance { get; set; } = 100.0;
 
+    /// <summary>Draw this shape only depending on which shapes are already in the glyph (ones listed earlier that were actually drawn:
+    /// a shape skipped by its chance, its onlyForGlyphs/excludeGlyphs or its own requires is not "there"). Rolled in addition to <c>chance</c>,
+    /// never instead of it: both have to pass. null = no condition.</summary>
+    public ShapeRequirement? Requires { get; set; }
+
     /// <summary>When set, this shape is drawn only in these glyphs (names from glyphs/baseGlyphs); null = every plain
     /// glyph. A copy of this shape is drawn only where this shape is.</summary>
     public List<string>? OnlyForGlyphs { get; set; }
@@ -47,7 +52,7 @@ public sealed class ShapeDefinition
 
     /// <summary>false: the shape is generated and placed like any other - it blocks other shapes, counts for crossing and spacing, and
     /// can be copied, derived and combined - but it is left out of the rendered glyph (and out of its framing). Use it as an invisible
-    /// blockade or spacer. Shown only in the extra debug images, in their own colour, when render.debugShowUndrawn is on. Default true.</summary>
+    /// blockade or spacer. Shown only in the extra debug images, in their own colour, when render.debug.showUndrawn is on. Default true.</summary>
     public bool IsDrawn { get; set; } = true;
 
     /// <summary>Chain rules - Generative shapes only.</summary>
@@ -79,11 +84,76 @@ public sealed class ShapeDefinition
 
     /// <summary>Rolls the chance on a stream of its own, so a shape with the default 100 draws no random
     /// numbers and every other sequence stays as it was.</summary>
-    internal bool PassesChance(GlyphGen.Core.Rng.DeterministicRandom glyphRng) =>
-        Chance >= 100.0 || glyphRng.Derive($"chance-{Id}").NextBool(Chance / 100.0);
+    public bool PassesChance(GlyphGen.Core.Rng.DeterministicRandom glyphRng, double extraDraws = 0.0) =>
+        Roll(Chance, glyphRng, $"chance-{Id}", extraDraws);
+
+    /// <summary>Whether the shape's <c>requires</c> block lets it be drawn: the shapes that must (or must not) already be in the glyph are
+    /// looked at first, and only when they agree is the block's own chance rolled (a second roll, on a stream of its own, with the same usage
+    /// bias as <c>chance</c>). <paramref name="exists"/> says whether a shape id has been drawn in this glyph so far. A shape without the
+    /// block always passes and draws no random numbers.</summary>
+    public bool PassesRequirement(GlyphGen.Core.Rng.DeterministicRandom glyphRng, Func<string, bool> exists, double extraDraws = 0.0)
+    {
+        if (Requires is not { } r) return true;
+        if (r.Present is { Count: > 0 } present && !(r.MatchPresent == RequireMatch.Any ? present.Any(exists) : present.All(exists))) return false;
+        if (r.Absent is { Count: > 0 } absent && !(r.MatchAbsent == RequireMatch.Any ? absent.Any(id => !exists(id)) : !absent.Any(exists))) return false;
+        return Roll(r.Chance, glyphRng, $"requires-{Id}", extraDraws);
+    }
+
+    private static bool Roll(double chance, GlyphGen.Core.Rng.DeterministicRandom glyphRng, string label, double extraDraws)
+    {
+        if (chance >= 100.0) return true;
+        var stream = glyphRng.Derive(label);
+        bool result = stream.NextBool(chance / 100.0);
+        if (extraDraws == 0) return result;
+
+        // Usage bias (usageSizeBias.affectChance): roll again |extraDraws| more times, a fraction honoured probabilistically. Negative
+        // strength: drawn if any roll succeeds; positive: only if every roll does.
+        double amount = Math.Abs(extraDraws);
+        int whole = (int)Math.Floor(amount);
+        double fraction = amount - whole;
+        if (fraction > 0 && stream.NextDouble() < fraction) whole++;
+        for (int i = 0; i < whole; i++)
+        {
+            bool again = stream.NextBool(chance / 100.0);
+            result = extraDraws > 0 ? result && again : result || again;
+        }
+
+        return result;
+    }
 
     internal string StreamLabel(int instanceIndex) =>
         Count is null
             ? SeedLabel ?? $"shape-{Id}"
             : $"{SeedLabel ?? $"shape-{Id}"}-{instanceIndex}-placement";
+}
+
+/// <summary>How a shape's <c>requires</c> block combines its present or absent list.</summary>
+public enum RequireMatch
+{
+    /// <summary>present: every shape must be there. absent: every shape must be missing (default).</summary>
+    All,
+
+    /// <summary>present: at least one shape must be there. absent: at least one shape must be missing.</summary>
+    Any,
+}
+
+/// <summary>shapes[].requires: draw the shape only when other shapes are (or are not) already in the glyph.</summary>
+public sealed class ShapeRequirement
+{
+    /// <summary>Ids of earlier shapes that must already be drawn in this glyph (see match). null/empty = no such condition.</summary>
+    public List<string>? Present { get; set; }
+
+    /// <summary>Ids of earlier shapes that must NOT be drawn in this glyph. null/empty = no such condition.</summary>
+    public List<string>? Absent { get; set; }
+
+    /// <summary>All (default): every shape in present is needed. Any: one of them is enough.</summary>
+    public RequireMatch MatchPresent { get; set; } = RequireMatch.All;
+
+    /// <summary>All (default): every shape in absent must be missing (none of them may be there). Any: it is enough that one of them is
+    /// missing (the shape is skipped only when all of them are there).</summary>
+    public RequireMatch MatchAbsent { get; set; } = RequireMatch.All;
+
+    /// <summary>Chance (0-100) that the shape is drawn when the conditions hold; rolled per glyph, on top of the shape's own chance.
+    /// Default 100. usageSizeBias.affectChance bends it like it bends chance.</summary>
+    public double Chance { get; set; } = 100.0;
 }

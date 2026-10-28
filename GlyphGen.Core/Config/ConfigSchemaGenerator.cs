@@ -54,10 +54,10 @@ public static class ConfigSchemaGenerator
         ["GridConfig.Height"] = 1,
         ["CanvasConfig.SizePx"] = 16,
         ["CanvasConfig.MarginPx"] = 0,
-        ["PlacementConfig.MaxPlacementAttempts"] = 1,
+        ["PlacementRetries.Placement"] = 1,
         ["ArrangementRules.Candidates"] = 1,
-        ["QualityConfig.MaxRegenerationAttempts"] = 1,
-        ["CombinationConfig.MaxRetriesPerRecipe"] = 1,
+        ["QualityConfig.Retries"] = 1,
+        ["CombinationConfig.Retries"] = 1,
         ["ConnectionRuleConfig.MinLength"] = 0, // 0 is a dot for Circle rules; the validator requires 1 for the others
         ["ConnectionRuleConfig.MaxLength"] = 0,
         ["ConnectionRuleConfig.Weight"] = 0,
@@ -460,8 +460,7 @@ public static class ConfigSchemaGenerator
     // ---- reflection helpers -------------------------------------------------------------------
 
     private static IEnumerable<PropertyInfo> Bindable(Type type) =>
-        type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.GetIndexParameters().Length == 0 && p.SetMethod is { IsPublic: true });
+        JsonNames.Bindable(type);
 
     private static object? TryCreate(Type type)
     {

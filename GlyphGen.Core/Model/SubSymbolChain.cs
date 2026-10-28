@@ -15,7 +15,7 @@ public sealed class SubSymbolChain
     public bool IsClosedLoop { get; set; }
 
     /// <summary>Every node of the shape: the chain's own, plus the extra nodes along its circles and arcs (OutlineNodes). These are what
-    /// spacing, startOnExistingNode and NodesOnly crossings see; <see cref="Nodes"/> alone is what the chain walks through.</summary>
+    /// spacing, start.onExistingNode and NodesOnly crossings see; <see cref="Nodes"/> alone is what the chain walks through.</summary>
     public List<GridPoint> AllNodes()
     {
         var all = new List<GridPoint>(Nodes);

@@ -107,7 +107,7 @@ public enum AngleNodeSnap
 }
 
 /// <summary>Extra nodes along a circle or arc (on a connection rule with direction Circle or Arc). They count as nodes of the
-/// shape for spacing, startOnExistingNode and NodesOnly crossings; the chain itself still continues from the far node.</summary>
+/// shape for spacing, start.onExistingNode and NodesOnly crossings; the chain itself still continues from the far node.</summary>
 public sealed class OutlineNodesConfig
 {
     /// <summary>Which extra lattice points on a circle or arc count as its nodes: None, AtAngles or EveryLatticePoint.</summary>

@@ -28,9 +28,14 @@ public sealed class UsageSizeBiasConfig
     public double Strength { get; set; } = 0.0;
 
     /// <summary>Whether the bias is applied to the number of strokes (the shape's count). Default true.</summary>
-    public bool AffectSubSymbolCount { get; set; } = true;
+    public bool AffectCount { get; set; } = true;
     /// <summary>Whether the bias is applied to the chain length. Default true.</summary>
-    public bool AffectSubSymbolLength { get; set; } = true;
+    public bool AffectLength { get; set; } = true;
+
+    /// <summary>Whether the bias is applied to each shape's <c>chance</c> and <c>requires.chance</c>. Default false. The shape's chance roll is made 1 + |draws| times: with a
+    /// negative strength the shape is drawn if ANY roll succeeds (a chance of p becomes 1-(1-p)^n, so a rarely drawn big shape turns up
+    /// mostly in heavily-used glyphs), with a positive strength only if ALL rolls succeed (p^n: heavily-used glyphs get the shape less often).</summary>
+    public bool AffectChance { get; set; } = false;
 
     public double ExtraDraws(int usageCount) =>
         Strength != 0 && usageCount > 0 ? Strength * usageCount : 0.0;

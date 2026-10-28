@@ -10,7 +10,7 @@ namespace GlyphGen.Core.Config;
 ///  - unknown properties (System.Text.Json silently drops them, so a typo like "subSymbolSpacin"
 ///    would otherwise just vanish), with a "did you mean" hint;
 ///  - explicit nulls where the C# property isn't nullable (they would crash later);
-///  - the grid having moved from the root into each language.
+///  - every language having a "grid" block.
 /// Walks the JSON alongside the config classes by reflection, so new options are covered
 /// automatically.
 /// </summary>
@@ -37,40 +37,6 @@ internal static class ConfigStructureChecker
         (typeof(PlacementConfig), nameof(PlacementConfig.Rotations)),
     };
 
-    /// <summary>Options from the version before shapes/arrangement: each maps to where it lives now,
-    /// so an old config gets a pointer instead of a bare "unknown property".</summary>
-    private static readonly Dictionary<(Type Owner, string Property), string> LegacyKeys = new()
-    {
-        [(typeof(LanguageDefinition), "subsymbolcount")] = "is now 'count' on a shape in 'shapes'.",
-        [(typeof(LanguageDefinition), "subsymbollength")] = "is now 'chain.length' on a shape in 'shapes'.",
-        [(typeof(LanguageDefinition), "connectionrules")] = "is now 'chain.connectionRules' on each generative shape.",
-        [(typeof(LanguageDefinition), "connectionweighting")] = "is now 'chain.connectionWeighting' on each generative shape.",
-        [(typeof(LanguageDefinition), "allownoderevisit")] = "is now 'chain.allowNodeRevisit' on each generative shape.",
-        [(typeof(LanguageDefinition), "allowedgerevisit")] = "is now 'chain.allowEdgeRevisit' on each generative shape.",
-        [(typeof(LanguageDefinition), "allowclosedloop")] = "is now 'chain.allowClosedLoop' on each generative shape.",
-        [(typeof(LanguageDefinition), "closedloopweight")] = "is now 'chain.closedLoopWeight' on each generative shape.",
-        [(typeof(LanguageDefinition), "allowsymbolstocross")] = "is now 'arrangement.crossing' (mode Anywhere) on each shape.",
-        [(typeof(LanguageDefinition), "guaranteedmotifs")] = "is now part of 'shapes': a guaranteed motif is a shape without a 'count'.",
-        [(typeof(LanguageDefinition), "subsymbolplacement")] = "is now 'placement' on each shape.",
-        [(typeof(LanguageDefinition), "subsymbolspacing")] = "is now 'arrangement.spacing' on each shape (its selfSpacing is 'chain.selfSpacing').",
-        [(typeof(CombinationConfig), "allowcomponentstocross")] = "is now 'combination.arrangement.crossing' (mode Anywhere).",
-        [(typeof(ArrangementRules), "allowcrossing")] = "is now 'crossing': { \"mode\": \"None\" | \"NodesOnly\" | \"Anywhere\" } (allowCrossing true = Anywhere).",
-        [(typeof(CombinationConfig), "bias")] = "is now 'combination.arrangement.bias'.",
-    };
-
-    /// <summary>Render options that moved to render.joins (no migration needed: just delete them).</summary>
-    private static readonly Dictionary<(Type Owner, string Property), string> MovedRenderKeys = new()
-    {
-        [(typeof(RectangularTypefaceConfig), "join")] = "is now 'render.joins' (corner / junction, outer / inner).",
-        [(typeof(RectangularTypefaceConfig), "miterlimit")] = "is now 'miterLimit' under 'render.joins.*.outer'.",
-        [(typeof(ThickEndsTypefaceConfig), "join")] = "is now 'render.joins' (corner / junction, outer / inner).",
-        [(typeof(ThickEndsTypefaceConfig), "miterlimit")] = "is now 'miterLimit' under 'render.joins.*.outer'.",
-        [(typeof(BrushTypefaceConfig), "join")] = "is now 'render.joins' (corner / junction, outer / inner).",
-        [(typeof(BrushTypefaceConfig), "miterlimit")] = "is now 'miterLimit' under 'render.joins.*.outer'.",
-    };
-
-    private const string LegacyPrefix = "Old option ";
-
     [ThreadStatic] private static List<string>? _warnings;
 
     public static void Check(string json, List<string> errors, List<string>? warnings = null)
@@ -93,16 +59,10 @@ internal static class ConfigStructureChecker
 
         CheckGridPlacement(root, errors);
         WalkObject(root, typeof(RootConfig), "", errors);
-
-        if (errors.Any(e => e.StartsWith(LegacyPrefix, StringComparison.Ordinal)))
-            errors.Add("This config uses the pre-shapes layout. Convert it with: GlyphGen.Cli --migrate old.json new.json");
     }
 
     private static void CheckGridPlacement(JsonElement root, List<string> errors)
     {
-        if (TryGetProperty(root, "grid", out _))
-            errors.Add("A top-level \"grid\" is no longer supported - put a \"grid\" block inside each language.");
-
         if (!TryGetProperty(root, "languages", out var languages) || languages.ValueKind != JsonValueKind.Array)
             return;
 
@@ -167,32 +127,13 @@ internal static class ConfigStructureChecker
 
     private static void WalkObject(JsonElement element, Type type, string path, List<string> errors)
     {
-        var bindable = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.GetIndexParameters().Length == 0 && p.SetMethod is { IsPublic: true })
+        var bindable = JsonNames.Bindable(type)
             .ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
 
         foreach (var property in element.EnumerateObject())
         {
-            if (LegacyKeys.TryGetValue((type, property.Name.ToLowerInvariant()), out var moved))
-            {
-                string at = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
-                errors.Add($"{LegacyPrefix}'{at}' {moved}");
-                continue;
-            }
-
-            if (MovedRenderKeys.TryGetValue((type, property.Name.ToLowerInvariant()), out var movedTo))
-            {
-                string at = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
-                errors.Add($"Moved option '{at}' {movedTo}");
-                continue;
-            }
-
             if (!bindable.TryGetValue(property.Name, out var info))
             {
-                // The old top-level "grid" already has its own, more helpful message.
-                if (path.Length == 0 && string.Equals(property.Name, "grid", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
                 // "$schema" lets an editor attach config.schema.json; the loader just ignores it.
                 if (path.Length == 0 && property.Name == "$schema")
                     continue;

@@ -539,7 +539,8 @@ public sealed partial class GlyphGenerator
         {
             var shape = language.Shapes.First(x => x.Id == id);
 
-            if (!shape.PassesChance(rng))
+            if (!shape.PassesChance(rng) || !shape.PassesRequirement(rng, other =>
+                    (addedByShape.TryGetValue(other, out var added) && added.Count > 0) || next.Chains.Any(c => c.ShapeTag is { } tag && tag.StartsWith(other + "#", StringComparison.Ordinal))))
             {
                 addedByShape[id] = new List<SubSymbolChain>();
                 continue;
@@ -774,7 +775,7 @@ public sealed partial class GlyphGenerator
             if (done >= wanted) break;
 
             var edge = work.Edge;
-            var points = PickSplitPoints(edge, Math.Max(2, parts.Resolve(rng)), distribution, snap, maxDeviation, occupied, grid, rng);
+            var points = EdgeSplitting.PickPoints(edge, Math.Max(2, parts.Resolve(rng)), distribution, snap, maxDeviation, occupied, grid, rng);
             if (points.Count == 0) continue;
 
             // Exact nodes keep a straight edge as it was (planned straight stays straight); anything else is planned again.
@@ -783,7 +784,7 @@ public sealed partial class GlyphGenerator
             var from = edge.From;
             foreach (var to in points.Append(edge.To))
             {
-                var piece = edge.WithPoints(from, to);
+                var piece = edge.WithPoints(from, to).WithoutLineNodes();
                 pieces.Add(new WorkEdge(keepBend ? piece : piece.WithBend(null), null));
                 from = to;
             }
@@ -825,73 +826,6 @@ public sealed partial class GlyphGenerator
         next.Lone.AddRange(s.Lone);
         return next;
     }
-
-    /// <summary>The nodes that cut an edge into <paramref name="pieces"/> pieces, in order from its start to its end. Fewer (or none)
-    /// when the edge offers no free place for them.</summary>
-    private static List<GridPoint> PickSplitPoints(GridEdge edge, int pieces, SplitDistribution distribution, SplitSnap snap, double maxDeviation,
-        HashSet<GridPoint> occupied, LatticeGrid grid, DeterministicRandom rng)
-    {
-        int dx = edge.To.X - edge.From.X, dy = edge.To.Y - edge.From.Y;
-        int wanted = pieces - 1;
-        var result = new List<GridPoint>();
-
-        if (snap == SplitSnap.Exact)
-        {
-            int g = Gcd(Math.Abs(dx), Math.Abs(dy));
-            if (g < 2) return result;
-
-            var free = new List<int>();
-            for (int j = 1; j < g; j++)
-                if (!occupied.Contains(new GridPoint(edge.From.X + dx / g * j, edge.From.Y + dy / g * j))) free.Add(j);
-
-            var chosen = new List<int>();
-            if (free.Count <= wanted) chosen.AddRange(free);
-            else if (distribution == SplitDistribution.Random)
-            {
-                Shuffle(free, rng);
-                chosen.AddRange(free.Take(wanted));
-            }
-            else
-            {
-                for (int i = 1; i <= wanted; i++)
-                {
-                    double ideal = (double)i / pieces;
-                    int best = free.Where(j => !chosen.Contains(j)).OrderBy(j => Math.Abs((double)j / g - ideal)).ThenBy(j => j).First();
-                    chosen.Add(best);
-                }
-            }
-
-            foreach (int j in chosen.OrderBy(j => j))
-                result.Add(new GridPoint(edge.From.X + dx / g * j, edge.From.Y + dy / g * j));
-            return result;
-        }
-
-        var fractions = new List<double>();
-        if (distribution == SplitDistribution.Equal)
-            for (int i = 1; i <= wanted; i++) fractions.Add((double)i / pieces);
-        else
-        {
-            for (int i = 0; i < wanted; i++) fractions.Add(rng.NextDouble());
-            fractions.Sort();
-        }
-
-        double length = Math.Sqrt((double)dx * dx + (double)dy * dy);
-        var seen = new HashSet<GridPoint>();
-        var found = new List<(GridPoint Point, double T)>();
-        foreach (double f in fractions)
-        {
-            var p = new GridPoint((int)Math.Round(edge.From.X + f * dx), (int)Math.Round(edge.From.Y + f * dy));
-            if (p.Equals(edge.From) || p.Equals(edge.To) || occupied.Contains(p) || !grid.Contains(p) || !seen.Add(p)) continue;
-
-            double px = p.X - edge.From.X, py = p.Y - edge.From.Y;
-            double off = Math.Abs(px * dy - py * dx) / length;
-            if (off > maxDeviation + 1e-9) continue;
-            found.Add((p, (px * dx + py * dy) / (length * length)));
-        }
-
-        return found.OrderBy(x => x.T).Select(x => x.Point).ToList();
-    }
-
 
     private static DerivState MovePoint(DerivState s, GridPoint from, GridPoint to)
     {

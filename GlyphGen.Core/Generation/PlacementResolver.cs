@@ -43,6 +43,15 @@ public sealed class PlacementResolver : IPlacementResolver
             anchorNodes = CollectNodes(config.StartOnShapes is { } only ? existingGeometry.EdgesOfShapes(only) : existingGeometry.ExistingEdges)
                 .Where(grid.Contains).ToList();
 
+        // start.onPartnerNode: the origin is drawn from the nodes of the partner glyph(s). Nothing there: the shape's ifNone (decided by the
+        // generator before this is called) means a random point here.
+        double anchorChance = config.StartOnExistingNodeChance;
+        if (config.Mode == PlacementMode.RandomValid && config.Start.OnPartnerNode is { } onPartner)
+        {
+            anchorNodes = existingGeometry.PartnerNodes(onPartner.Partner, onPartner.Shapes).Where(grid.Contains).ToList();
+            anchorChance = onPartner.Chance;
+        }
+
         bool positionVaries = config.Mode == PlacementMode.RandomValid;
         bool rotationVaries = config.AllowRotationOnPlace
             && rotationOptions is not null
@@ -74,8 +83,8 @@ public sealed class PlacementResolver : IPlacementResolver
 
             // startOnExistingNode with a chance below 100: roll (from its own stream) whether this attempt grows from a node.
             var anchors = anchorNodes;
-            if (anchors is not null && config.StartOnExistingNodeChance < 100.0
-                && attemptRng.Derive("start-on-node").NextDouble() * 100.0 >= config.StartOnExistingNodeChance)
+            if (anchors is not null && anchorChance < 100.0
+                && attemptRng.Derive("start-on-node").NextDouble() * 100.0 >= anchorChance)
                 anchors = null;
 
             var origin = fixedOrder is not null ? fixedOrder[attempt % fixedOrder.Count] : ResolveOrigin(config, grid, attemptRng, anchors);
@@ -109,8 +118,7 @@ public sealed class PlacementResolver : IPlacementResolver
         var nodes = new List<GridPoint>();
         foreach (var edge in edges)
         {
-            if (seen.Add(edge.From)) nodes.Add(edge.From);
-            if (seen.Add(edge.To)) nodes.Add(edge.To);
+            foreach (var end in edge.DrawnEnds()) if (seen.Add(end)) nodes.Add(end);
             foreach (var extra in edge.ExtraNodes()) if (seen.Add(extra)) nodes.Add(extra);
         }
         return nodes;

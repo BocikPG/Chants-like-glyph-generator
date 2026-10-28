@@ -112,6 +112,11 @@ public sealed class ConnectionRuleConfig
     /// <summary>direction Circle or Arc: extra nodes along the outline.</summary>
     public OutlineNodesConfig OutlineNodes { get; set; } = new();
 
+    /// <summary>Straight rules only (not Circle or Arc). Present = the edges this rule draws are cut into pieces by extra nodes on them, the
+    /// way a SplitEdges derivation step does it. The nodes become real nodes of the chain (spacing, start.onExistingNode, crossings and
+    /// later shapes all see them) but cost no chain length. Left out = edges stay in one piece.</summary>
+    public EdgeSplitConfig? Split { get; set; }
+
     /// <summary>How the edges this rule makes are bent when drawn.</summary>
     public EdgeCurveConfig Curve { get; set; } = new();
 
@@ -134,4 +139,43 @@ public sealed class ConnectionRuleConfig
             return min > 0 || max < 180;
         }
     }
+}
+
+/// <summary>What a connection rule's split does with the edge it cuts.</summary>
+public enum SplitMode
+{
+    /// <summary>The edge becomes several edges that meet at the new nodes.</summary>
+    Pieces,
+
+    /// <summary>The edge stays whole; the new nodes are only added on it.</summary>
+    ExtraNodes,
+}
+
+/// <summary>connectionRules[].split: cutting the edges a rule draws into pieces by adding nodes on them (like the SplitEdges step).</summary>
+public sealed class EdgeSplitConfig
+{
+    /// <summary>Pieces (default): the edge is replaced by several edges meeting at the new nodes, which become nodes of the chain.
+    /// ExtraNodes: the edge is left exactly as drawn (one edge, one stroke) and the new nodes are only added on it, like the outline
+    /// nodes of a circle: they count for spacing, start.onExistingNode, node masks and NodesOnly crossings, but the chain does not walk
+    /// through them and a curve is planned for the whole edge. With snap Nearest the nodes may lie slightly beside the edge (within maxDeviation); the edge itself is not bent.</summary>
+    public SplitMode Mode { get; set; } = SplitMode.Pieces;
+
+    /// <summary>Chance (0-100) that an edge this rule draws is cut at all, rolled per edge. Default 100.</summary>
+    public double Chance { get; set; } = 100.0;
+
+    /// <summary>Into how many pieces an edge is cut, drawn per edge from the range (2 = one new node). Default 2.</summary>
+    public IntRange Parts { get; set; } = new() { Min = 2, Max = 2 };
+
+    /// <summary>Equal (default): as evenly as the lattice allows. Random: at random places along the edge.</summary>
+    public SplitDistribution Distribution { get; set; } = SplitDistribution.Equal;
+
+    /// <summary>Exact (default): only lattice points the edge really passes over are used; an edge that passes over none is left whole.
+    /// Nearest: the ideal place is moved to the nearest lattice point, so the edge becomes a slightly bent path (see maxDeviation).</summary>
+    public SplitSnap Snap { get; set; } = SplitSnap.Exact;
+
+    /// <summary>Snap Nearest only: a node whose nearest lattice point is further than this from the edge is not used. Default 0.75.</summary>
+    public double MaxDeviation { get; set; } = 0.75;
+
+    /// <summary>Only edges at least this long (lattice units) are cut. Default 2.</summary>
+    public double MinEdgeLength { get; set; } = 2.0;
 }

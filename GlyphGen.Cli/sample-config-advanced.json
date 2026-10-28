@@ -1,17 +1,19 @@
 {
   "$schema": "./config.schema.json",
-  "rootSeed": 7,
-  "outputDirectory": "./output-advanced",
+  "run": {
+    "seed": 7,
+    "outputDirectory": "./output-advanced",
+    "contactSheet": {
+      "columns": 4,
+      "baseGlyphsSheet": true
+    }
+  },
   "languages": [
     {
       "name": "Scribe",
       "grid": {
         "width": 15,
         "height": 15
-      },
-      "canvas": {
-        "sizePx": 512,
-        "marginPx": 32
       },
       "baseGlyphs": [
         "ring_base",
@@ -43,18 +45,26 @@
             ]
           ],
           "placement": {
-            "mode": "RandomValid",
-            "allowRotationOnPlace": true,
-            "rotations": [
-              0,
-              90,
-              180,
-              270
-            ],
-            "maxPlacementAttempts": 40
+            "start": {
+              "mode": "RandomValid"
+            },
+            "rotation": {
+              "allowed": true,
+              "angles": [
+                0,
+                90,
+                180,
+                270
+              ]
+            },
+            "retries": {
+              "placement": 40
+            }
           },
           "arrangement": {
-            "crossing": { "mode": "None" },
+            "crossing": {
+              "mode": "None"
+            },
             "spacing": {
               "enabled": true,
               "minCenterDistance": 0.5,
@@ -151,16 +161,22 @@
             ]
           },
           "placement": {
-            "mode": "RandomValid",
-            "startOnExistingNode": true,
-            "maxPlacementAttempts": 40,
             "side": {
               "mode": "SetRandom",
               "pick": "Horizontal"
+            },
+            "start": {
+              "mode": "RandomValid",
+              "onExistingNode": {}
+            },
+            "retries": {
+              "placement": 40
             }
           },
           "arrangement": {
-            "crossing": { "mode": "Anywhere" },
+            "crossing": {
+              "mode": "Anywhere"
+            },
             "spacing": {
               "enabled": true,
               "minCenterDistance": 0.5,
@@ -178,14 +194,16 @@
       ],
       "usageSizeBias": {
         "strength": 0.5,
-        "affectSubSymbolCount": true,
-        "affectSubSymbolLength": true
+        "affectCount": true,
+        "affectLength": true
       },
       "quality": {
-        "maxSimilarity": 0.8,
         "rejectStraightLineOnly": true,
-        "maxRegenerationAttempts": 20,
-        "compositeMaxSimilarity": 0.95
+        "similarity": {
+          "max": 0.8,
+          "compositeMax": 0.95
+        },
+        "retries": 20
       },
       "combination": {
         "recipes": {
@@ -199,7 +217,9 @@
               "tick_base"
             ],
             "arrangement": {
-              "crossing": { "mode": "None" },
+              "crossing": {
+                "mode": "None"
+              },
               "placements": [
                 {
                   "glyph": "star",
@@ -242,9 +262,10 @@
           ],
           "weight": 0.5
         },
-        "maxRetriesPerRecipe": 8,
         "arrangement": {
-          "crossing": { "mode": "Anywhere" },
+          "crossing": {
+            "mode": "Anywhere"
+          },
           "spacing": {
             "enabled": true,
             "minCenterDistance": 0.5,
@@ -268,7 +289,8 @@
               "pick": "Vertical"
             }
           ]
-        }
+        },
+        "retries": 8
       },
       "curve": {
         "contextMode": "AllCurved",
@@ -303,12 +325,6 @@
         "framing": "Language",
         "foreground": "#FFF1E6D0",
         "background": "#FF1B1A17",
-        "debugShowNodes": true,
-        "debugColorComponents": true,
-        "contactSheet": {
-          "columns": 4,
-          "baseGlyphsSheet": true
-        },
         "typeface": {
           "kind": "ThickEnds",
           "perGlyphJitter": 0.05,
@@ -368,7 +384,15 @@
             "straightenOuterDegrees": 20
           }
         },
-        "debugColorParts": true
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": true,
+          "colorComponents": true,
+          "colorParts": true
+        }
       }
     }
   ]

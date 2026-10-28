@@ -320,7 +320,7 @@ public sealed class LanguageRenderer
             // spotting at a glance, and the ones FillSharedTipJoints above is patching for.
             var occurrences = new Dictionary<GridPoint, int>();
             foreach (var chain in GlyphGeometryUtils.GetAllChains(plan.Glyph))
-                foreach (var node in chain.Nodes)
+                foreach (var node in chain.AllNodes())
                     occurrences[node] = occurrences.GetValueOrDefault(node) + 1;
 
             using var freeDot = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = SKColors.Red };
@@ -330,12 +330,14 @@ public sealed class LanguageRenderer
             foreach (var chain in GlyphGeometryUtils.GetAllChains(plan.Glyph))
             {
                 var chainPaint = chain.MotifId is not null ? motifDot : freeDot;
-                foreach (var node in chain.Nodes)
+                var walked = new HashSet<GridPoint>(chain.Nodes);
+                foreach (var node in chain.AllNodes())
                 {
-                    // Chosen per node: only the points that really occur twice are yellow.
+                    // Chosen per node: only the points that really occur twice are yellow. Extra nodes (circle outline nodes, split
+                    // ExtraNodes) the chain does not walk through are drawn smaller.
                     var paint = occurrences[node] >= 2 ? stackedDot : chainPaint;
                     var p = transform.Apply(Turn(node.X, node.Y));
-                    canvas.DrawCircle((float)p.X, (float)p.Y, radius, paint);
+                    canvas.DrawCircle((float)p.X, (float)p.Y, walked.Contains(node) ? radius : radius * 0.65f, paint);
                 }
             }
         }

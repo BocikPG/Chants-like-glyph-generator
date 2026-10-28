@@ -59,6 +59,7 @@ public static class RootConfigLoader
 
         ResolveRecipeArrangements(config);
         ResolveChainFrom(config);
+        ApplyShapeStartSettings(config);
 
         var errors = new List<string>();
         ConfigValidator.Validate(config, errors);
@@ -97,6 +98,14 @@ public static class RootConfigLoader
 
     /// <summary>A shape with chainFrom takes a copy of the named shape's chain block (followed through chainFrom links). A name that
     /// does not exist, a loop, or a source that is not a generative shape is left alone here: the validator reports it.</summary>
+    /// <summary>placement.start.onExistingNode.ignoreStartNode is read by the spacing check, which only sees the shape's arrangement.spacing.</summary>
+    private static void ApplyShapeStartSettings(RootConfig config)
+    {
+        foreach (var language in config.Languages)
+            foreach (var shape in language.Shapes)
+                shape.Arrangement.Spacing.IgnoreStartNode = shape.Placement.Start.OnExistingNode?.IgnoreStartNode ?? false;
+    }
+
     private static void ResolveChainFrom(RootConfig config)
     {
         foreach (var language in config.Languages)

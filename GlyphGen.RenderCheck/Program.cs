@@ -12,27 +12,27 @@ void Check(string name, bool ok, string detail = "")
 }
 
 const string Language = """
-{ "name": "R", "grid": { "width": 15, "height": 15 }, "canvas": { "sizePx": 128, "marginPx": 8 },
+{ "name": "R", "grid": { "width": 15, "height": 15 },
   "glyphs": ["g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8", "g9"],
-  "quality": { "maxSimilarity": 0.9, "rejectStraightLineOnly": false, "maxRegenerationAttempts": 40 },
+  "quality": { "similarity": { "max": 0.9 }, "rejectStraightLineOnly": false, "retries": 40 },
   "shapes": [
     { "id": "bar", "kind": "Literal", "nodes": [[2,12],[3,12],[4,12],[5,12],[6,12],[7,12],[8,12],[9,12],[10,12],[11,12],[12,12]],
-      "placement": { "mode": "Fixed", "fixedOrigin": [0,0] }, "arrangement": { "crossing": { "mode": "NodesOnly" } } },
+      "placement": { "start": { "mode": "Fixed", "origin": [0,0] } }, "arrangement": { "crossing": { "mode": "NodesOnly" } } },
     { "id": "stroke", "count": { "min": 1, "max": 3 },
       "chain": { "length": { "min": 2, "max": 4 }, "connectionRules": [
           { "direction": "Orthogonal", "minLength": 2, "maxLength": 6, "weight": 2 },
           { "direction": "Diagonal", "minLength": 2, "maxLength": 5, "weight": 2, "curve": { "chanceToBeCurved": 40, "mode": "Hybrid", "tension": { "options": [ { "min": 0.2, "max": 0.3 } ] } } },
           { "direction": "Arc", "minLength": 3, "maxLength": 5, "weight": 1, "arc": { "angles": "Cardinal", "minSweep": 180, "maxSweep": 270 } } ] },
       "arrangement": { "crossing": { "mode": "NodesOnly" } },
-      "placement": { "startOnExistingNode": true, "startOnShapes": ["bar"], "maxPlacementAttempts": 60, "bounds": { "minX": 1, "minY": 1, "maxX": 13, "maxY": 12 } } },
+      "placement": { "start": { "onExistingNode": { "shapes": ["bar"] } }, "retries": { "placement": 60 }, "area": { "bounds": { "minX": 1, "minY": 1, "maxX": 13, "maxY": 12 } } } },
     { "id": "dot", "count": { "min": 1, "max": 2 },
       "chain": { "length": { "min": 2, "max": 2 }, "connectionRules": [ { "direction": "Circle", "minLength": 0, "maxLength": 0 } ] },
-      "placement": { "mode": "RandomValid", "maxPlacementAttempts": 60 }, "arrangement": { "crossing": { "mode": "Strict" } } } ],
-  "render": { "framing": "Grid", "foreground": "#FF202020", "background": "#FFFFFFFF",
+      "placement": { "start": { "mode": "RandomValid" }, "retries": { "placement": 60 } }, "arrangement": { "crossing": { "mode": "Strict" } } } ],
+  "render": { "canvas": { "sizePx": 128, "marginPx": 8 }, "framing": "Grid", "foreground": "#FF202020", "background": "#FFFFFFFF",
     "typeface": { "kind": "Brush", "perGlyphJitter": 0.1, "brush": { "mode": "BroadNib", "width": { "min": 0.07, "max": 0.07 }, "thinWidth": { "min": 0.035, "max": 0.035 }, "nibAngleDegrees": { "min": 35, "max": 35 }, "nibRoundness": 0.6, "nibAngleWobble": 2 } } } }
 """;
 
-var config = RootConfigLoader.Load("{ \"rootSeed\": 7, \"outputDirectory\": \"./o\", \"languages\": [ " + Language + " ] }");
+var config = RootConfigLoader.Load("{ \"run\": { \"seed\": 7, \"outputDirectory\": \"./o\" }, \"languages\": [ " + Language + " ] }");
 var language = config.Languages[0];
 var glyphs = new RunOrchestrator(new LanguageGenerator(new GlyphGenerator(new ChainGenerator(), new PlacementResolver(), new CombinationResolver())))
     .Run(config)[language.Name];

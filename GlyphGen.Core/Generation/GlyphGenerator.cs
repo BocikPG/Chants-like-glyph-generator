@@ -14,7 +14,7 @@ public class GlyphGenerationException : Exception
     public GlyphGenerationException(string message) : base(message) { }
 }
 
-/// <summary>A generative or literal shape could not be placed (placement.redoShape / redrawGlyph decide whether it is retried).</summary>
+/// <summary>A generative or literal shape could not be placed (placement.retries.shape / retries.glyph decide whether it is retried).</summary>
 public sealed class ShapePlacementException : GlyphGenerationException
 {
     public ShapeDefinition Shape { get; }
@@ -50,9 +50,9 @@ public sealed class PlacementDiagnostics
             ChainFailures >= SpacingRejections && ChainFailures >= Collisions && ChainFailures > 0
                 ? "The chain keeps running out of moves: try a shorter chain.length, more or longer chain.connectionRules, chain.allowNodeRevisit, or a larger grid."
             : SpacingRejections >= Collisions && SpacingRejections > 0
-                ? "Spacing is rejecting most candidates: relax arrangement.spacing (minCenterDistance, minNodeDistance), chain.selfSpacing, or raise placement.maxPlacementAttempts."
+                ? "Spacing is rejecting most candidates: relax arrangement.spacing (minCenterDistance, minNodeDistance), chain.selfSpacing, or raise placement.retries.placement."
             : Collisions > 0
-                ? "Strokes are colliding or leaving the grid: set arrangement.crossing.mode, use a larger grid, a lower count, or raise placement.maxPlacementAttempts."
+                ? "Strokes are colliding or leaving the grid: set arrangement.crossing.mode, use a larger grid, a lower count, or raise placement.retries.placement."
             : "";
 
         return hint.Length == 0 ? summary : summary + " " + hint;
@@ -178,7 +178,14 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
                     last = ex;
                     string root = RootShapeId(language, ex.Shape);
                     int used = salts.GetValueOrDefault(root);
-                    if (used >= ex.Shape.CopyOf!.RegenerateBase) break; // base redraws spent: redraw the whole glyph
+                    if (used >= ex.Shape.CopyOf!.RegenerateBase) // base redraws spent: redraw the whole glyph, as far as this copy allows
+                    {
+                        if (redraw >= ex.Shape.CopyOf.RedrawGlyph) // nothing left to try for this copy
+                            throw new GlyphGenerationException(ex.Message + (baseRedraws + glyphRedraws == 0 ? "" :
+                                $" Retried before giving up: the base shape was redrawn {baseRedraws} time(s) and the whole glyph {glyphRedraws} time(s) " +
+                                "(copyOf.retries.base and copyOf.retries.glyph set how many are allowed)."));
+                        break;
+                    }
                     salts[root] = used + 1;
                     baseRedraws++;
                 }
@@ -191,13 +198,13 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         throw new GlyphGenerationException(
             last!.Message + (baseRedraws + glyphRedraws == 0 ? "" :
                 $" Retried before giving up: the base shape was redrawn {baseRedraws} time(s) and the whole glyph {glyphRedraws} time(s) " +
-                "(copyOf.regenerateBase and copyOf.redrawGlyph set how many are allowed)."));
+                "(copyOf.retries.base and copyOf.retries.glyph set how many are allowed)."));
     }
 
     private static string Retried(int shapeRedos, int glyphRedraws, ShapeDefinition shape) =>
         shapeRedos + glyphRedraws == 0 ? "" :
             $" Retried before giving up: the shape was redrawn {shapeRedos} time(s) and the whole glyph {glyphRedraws} time(s) " +
-            $"(placement.redoShape and placement.redrawGlyph on '{shape.Id}' set how many are allowed).";
+            $"(placement.retries.shape and placement.retries.glyph on '{shape.Id}' set how many are allowed).";
 
     /// <summary>The shape a chain of copies ultimately comes from: the first one that is not itself a copy.</summary>
     private static string RootShapeId(LanguageDefinition language, ShapeDefinition shape)
@@ -228,11 +235,25 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             GlyphNodes = GlyphNodeLookup(language, glyphDef.Name, generated),
         };
 
+        // combination.partners: the glyphs this one is drawn against are obstacles (and places to start on) for every shape of it.
+        if (language.Combination.Partners.TryGetValue(glyphDef.Name, out var partnerNames))
+        {
+            var arrangement = language.Combination.Arrangement;
+            foreach (var partner in partnerNames)
+            {
+                if (!generated.TryGetValue(partner, out var partnerGlyph))
+                    throw new GlyphGenerationException($"[{language.Name}] '{glyphDef.Name}' is drawn against '{partner}' (combination.partners), which has not been drawn yet.");
+                foreach (var chain in GlyphGeometryUtils.GetAllChains(partnerGlyph))
+                    geometry.CommitPartner(partner, chain, arrangement.Crossing, arrangement.Spacing.EffectiveEdgeDistance);
+            }
+        }
+
         // Usage bias: glyphs that are components of many recipes roll lower counts/lengths.
         // Only shapes with a count are affected; guaranteed shapes have their own fixed rules.
         double usageDraws = language.UsageSizeBias.ExtraDraws(UsageCount(language, glyphDef.Name));
-        double countExtraDraws = language.UsageSizeBias.AffectSubSymbolCount ? usageDraws : 0.0;
-        double lengthExtraDraws = language.UsageSizeBias.AffectSubSymbolLength ? usageDraws : 0.0;
+        double countExtraDraws = language.UsageSizeBias.AffectCount ? usageDraws : 0.0;
+        double lengthExtraDraws = language.UsageSizeBias.AffectLength ? usageDraws : 0.0;
+        double chanceExtraDraws = language.UsageSizeBias.AffectChance ? usageDraws : 0.0;
 
         var placedByShape = new Dictionary<string, List<SubSymbolChain>>(StringComparer.Ordinal);
 
@@ -240,10 +261,27 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         {
             // A shape that is not for this glyph draws nothing (and so its copies make none); it takes no random draw,
             // so glyphs without a filter come out exactly as before.
-            if (!shape.AppliesTo(glyphDef.Name) || !shape.PassesChance(rng))
+            if (!shape.AppliesTo(glyphDef.Name) || !shape.PassesChance(rng, chanceExtraDraws)
+                || !shape.PassesRequirement(rng, id => placedByShape.TryGetValue(id, out var there) && there.Count > 0, chanceExtraDraws))
             {
                 placedByShape[shape.Id] = new List<SubSymbolChain>();
                 continue;
+            }
+
+            // start.onPartnerNode with no node to start on: ifNone decides (Anywhere is handled by the placement itself).
+            if (shape.CopyOf is null && shape.Placement.Start.OnPartnerNode is { IfNone: not PartnerFallback.Anywhere } onPartner
+                && !geometry.PartnerNodes(onPartner.Partner, onPartner.Shapes).Any())
+            {
+                if (onPartner.IfNone == PartnerFallback.Skip)
+                {
+                    placedByShape[shape.Id] = new List<SubSymbolChain>();
+                    continue;
+                }
+
+                throw new GlyphGenerationException(
+                    $"[{language.Name}] Shape '{shape.Id}' for glyph '{glyphDef.Name}' has no partner node to start on (partner " +
+                    $"{(onPartner.Partner is null ? "any" : "'" + onPartner.Partner + "'")}{(onPartner.Shapes is { Count: > 0 } ? ", shapes " + string.Join("/", onPartner.Shapes) : "")}); " +
+                    "placement.start.onPartnerNode.ifNone is Fail. Use Anywhere or Skip, or give the partner a shape with nodes.");
             }
 
             if (shape.CopyOf is { } copyOf)
@@ -540,6 +578,23 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         int variation,
         ulong languageSeed = 0)
     {
+        // A recipe with a glyph drawn against partners (combination.partners) is a plain overlay: every component sits where it was drawn.
+        if (recipe.Components.Any(c => language.Combination.Partners.ContainsKey(c)))
+        {
+            var overlay = new Glyph { Name = glyphDef.Name, LanguageName = language.Name, GridWidth = grid.Width, GridHeight = grid.Height };
+            foreach (var name in recipe.Components)
+            {
+                if (!generated.TryGetValue(name, out var source))
+                    throw new GlyphGenerationException($"[{language.Name}] Recipe '{glyphDef.Name}' needs '{name}', which has not been drawn yet.");
+                var placed = new PlacedComponent { SourceGlyphName = name, Translation = new GridPoint(0, 0) };
+                placed.TransformedChains.AddRange(CombinationResolver.IdentityChains(GlyphGeometryUtils.GetAllChains(source)));
+                overlay.Components.Add(placed);
+                usageTracker.RecordUsage(name);
+            }
+
+            return overlay;
+        }
+
         var rng = new DeterministicRandom(glyphSeed);
 
         Glyph RegenerateComponent(string name, int attemptIndex)
@@ -560,11 +615,13 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             DerivationConfig? derivation = !composite && language.Derivations.TryGetValue(name, out var dv) && generated.ContainsKey(dv.From) ? dv : null;
             bool plain = !composite && !language.Derivations.ContainsKey(name);
             var quality = language.Quality;
-            if (composite || (derivation is null && !plain) || (!quality.RejectStraightLineOnly && quality.MaxSimilarity >= 1.0 && derivation is null)) return first;
+            bool hasPartners = language.Combination.PartnerContact && language.Combination.Partners.ContainsKey(name);
+            if (composite || (derivation is null && !plain) || (!hasPartners && !quality.RejectStraightLineOnly && quality.MaxSimilarity >= 1.0 && derivation is null)) return first;
 
             bool Acceptable(Glyph g)
             {
                 if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g)) return false;
+                if (PartnerContact.FirstUntouched(language, name, g, generated) is not null) return false;
                 var others = generated.Where(kv => kv.Key != name && kv.Key != derivation?.From && !language.Combination.Recipes.ContainsKey(kv.Key)).Select(kv => kv.Value);
                 if (quality.MaxSimilarity < 1.0 && GlyphQualityChecker.FindTooSimilar(g, others, quality.MaxSimilarity, quality) is not null) return false;
                 // A derived glyph is held to its (looser) limit against its source.
@@ -572,8 +629,10 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
             }
 
             var candidate = first;
-            for (int k = 1; !Acceptable(candidate) && k < Math.Max(1, quality.MaxRegenerationAttempts); k++)
+            for (int k = 1; !Acceptable(candidate) && k < Math.Max(1, quality.Retries); k++)
                 candidate = GenerateGlyphCore(language, componentDef, grid, SplitMix64.DeriveSeed(seed, $"quality-{k}"), generated, usageTracker, inProgress, variation: 0, languageSeed: languageSeed);
+            if (hasPartners && PartnerContact.FirstUntouched(language, name, candidate, generated) is { } missed)
+                throw new GlyphGenerationException($"'{name}' redrawn here does not touch its partner '{missed}'.");
             return candidate;
         }
 
@@ -609,6 +668,10 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
                 string parent = i < 0 ? name : order[i];
                 foreach (var (derivedName, d) in language.Derivations)
                     if (d.From == parent && !order.Contains(derivedName)) order.Add(derivedName);
+                // Glyphs drawn against this one (combination.partners, nodesOfGlyph) were drawn against the old version.
+                foreach (var other in language.BaseGlyphs.Concat(language.Glyphs).Select(g => g.Name).Distinct())
+                    if (other != name && !language.Combination.Recipes.ContainsKey(other) && !order.Contains(other)
+                        && NodeSources.Of(language, other).Contains(parent)) order.Add(other);
             }
             return order;
         }
@@ -639,7 +702,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
             throw new GlyphGenerationException(
                 $"[{language.Name}] Could not satisfy combination recipe for '{glyphDef.Name}' " +
-                $"after {language.Combination.MaxRetriesPerRecipe} attempts." +
+                $"after {language.Combination.Retries} attempts." +
                 (explanation.Length > 0 ? " " + explanation : "") +
                 (used.AnyRuleFor(recipe.Components, p => p.Mode != ComponentPlacementMode.Fixed)
                     ? " Side rules are hard: each ruled component's middle must be on its side of the others' middles, " +

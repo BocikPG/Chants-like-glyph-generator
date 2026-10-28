@@ -18,6 +18,10 @@ public enum GridEdgeKind : byte
 public readonly record struct ArcSpan(int RelStart, int Sweep);
 
 
+/// <summary>An extra node of a straight edge: T = fraction of the way from From to To, Offset = sideways distance (lattice units, positive
+/// to the left of the From-to-To direction).</summary>
+public readonly record struct LineNode(double T, double Offset);
+
 /// <summary>
 /// A straight connection between two lattice points, possibly spanning several units
 /// (per a ConnectionRuleConfig's MinLength/MaxLength). Nodes the segment passes over are
@@ -43,9 +47,15 @@ public readonly struct GridEdge
     /// <summary>Circle edges only: the rule's extra-node settings (null = none).</summary>
     public OutlineNodesConfig? Outline { get; }
 
+    /// <summary>Straight edges only: extra nodes lying on the edge (connection rule <c>split</c> with mode ExtraNodes), as fractions of the way
+    /// from From to To plus a sideways offset (0 = exactly on the edge; split snap Nearest uses small offsets). The edge itself stays one edge; the nodes count for spacing, start.onExistingNode and NodesOnly crossings like a
+    /// circle's outline nodes. Kept as fractions so that moving, rotating, mirroring or scaling the edge carries them along.</summary>
+    public IReadOnlyList<LineNode>? LineNodes { get; }
+
     public GridEdge(GridPoint from, GridPoint to, GridEdgeKind kind = GridEdgeKind.Line, EdgeCurveConfig? curve = null, EdgeBend? bend = null,
-        ArcSpan? arc = null, OutlineNodesConfig? outline = null)
+        ArcSpan? arc = null, OutlineNodesConfig? outline = null, IReadOnlyList<LineNode>? lineNodes = null)
     {
+        LineNodes = kind == GridEdgeKind.Line && from != to && lineNodes is { Count: > 0 } ? lineNodes : null;
         Arc = kind == GridEdgeKind.Circle && from != to ? arc : null;
         Outline = kind == GridEdgeKind.Circle && from != to ? outline : null;
         From = from;
@@ -58,7 +68,7 @@ public readonly struct GridEdge
     /// <summary>True when the edge has a planned bend that really bends it.</summary>
     public bool IsCurved => Bend is { IsNone: false };
 
-    public GridEdge WithBend(EdgeBend? bend) => new(From, To, Kind, Curve, bend, Arc, Outline);
+    public GridEdge WithBend(EdgeBend? bend) => new(From, To, Kind, Curve, bend, Arc, Outline, LineNodes);
 
     /// <summary>The mirror image of the edge's bend, for an edge that was reflected (WithPoints keeps the bend as it is).</summary>
     public GridEdge MirroredBend() => Bend is null ? this : WithBend(Bend.Mirrored());
@@ -69,8 +79,9 @@ public readonly struct GridEdge
     public bool IsArc => Arc is not null;
 
     /// <summary>The same arc after a reflection: it covers the mirrored angles, measured the other way round.</summary>
-    public GridEdge MirroredArc() => Arc is not { } a ? this
-        : new GridEdge(From, To, Kind, Curve, Bend, new ArcSpan(((-(a.RelStart + a.Sweep)) % 360 + 360) % 360, a.Sweep), Outline);
+    public GridEdge MirroredArc() => Arc is not { } a
+        ? (LineNodes is { } marks ? WithLineNodes(marks.Select(m => new LineNode(m.T, -m.Offset)).ToList()) : this) // a reflection puts sideways offsets on the other side
+        : new GridEdge(From, To, Kind, Curve, Bend, new ArcSpan(((-(a.RelStart + a.Sweep)) % 360 + 360) % 360, a.Sweep), Outline, LineNodes);
 
     /// <summary>Direction of the diameter From -> To in degrees (0 = right, clockwise on screen).</summary>
     private double DiameterAngle => Math.Atan2(To.Y - From.Y, To.X - From.X) * 180.0 / Math.PI;
@@ -94,11 +105,48 @@ public readonly struct GridEdge
         return offset <= a.Sweep + 1e-6;
     }
 
+    /// <summary>The ends of the edge that are really drawn. For a line or a full circle that is From and To; an arc draws only part of the
+    /// circle, so the far end of its diameter is left out unless the arc runs over it, and the arc's own two ends are added when they
+    /// fall exactly on lattice points.</summary>
+    public IEnumerable<GridPoint> DrawnEnds()
+    {
+        if (!IsArc)
+        {
+            yield return From;
+            if (To != From) yield return To;
+            yield break;
+        }
+
+        double along = DiameterAngle;
+        // Seen from the middle of the circle, To lies in the direction of the diameter and From opposite to it.
+        if (CoversAngle(along + 180.0)) yield return From;
+        if (CoversAngle(along)) yield return To;
+        foreach (double angle in new[] { ArcStartDegrees, ArcStartDegrees + Arc!.Value.Sweep })
+        {
+            var (px, py) = CirclePoint(angle);
+            var nearest = new GridPoint((int)Math.Round(px), (int)Math.Round(py));
+            if (Math.Abs(px - nearest.X) < 1e-6 && Math.Abs(py - nearest.Y) < 1e-6 && nearest != From && nearest != To) yield return nearest;
+        }
+    }
+
     /// <summary>The lattice points that count as extra nodes of a circle or arc (see OutlineNodesConfig); empty for anything else.
     /// Nodes of the edge itself (From, To) are not repeated.</summary>
     public List<GridPoint> ExtraNodes()
     {
         var result = new List<GridPoint>();
+        if (LineNodes is { } marks)
+        {
+            // Only points that really are lattice points count (an edge that was nudged or scaled afterwards may no longer reach them).
+            double dx = To.X - From.X, dy = To.Y - From.Y, len = Math.Sqrt(dx * dx + dy * dy);
+            foreach (var mark in marks)
+            {
+                double px = From.X + mark.T * dx - mark.Offset * dy / len, py = From.Y + mark.T * dy + mark.Offset * dx / len;
+                var p = new GridPoint((int)Math.Round(px), (int)Math.Round(py));
+                if (Math.Abs(px - p.X) < 1e-6 && Math.Abs(py - p.Y) < 1e-6 && p != From && p != To && !result.Contains(p)) result.Add(p);
+            }
+            return result;
+        }
+
         if (!IsCircle || IsDot || Outline is not { Mode: not OutlineNodeMode.None } spec) return result;
 
         var from = From; var to = To;
@@ -145,7 +193,16 @@ public readonly struct GridEdge
 
     /// <summary>The same edge with new end points (after a scale/rotate/translate), keeping kind, curve and bend. After a
     /// reflection also call <see cref="MirroredBend"/>.</summary>
-    public GridEdge WithPoints(GridPoint from, GridPoint to) => new(from, to, Kind, Curve, Bend, Arc, Outline);
+    public GridEdge WithPoints(GridPoint from, GridPoint to) => new(from, to, Kind, Curve, Bend, Arc, Outline, LineNodes);
+
+    /// <summary>The same edge with extra nodes at these fractions of its way (see <see cref="LineNodes"/>); null or empty clears them.</summary>
+    public GridEdge WithLineNodes(IReadOnlyList<LineNode>? nodes) => new(From, To, Kind, Curve, Bend, Arc, Outline, nodes);
+
+    /// <summary>The same edge without extra nodes.</summary>
+    public GridEdge WithoutLineNodes() => WithLineNodes((IReadOnlyList<LineNode>?)null);
+
+    /// <summary>The same, for nodes exactly on the edge (offset 0), given as fractions of its way.</summary>
+    public GridEdge WithLineFractions(IReadOnlyList<double> fractions) => WithLineNodes(fractions.Select(t => new LineNode(t, 0)).ToList());
 
     /// <summary>Circle centre and radius (a Circle edge only).</summary>
     public (double Cx, double Cy, double R) CircleGeometry =>

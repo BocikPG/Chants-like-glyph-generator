@@ -5,12 +5,11 @@ GlyphGen builds a set of glyphs ("a language") from a JSON config: it grows rand
 ```
 GlyphGen.Cli <path-to-config.json>
 GlyphGen.Cli --schema [config.schema.json]
-GlyphGen.Cli --migrate old.json [new.json]
 ```
 
 - Property names are **case-insensitive** (the guide uses camelCase).
 - Enums are written as **strings** (`"Orthogonal"`, `"RandomValid"`, ...).
-- Everything is **deterministic**: one `rootSeed` drives the whole run. A glyph's seed depends only on the language name and the glyph name, so adding or removing a glyph does not change the others (unless it changes what they are compared with or combined with).
+- Everything is **deterministic**: one `run.seed` drives the whole run. A glyph's seed depends only on the language name and the glyph name, so adding or removing a glyph does not change the others (unless it changes what they are compared with or combined with).
 
 > **A note on sources.** Written from the source files, including every config class and the rendering code (layout, curve planning, typefaces, stroke building). A few small helpers (the model classes, `Vec2`, `SeedTree`) were not shown, but nothing here depends on them.
 
@@ -37,7 +36,6 @@ GlyphGen.Cli --migrate old.json [new.json]
 14. [Config validation](#14-config-validation)
 15. [Recipes and interactions](#15-recipes-and-interactions)
 16. [Full example](#16-full-example)
-17. [Migrating from the earlier layout](#17-migrating-from-the-earlier-layout)
 
 ---
 
@@ -61,11 +59,22 @@ A **composite** is made by placing each component (translated, and optionally sc
 
 ## 2. Root config
 
+Two top-level properties: `run` (everything about the run itself) and `languages`.
+
+```json
+{
+  "run": { "seed": 20260927, "outputDirectory": "./output", "maxParallelism": 1, "contactSheet": { "columns": 6 } },
+  "languages": [ ]
+}
+```
+
 | Option | Type | Default | Notes |
 |---|---|---|---|
-| `rootSeed` | integer (ulong) | `0` | The only source of randomness; everything is derived from it. |
-| `outputDirectory` | string | `"./output"` | Created if missing. |
-| `maxParallelism` | int | `1` | Threads generation may use: `1` = one thread (default), `0` = every core, `n` = at most n. **The result is identical whatever the number** (same seed, same glyphs); it only changes how fast they arrive. With more than one thread, the first attempt of every independent plain/base glyph (no recipe, no derivation) is drawn at the same time, and a failed quality attempt is followed by the next few attempts drawn together; the quality checks still run one glyph at a time in the usual order and take the first attempt that passes. Composites, derived glyphs and redraws stay sequential, so a language made mostly of composites gains little. Typical gain: a config where most of the time goes into drawing base glyphs (strict spacing, `minEdgeDistance`) runs close to `cores` times faster on that part. Memory use grows with the thread count (a few glyphs in flight). The same setting also speeds up **rendering** in the CLI: the glyph images are drawn side by side (each on its own bitmap, results in glyph order) and the contact sheet's images are decoded in parallel. `dotnet run --project GlyphGen.RenderCheck` checks that 1, 2, 4 and all-core rendering give byte-identical images (it needs the SkiaSharp package, like the CLI). |
+| `run.seed` | integer (ulong) | `0` | The only source of randomness; everything is derived from it. |
+| `run.outputDirectory` | string | `"./output"` | Created if missing. |
+| `run.maxParallelism` | int | `1` | Threads generation and rendering may use: `1` = one thread (default), `0` = every core, `n` = at most n. **The result is identical whatever the number** (same seed, same glyphs); it only changes how fast they arrive. |
+| `run.contactSheet.columns` | int | `6` | Columns of each language's `_contact-sheet.png` (>= 1). |
+| `run.contactSheet.baseGlyphsSheet` | bool | `true` | Also write a sheet of the base glyphs. |
 | `languages` | array of language objects | `[]` | Each language is generated and rendered independently. |
 
 ---
@@ -76,7 +85,7 @@ A **composite** is made by placing each component (translated, and optionally sc
 {
   "name": "Warrior",
   "grid": { "width": 15, "height": 15 },
-  "canvas": { "sizePx": 512, "marginPx": 32 },
+  "render": { "canvas": { "sizePx": 512, "marginPx": 32 } },
   "baseGlyphs": [ "you_base" ],
   "glyphs": [ "warrior", "weapon", "fortress" ]
 }
@@ -86,8 +95,8 @@ A **composite** is made by placing each component (translated, and optionally sc
 |---|---|---|---|
 | `name` | string | `""` | Used for seeding and for the output folder name. |
 | `grid.width`, `grid.height` | integer | 25 / 25 | **Required per language** in the JSON; each must be >= 1. Nodes sit on integer coordinates `0..width-1`, `0..height-1`. |
-| `canvas.sizePx` | integer | `512` | Output image is square; minimum 16. |
-| `canvas.marginPx` | integer | `32` | Space around the drawing (stroke thickness is added on top). |
+| `render.canvas.sizePx` | integer | `512` | Output image is square; minimum 16. |
+| `render.canvas.marginPx` | integer | `32` | Space around the drawing (stroke thickness is added on top). |
 | `glyphs` | array of names | `[]` | The language's real glyphs, in the atlas/contact sheet. |
 | `baseGlyphs` | array of names | `[]` | Glyphs that exist only as recipe components. See below. |
 
@@ -112,7 +121,7 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
     "id": "crossbar",
     "kind": "Literal",
     "nodes": [ [0, 0], [2, 0], [2, 2] ],
-    "placement": { "mode": "RandomValid", "allowRotationOnPlace": true, "maxPlacementAttempts": 20 },
+    "placement": { "start": { "mode": "RandomValid" }, "rotation": { "allowed": true }, "retries": { "placement": 20 } },
     "arrangement": { "crossing": { "mode": "None" } }
   },
   {
@@ -141,6 +150,7 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
 | `placement` | see section 6 | Where the shape goes. |
 | `arrangement` | see section 7 | How it relates to the other shapes. |
 | `chance` | `100` | Chance (0-100) that the shape is drawn in a glyph at all, rolled once per glyph and covering every instance (a `count` still applies when it is drawn). `100` always draws. A copy shape (below) whose original was skipped is skipped too. |
+| `requires` | none | Draw this shape only when other shapes already exist (or don't) in the glyph. See *Requiring other shapes* below. |
 | `isDrawn` | `true` | `false` makes the shape an invisible **blockade**: it is generated, placed, copied, derived and combined like any other shape, and it blocks other shapes (crossing, spacing, `startOnExistingNode`, nodes) - but it is left out of the rendered glyph, and out of the glyph's bounds for framing. Use it to keep an area free or to force strokes to bend around something. It shows only in the extra `.debug.png` images, in translucent orange, when `render.debugShowUndrawn` is on. The glyph's quality checks (similarity, straight-line) still see it. |
 | `onlyForGlyphs` | all glyphs | List of glyph names (from `glyphs`/`baseGlyphs`): the shape is drawn **only** in these plain glyphs. Omitted = every plain glyph. A copy (`copyOf`) is drawn only where its original is, so a copy may narrow further but cannot add glyphs (listing one where the original is not drawn is an error). |
 | `excludeGlyphs` | none | Glyph names this shape is never drawn in, applied after `onlyForGlyphs`. A shape left out of a glyph takes no random draws, so that glyph's other strokes and all unfiltered glyphs come out exactly as before. Errors: an unknown name, a composite (recipe) or derived glyph (not built from `shapes`; a derivation's `Add` step picks its own), or a plain glyph left with no shape at all. |
@@ -154,6 +164,25 @@ A plain glyph is built from the language's **`shapes`**: a list of entries proce
 Each instance is a separate placement. If one cannot be placed within its attempt budget, generation fails with an error naming the shape (and, for counted shapes, which instance).
 
 A language with plain or base glyphs needs at least one shape. A language whose glyphs are all composites needs none.
+
+### Requiring other shapes (`requires`)
+
+`requires` makes a shape depend on which shapes were already drawn in the current glyph. It is rolled **in addition to** `chance`: both must pass.
+
+```json
+{ "id": "accent", "chance": 60,
+  "requires": { "present": ["bigRound"], "absent": ["dot"], "matchPresent": "All", "matchAbsent": "All", "chance": 80 } }
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `present` | none | Shapes that must exist. |
+| `absent` | none | Shapes that must **not** exist. |
+| `matchPresent` | `All` | `All` needs every shape in `present`; `Any` needs at least one. |
+| `matchAbsent` | `All` | `All` needs every shape in `absent` to be missing (none may exist); `Any` needs at least one of them missing, so the shape is skipped only when all of them exist. |
+| `chance` | `100` | Chance (0-100), rolled once the lists are satisfied. |
+
+"Exists" means drawn in this glyph so far (at least one instance), so only shapes listed **before** this one can be named; naming itself, an unknown or a later shape is an error, as is an empty `requires` or a shape in both lists. With `usageSizeBias.affectChance`, `requires.chance` is bent the same way as `chance`. A shape skipped by `requires` draws no random numbers from the main stream, so existing seeds are unaffected.
 
 ### Copy shapes (`copyOf`)
 
@@ -189,8 +218,8 @@ The original must be listed **before** the copy (shapes are processed in order, 
 | `anchor` | `OriginStart` | Where the copy's start node goes before gap and shift: the original's own start, `ExistingNode` (a node already on the glyph) or `ExistingEdge` (a lattice point on a line already there). Existing points are tried in random order. |
 | `preferNoCrossing` | `true` | All gap/shift/anchor combinations are tried in random order and the first that crosses nothing is taken. If every one crosses, the least-crossing one is kept **only** when the copy's `arrangement.crossing` is true; otherwise generation fails like any shape that cannot be placed. With `false` the first position that obeys the hard rules is taken. |
 | `moveGlyphToFit` | `true` | When no position keeps the copy on the grid but one would if the strokes already drawn sat elsewhere, the **whole glyph so far moves over** (copy included, by the smallest whole-step move) to where it fits. Positions that cross nothing are preferred. `false` fails instead. Not used by copies in a derivation step. |
-| `regenerateBase` | `3` | First retry. If no position works for the copy, the base shape (the first shape in the chain of copies that is not itself a copy) is redrawn with fresh random numbers and the copy tried again, up to this many times. Everything placed after the base is rebuilt around the new draw. `0` turns it off. Only helps when the base is generated, not a literal. |
-| `redrawGlyph` | `3` | Second retry, after the base redraws are spent: the whole glyph is redrawn from a fresh seed, up to this many times, before generation fails with the error (which then says how many retries were spent). `0` turns it off. Neither retry applies to copies in a derivation step. Glyphs where no copy fails are drawn exactly as before. |
+| `retries.base` | `100` | First retry. If no position works for the copy, the base shape (the first shape in the chain of copies that is not itself a copy) is redrawn with fresh random numbers and the copy tried again, up to this many times. Everything placed after the base is rebuilt around the new draw. `0` turns it off. Only helps when the base is generated, not a literal. |
+| `retries.glyph` | `100` | Second retry, after the base redraws are spent: the whole glyph is redrawn from a fresh seed, up to this many times, before generation fails with the error (which then says how many retries were spent). `0` turns it off. Neither retry applies to copies in a derivation step. Glyphs where no copy fails are drawn exactly as before. |
 | `mirrorCurves` | `true` | The copy's curves are the original's curves flipped, so the two are exact mirror images. `false` gives the copy curves of its own. |
 | `respectSelfSpacing` | `false` | Applies the **original's** `chain.selfSpacing` rules between the copy and the original, as if the copy were more nodes of the same stroke: every node of the copy is measured against every node of the chain it copies (a node the two share is exempt, except in `AllNodes` mode; `Existing` and `Adjacent` both mean "every node of the original" here). Positions that break a rule are skipped like any other rejected position; the error then counts them (`broke the original's chain.selfSpacing`). A copy of a copy uses the rules of the first original. The copy's own nodes need no check, a flip keeps their distances. An error if the original has no `selfSpacing` rule with a `minDistance` or `maxDistance`. |
 | `selfSpacingIgnoresOriginal` | `false` | With `respectSelfSpacing`: for `Existing` and `AllNodes` rules the **original chain is left out** and the copy is measured against every other node already in the glyph instead, so it may sit right next to its original but still keeps the rules' distances from everything else (other instances of the original's shape count as everything else). `Adjacent` rules still compare with the original. With nothing else in the glyph those rules always pass. An error without `respectSelfSpacing`. |
@@ -244,6 +273,7 @@ Notes. The hard rules still apply: the copy must fit the grid (circles and dots 
 | `anglePreset` | `None` | `Straight`, `Gentle`, `Right` or `Sharp`: a ready-made `minAngle`/`maxAngle` pair. Replaces them (set one or the other). |
 | `backToStartChance` | `0` | 0-100. Each time this rule is the one picked, this is the chance that the chain instead goes back to its start node and closes. Needs `chain.allowClosedLoop`, at least 3 nodes, and a closing edge that crosses nothing; otherwise the rule just makes its normal move. If the chain has no valid move left, the best chance among the rules is tried before giving up. Replaces `closedLoopWeight`. |
 | `chainLengthCost` | `1` | How much of `chain.length` this rule uses up each time it is drawn. `1` is the old behaviour (one node). `2` makes a drawn move count double, so a chain of length 5 made only of such moves has 3 nodes: use it to let a circle or a long arc "take the place" of several strokes. `0` makes the rule free (it never counts towards the length; a chain is stopped at 64 nodes, and a dead end before the length is reached still fails the attempt). The start node always counts 1 and closing a loop (`backToStartChance`) costs nothing. The chain is complete once the used length reaches `chain.length`, so the last move can overshoot it. |
+| `split` | none | Straight rules only. Present = the edges this rule draws are cut into pieces by extra nodes on them, as the `SplitEdges` derivation step does. See "Splitting edges" below. |
 | `curve` | see section 11 | How the edges **this rule** makes are bent. |
 
 | `direction` | What it does |
@@ -255,6 +285,32 @@ Notes. The hard rules still apply: the copy must fit the grid (circles and dots 
 | `Angle` | Like `Any`, but requires an angle limit (`anglePreset` or `minAngle`/`maxAngle`); the validator rejects it without one. Any other direction accepts the same limits too, so `Both` + `Right` is a valid way to say "diagonal or straight, but only right-angle turns". |
 | `Circle` | Draws a **circle instead of a line.** The circle's **diameter** runs from the current node to the node `length` steps away in one of the 8 directions, and the chain carries on from that far node. A diagonal circle of length *L* has diameter *L*·√2. `minLength` may be `0`: length 0 is a **dot** (a disc as thick as the stroke) on the current node, and the chain carries on from the same node. A circle must fit inside the grid, and it blocks like any other edge: it may not cut through other lines or circles, but may touch them at nodes, contain them, or be tangent. Angle limits do not apply. Circles are drawn as their own closed shape, so they do not take part in joins. |
 | `Arc` | Draws **part of a circle.** The circle is set like a `Circle`'s: its diameter runs from the current node to the node `length` steps away (`minLength` at least 1), and the chain carries on from that far node. Only an arc of it is drawn, picked at random from the rule's `arc` settings (see "Arcs and outline nodes"). The drawn arc may not reach the far node (a quarter circle, say), in which case the next stroke starts from the far node anyway; a half circle whose ends are the two diameter ends always connects. Same blocking and grid rules as a circle, applied to the arc only. Angle limits do not apply. |
+
+### Splitting edges (`split`)
+
+```json
+{ "direction": "Orthogonal", "minLength": 4, "maxLength": 8,
+  "split": { "chance": 60, "parts": { "min": 2, "max": 3 }, "distribution": "Equal", "snap": "Exact" } }
+```
+
+A rule with a `split` block cuts the edge it draws into pieces by putting nodes on it. With the default mode `Pieces` the nodes are **real nodes of the chain**: `arrangement.spacing`, `start.onExistingNode`, node masks, `NodesOnly` crossings and later shapes all see them, so another stroke can grow out of the middle of an edge. They cost no `chain.length` (only the rule's `chainLengthCost` is charged, once per drawn edge). Not for `Circle` and `Arc` rules, which have `outlineNodes`.
+
+| Option | Default | Notes |
+|---|---|---|
+| `mode` | `Pieces` | `Pieces`: the edge is replaced by several edges that meet at the new nodes (real nodes of the chain). `ExtraNodes`: the edge is **left as drawn** (one edge, one stroke, any curve is planned for the whole edge) and the nodes are only added on it, like the outline nodes of a circle: they count for spacing, `start.onExistingNode`, node masks and `NodesOnly` crossings, but the chain does not walk through them (so `allowNodeRevisit` and `selfSpacing` ignore them). With `snap` `Nearest` the nodes are the lattice points nearest the ideal places, so they may sit slightly beside the edge (within `maxDeviation`); the edge itself is not bent. |
+| `chance` | `100` | Chance (0-100), rolled per edge, that the edge is cut at all. |
+| `parts` | `2..2` | Into how many pieces an edge is cut, drawn per edge from the range (minimum 2: one new node). |
+| `distribution` | `Equal` | `Equal`: as evenly as the lattice allows. `Random`: at random places. |
+| `snap` | `Exact` | `Exact`: only lattice points the edge really passes over are used, so the edge keeps its shape (an edge that passes over none, such as a knight's-move vector, stays whole). `Nearest`: the ideal place moves to the nearest lattice point and the edge becomes a slightly bent path; each piece is checked for crossings on its own. |
+| `maxDeviation` | `0.75` | `Nearest` only: a node whose lattice point is further than this from the edge is not used. |
+| `minEdgeLength` | `2` | Only edges at least this long (lattice units) are cut. |
+
+Details:
+
+- A new node is never put on a node that already exists (the chain's own or another stroke's), so splitting never creates a junction by accident.
+- With `Pieces`, the pieces are separate edges. If the rule also has `curve.chanceToBeCurved` above 0, each piece is bent on its own.
+- With `Pieces`, later moves see the new nodes as chain nodes: with `allowNodeRevisit: false` the chain cannot come back onto them, and `selfSpacing` rules measure against them.
+- The same nodes can also be added afterwards, to a finished glyph, with a `SplitEdges` derivation step (section 10b).
 
 ### Arcs and outline nodes
 
@@ -339,7 +395,7 @@ Distances are in grid units (Euclidean), `0` means "off".
 Notes:
 
 - Distances are node-to-node only; a node can still come close to the middle of one of its own edges.
-- Large minimums cause more dead ends (shorter chains, more retries); raise `placement.maxPlacementAttempts` or the connection-rule length ranges if needed.
+- Large minimums cause more dead ends (shorter chains, more retries); raise `placement.retries.placement` or the connection-rule length ranges if needed.
 - A maximum smaller than your shortest connection step stops chains from growing (a diagonal step of length *n* is *n*·sqrt(2) long).
 - `Existing` and `AllNodes` with the same minimum overlap: `AllNodes` is the stricter. Combining them is useful only with different values.
 
@@ -347,87 +403,125 @@ Notes:
 
 ## 6. Placement
 
-Each shape has its own `placement` block.
+Each shape has its own `placement` block, grouped by what it decides: `start` (where the shape starts), `area` (where it may be), `rotation` (how it may be turned), `retries` (what is tried when it does not fit) and `side` (a pull towards a side).
 
 ```json
 "placement": {
-  "mode": "RandomValid",
-  "fixedOrigin": null,
-  "allowRotationOnPlace": true,
-  "rotations": null,
-  "maxPlacementAttempts": 20,
-  "startOnExistingNode": false
+  "start":    { "mode": "RandomValid", "origin": null, "discardUsed": false, "onExistingNode": null },
+  "area":     { "bounds": null, "nodes": null },
+  "rotation": { "allowed": true, "angles": null },
+  "retries":  { "placement": 100, "shape": 100, "glyph": 100 },
+  "side":     null
 }
 ```
 
+Everything is optional; a shape with no `placement` at all uses the defaults above.
+
+### `placement.start`
+
 | Option | Default | Notes |
 |---|---|---|
-| `mode` | `RandomValid` | `RandomValid`: random grid point per attempt. `Fixed`: always `fixedOrigin`, which must then be set and on the grid. `CenterAnchor`: exactly the grid center (`width / 2`, `height / 2`, integer division). Every mode is still collision- and spacing-checked. |
-| `fixedOrigin` | `null` | A grid point, required for `Fixed` and an error with any other mode. Written as `{ "x": 7, "y": 7 }` or `[7, 7]`, **or as an array of points** (`[[1, 1], [5, 5], { "x": 7, "y": 2 }]`): one is picked at random for each glyph, and if that origin fails (crossing, spacing, off the grid) the others are tried in a shuffled order before the shape counts as unplaceable. Every point must be on the grid (and inside `bounds`). A single point draws no random numbers, so existing glyphs are unchanged. |
-| `allowRotationOnPlace` | `true` | Allows a random rotation per attempt. See the rotation note below. |
-| `rotations` | `null` | Literal shapes only. `null`: use `combination.rotation.allowed` when `combination.allowRotate` is on (the original coupling). A list: use exactly these angles. `[]`: never rotate. Only 0, 90, 180, 270. |
-| `bounds` | *(whole grid)* | A box smaller than the grid that this shape must stay inside, e.g. `{ "minX": 4, "minY": 4, "maxX": 10, "maxY": 10 }` (inclusive node coordinates). It acts as the edge of the grid for this shape: chain moves, start points (`RandomValid` picks inside the box, `CenterAnchor` uses its middle) and circles' whole outlines must fit. Other shapes are not limited by it. Must lie inside the grid and contain `fixedOrigin` if there is one. |
-| `nodes` | none | **Node mask**: which lattice nodes this shape may use, on top of `bounds`. Every node of the shape's strokes (circle nodes and dots too), and the node it starts on, must pass it; chain moves onto other nodes are simply not offered, and a random start is drawn from the usable nodes only. Not applied to `copyOf` shapes. `{ "allow": [ region, ... ], "forbid": [ region, ... ] }`: a node is usable when it is in at least one `allow` region (or there is no `allow`) and in no `forbid` region. A region sets **exactly one** of: `points` (`[[x,y], ...]`, direct nodes), `box` (`{ minX, minY, maxX, maxY }`, inclusive), `pattern` (see below), `nodesOfShapes` (the **node pool**: the nodes of those shapes), `boundsOfShapes` (`{ "shapes": [ids], "margin": 0 }`: everything inside the box around those shapes' nodes, grown by `margin`). See *Node masks* below. |
-| `maxPlacementAttempts` | `20` | Attempts per instance (>= 1). Only used when something varies between attempts (random position, rotation, or a generated shape); otherwise one attempt. Generative shapes always vary. |
-| `redoShape` | `0` | If an instance still cannot be placed after `maxPlacementAttempts`: redraw **all instances of this shape** (new chains, new positions) up to this many times before giving up on this try of the glyph. Shapes placed earlier stay as they are. |
-| `redrawGlyph` | `0` | After `redoShape` is spent: redraw the **whole glyph** from a fresh seed (every shape again) up to this many times before the failure is reported. Each redraw is deterministic, so the same seed gives the same glyph. Default `0` keeps the old behaviour: the glyph fails. |
-| `startOnExistingNode` | `false` | New shapes start on a node already in the glyph. See below. |
-| `discardUsedOrigins` | `false` | `Fixed` with several `fixedOrigin` points: an origin that an earlier instance of this shape (in the same glyph) was placed at is not offered again, so a shape with `count` 4 and four origins fills each once. When all are used, the instance cannot be placed. |
-| `startOnExistingNodeChance` | `100` | With `startOnExistingNode`: the chance (0-100) that an attempt starts on an existing node; otherwise that attempt starts on a random grid point. Rolled per attempt, so a shape can mix both. With a chance below 100, `startOnExistingNode` and `spacing.minNodeDistance > 0` can coexist (the attempts that start elsewhere satisfy it). |
-| `startOnShapes` | all shapes | With `startOnExistingNode`: a list of ids of **earlier** shapes; only their nodes count as places to start on (copies and instances included, by shape id). Default: every node already in the glyph. If none of the listed shapes was drawn in this glyph (a `chance` roll, `onlyForGlyphs`), there is nothing to attach to and the shape is placed at a random point, like the very first shape. Errors: used without `startOnExistingNode`, an empty list, an unknown id, or a shape not listed before this one. |
-| `side` | none | Pull the shape towards a side or corner (`RandomValid` only). See "Side pull" below. |
+| `mode` | `RandomValid` | `RandomValid`: random grid point per attempt. `Fixed`: always `origin`, which must then be set and on the grid. `CenterAnchor`: exactly the grid center (`width / 2`, `height / 2`, integer division). Every mode is still collision- and spacing-checked. |
+| `origin` | `null` | A grid point, required for `Fixed` and an error with any other mode. Written as `{ "x": 7, "y": 7 }` or `[7, 7]`, **or as an array of points** (`[[1, 1], [5, 5], { "x": 7, "y": 2 }]`): one is picked at random for each glyph, and if that origin fails (crossing, spacing, off the grid) the others are tried in a shuffled order before the shape counts as unplaceable. Every point must be on the grid (and inside `area.bounds`). A single point draws no random numbers. |
+| `discardUsed` | `false` | `Fixed` with several `origin` points: an origin that an earlier instance of this shape (in the same glyph) was placed at is not offered again, so a shape with `count` 4 and four origins fills each once. When all are used, the instance cannot be placed. |
+| `onExistingNode` | none | Present = new instances start on a node already in the glyph. See below. |
+| `onPartnerNode` | none | Present = start on a node of a partner glyph (`combination.partners`): `partner`, `shapes`, `chance`, `ifNone`. See *Drawing against partners*. |
+
+### `placement.area`
+
+| Option | Default | Notes |
+|---|---|---|
+| `bounds` | *(whole grid)* | A box smaller than the grid that this shape must stay inside, e.g. `{ "minX": 4, "minY": 4, "maxX": 10, "maxY": 10 }` (inclusive node coordinates). It acts as the edge of the grid for this shape: chain moves, start points (`RandomValid` picks inside the box, `CenterAnchor` uses its middle) and circles' whole outlines must fit. Other shapes are not limited by it. Must lie inside the grid and contain `start.origin` if there is one. |
+| `nodes` | none | **Node mask**: which lattice nodes this shape may use, on top of `bounds`. Every node of the shape's strokes (circle nodes and dots too), and the node it starts on, must pass it; chain moves onto other nodes are simply not offered, and a random start is drawn from the usable nodes only. Not applied to `copyOf` shapes. `{ "allow": [ region, ... ], "forbid": [ region, ... ] }`: a node is usable when it is in at least one `allow` region (or there is no `allow`) and in no `forbid` region. See *Node masks* below. |
+
+### `placement.rotation`
+
+| Option | Default | Notes |
+|---|---|---|
+| `allowed` | `true` | Allows a random rotation per attempt. See the rotation note below. |
+| `angles` | `null` | Literal shapes only. `null`: use `combination.rotation.allowed` when `combination.allowRotate` is on (the original coupling). A list: use exactly these angles. `[]`: never rotate. Only 0, 90, 180, 270. Rejected for generated shapes and unless `allowed` is on. |
+
+### `placement.retries`
+
+What is tried, in this order, when a shape does not fit. **Every retry count defaults to 100** (here and everywhere else retries appear), so a glyph is only reported as failed after a lot of honest effort; set a count lower when you would rather fail fast.
+
+| Option | Default | Notes |
+|---|---|---|
+| `placement` | `100` | Attempts per instance (>= 1). Only used when something varies between attempts (random position, rotation, or a generated shape); otherwise one attempt. Generative shapes always vary. |
+| `shape` | `100` | If an instance still cannot be placed after `placement` attempts: redraw **all instances of this shape** (new chains, new positions) up to this many times before giving up on this try of the glyph. Shapes placed earlier stay as they are. |
+| `glyph` | `100` | After `shape` is spent: redraw the **whole glyph** from a fresh seed (every shape again) up to this many times before the failure is reported. Each redraw is deterministic, so the same seed gives the same glyph. |
+
+### `placement.side`
+
+Pull the shape towards a side or corner (`start.mode` `RandomValid` only). See "Side pull" below.
 
 Each attempt resolves an origin, asks the shape to build itself there, then checks grid bounds, crossing and spacing. The first attempt that passes wins (with a bias active, up to `arrangement.candidates` such placements are collected, see section 7).
 
-**Rotation note.** Rotation changes only **Literal shapes**: a generated chain ignores the rotation value (it is already random), so for Generative shapes `allowRotationOnPlace` has no visible effect (and the loader rejects `rotations` there).
+**Rotation note.** Rotation changes only **Literal shapes**: a generated chain ignores the rotation value (it is already random), so for Generative shapes `rotation.allowed` has no visible effect (and the loader rejects `rotation.angles` there).
 
 
-### Node masks (`placement.nodes`)
+### Node masks (`placement.area.nodes`)
 
 ```json
 "placement": {
-  "bounds": { "minX": 2, "minY": 2, "maxX": 22, "maxY": 20 },
-  "nodes": {
-    "allow":  [ { "pattern": { "x": { "mode": "Even" }, "y": { "step": 3, "offset": 1 } } } ],
-    "forbid": [ { "box": { "minX": 0, "minY": 0, "maxX": 6, "maxY": 6 } },
-                { "points": [[12, 12], [13, 12]] } ]
+  "area": {
+    "bounds": { "minX": 2, "minY": 2, "maxX": 22, "maxY": 20 },
+    "nodes": {
+      "allow":  [ { "pattern": { "x": { "mode": "Even" }, "y": { "step": 3, "offset": 1 } } } ],
+      "forbid": [ { "box": { "minX": 0, "minY": 0, "maxX": 6, "maxY": 6 } },
+                  { "points": [[12, 12], [13, 12]] } ]
+    }
   }
 }
 ```
 
-- **Direct nodes**: `points`. **Rectangles**: `box`. Both work in `allow` or `forbid`.
-- **Patterns** split X and Y: `"pattern": { "x": AXIS, "y": AXIS }`; a node matches when its x AND its y match (an axis you leave out matches everything). `AXIS` is `{ "mode": "Odd" }`, `{ "mode": "Even" }` or `{ "mode": "Every", "step": 3, "offset": 1 }` (the default mode: every 3rd coordinate starting at 1 - 1, 4, 7, ...). Coordinates are counted from the grid's top-left node (0, 0), not from `bounds`. Several pattern regions in one `allow` list are alternatives (a node can match any of them).
-- **Node pool** (`nodesOfShapes`): the nodes of other shapes, as far as they are placed *when this shape is placed*. A shape can only use nodes of shapes listed **earlier** in `shapes` (or its own earlier instances, if it names itself); a later shape is an error. With the pool in `allow`, a stroke may only land on those nodes - e.g. dots only on the nodes of `bottomLine`. With it in `forbid`, the shape avoids them.
-- **Box around shapes** (`boundsOfShapes`): the old `bounds` idea tied to other shapes. In `allow`: stay inside the rectangle that encloses the nodes of `firstStroke` (grown by `margin`); in `forbid`: keep out of it. Same ordering rule as the pool; an empty pool (nothing placed yet) allows nothing.
+A region sets **exactly one** of `points`, `box`, `pattern`, `nodesOfShapes`, `boundsOfShapes`, `nodesOfComponents` or `nodesOfGlyph`.
+
+- **Direct nodes**: `points` (`[[x,y], ...]`). **Rectangles**: `box` (`{ minX, minY, maxX, maxY }`, inclusive). Both work in `allow` or `forbid`.
+- **Patterns** split X and Y: `"pattern": { "x": AXIS, "y": AXIS }`; a node matches when its x AND its y match (an axis you leave out matches everything). `AXIS` is `{ "mode": "Odd" }`, `{ "mode": "Even" }` or `{ "mode": "Every", "step": 3, "offset": 1 }` (the default mode: every 3rd coordinate starting at the offset).
+- **Node pool** (`nodesOfShapes`): the nodes of other shapes, as far as they are placed *when this shape is placed*. A shape can only use nodes of shapes listed **earlier** in `shapes` (or its own earlier instances, if it names itself); a later shape is an error. With the pool in `allow`, a stroke may only run on those nodes.
+- **Box around shapes** (`boundsOfShapes`): `{ "shapes": [ids], "margin": 0 }`. In `allow`: stay inside the rectangle that encloses the nodes of those shapes (grown by `margin`); in `forbid`: keep out of it. Same ordering rule as the pool; an empty pool (nothing placed yet) allows nothing.
+- **Nodes of another glyph** (`nodesOfGlyph`): `{ "glyph": "name", "offset": [dx, dy] }`: the nodes of that glyph, moved by `offset`. The glyph is generated first, even when it is listed later in `glyphs`, and a glyph that uses it is redrawn whenever the source is redrawn. `"glyph": "*"` means every earlier plain glyph. Cycles (A uses B, B uses A) are an error.
+- **Nodes of components** (`nodesOfComponents`, in a combination placement's `nodes`, see section 10): the nodes of the components already placed in the composite.
 - If the rules leave no usable node (an empty pool, a mask with no node inside the bounds), placement fails at once with that explanation, rather than after all attempts.
 - Only **nodes** are tested. A circle's outline may pass over masked-out nodes; its centre-line nodes and the node it is attached to must be allowed, and `bounds` still limits the whole outline.
-- Works together with `spacing.onlyShapes` / `excludeShapes` and `startOnShapes`: `startOnExistingNode` only starts on existing nodes that the mask allows.
-- A tight mask makes chains run out of moves sooner: lower the chain `length`, allow more nodes, or raise `maxPlacementAttempts`.
+- Works together with `spacing.onlyShapes` / `excludeShapes` and `start.onExistingNode.shapes`: `onExistingNode` only starts on existing nodes that the mask allows.
+- A tight mask makes chains run out of moves sooner: lower the chain `length`, allow more nodes, or raise `placement.retries.placement`.
 
-### `startOnExistingNode`
+### `placement.start.onExistingNode`
+
+```json
+"start": { "mode": "RandomValid", "onExistingNode": { "chance": 100, "shapes": ["frame"], "ignoreStartNode": false } }
+```
 
 Instead of a random grid point, the origin is drawn from the nodes already committed in the glyph (earlier shapes included), so shapes grow out of each other. The first shape, with nothing to attach to, is placed normally.
 
+| Option | Default | Notes |
+|---|---|---|
+| `chance` | `100` | The chance (0-100) that an attempt starts on an existing node; otherwise that attempt starts on a random grid point. Rolled per attempt, so a shape can mix both. With a chance below 100, `onExistingNode` and `spacing.minNodeDistance > 0` can coexist (the attempts that start elsewhere satisfy it). |
+| `shapes` | all shapes | A list of ids of **earlier** shapes; only their nodes count as places to start on (copies and instances included, by shape id). Default: every node already in the glyph. If none of the listed shapes was drawn in this glyph (a `chance` roll, `onlyForGlyphs`), there is nothing to attach to and the shape is placed at a random point, like the very first shape. Errors: an empty list, an unknown id, or a shape not listed before this one. |
+| `ignoreStartNode` | `false` | Leaves the node the shape starts on out of this shape's spacing checks (centroid, minimum and maximum node distance), since that node is shared with an existing shape and so sits at distance 0 from it. Every other node is still measured. |
+
 Requirements (the loader rejects violations):
 
-- `mode` must be `RandomValid`.
-- `arrangement.spacing.minNodeDistance` must be `0` when that shape's spacing is enabled (a shared node is at distance 0, so every attempt would be rejected).
+- `start.mode` must be `RandomValid`.
+- `arrangement.spacing.minNodeDistance` must be `0` when that shape's spacing is enabled and `chance` is 100, unless `ignoreStartNode` is on (a shared node is at distance 0, so every attempt would be rejected).
 
 Edges that only meet at a shared node do **not** count as crossing (section 7), so this works with crossing off as well.
 
 ### Side pull (`placement.side`)
 
-`side` pulls a shape towards a side or corner of the glyph. It only applies with `mode: RandomValid` (the other modes always use the same origin).
+`side` pulls a shape towards a side or corner of the glyph. It only applies with `start.mode: RandomValid` (the other modes always use the same origin).
 
 ```json
-"placement": { "mode": "RandomValid", "side": { "mode": "Prefer", "sides": [ "Top", "Left" ] } }
-"placement": { "mode": "RandomValid", "side": { "mode": "SetRandom", "pick": "Corner" } }
+"placement": { "side": { "mode": "Prefer", "sides": [ "Top", "Left" ] } }
+"placement": { "side": { "mode": "SetRandom", "pick": "Corner" } }
 ```
 
 | Option | Default | Notes |
 |---|---|---|
 | `mode` | `Prefer` | `Prefer` uses `sides`; `SetRandom` draws the sides, see below. |
-| `sides` | `[]` | `Prefer` only: `Left`, `Right`, `Top`, `Bottom`; one or two (two = a corner). Left with Right, or Top with Bottom, cancel out and are rejected. |
+| `sides` | `[]` | `Prefer` only: `Left`, `Right`, `Top`, `Bottom`; one or two (two = a corner). Left with Right, or Top with Bottom, cancel out and are rejected. `Center` alone pulls towards the middle of the glyph. |
 | `pick` | `Any` | `SetRandom` only: what is drawn, see below. |
 | `weight` | `1.0` | How strongly the pull counts against `arrangement.bias`, when both are on. `0` turns it off. |
 
@@ -465,9 +559,9 @@ The draw is made **for each instance** of the shape (a shape with a `count` can 
 
 | Field | Default | Meaning |
 |---|---|---|
-| `mode` | `None` | `None`: no crossing - edges may only meet at **shared nodes** (a junction on a node is fine, but a stroke may not pass through another stroke's middle, or through a **dot**, a circle of diameter 0). `NodesOnly`: a crossing is accepted only where it lies within `nodeTolerance` of a node. `Anywhere`: crossing is free. `Strict`: **no contact at all** - no crossing, and not even a shared node or an edge ending on another; nothing of this shape may touch any other shape (a pair is judged by the stricter of the two, so a `Strict` shape also keeps later shapes off it). Own consecutive edges still meet at their nodes. Not allowed with `placement.startOnExistingNode`. `AnywhereButRespectStrict`: **for `combination.arrangement` (and a recipe's `arrangement`) only** - the components may cross anywhere, like `Anywhere`, except that strokes drawn by a shape whose own `crossing.mode` is `Strict` stay `Strict` inside the combined glyph: nothing of another component may touch them, and the shape's `spacing.minEdgeDistance` (if enabled) is kept too. Use it so a dot of one component is never covered by another component's strokes (give the dot shape `crossing.mode: Strict` and `spacing.minEdgeDistance`). Rejected on a shape. |
+| `mode` | `None` | `None`: no crossing - edges may only meet at **shared nodes** (a junction on a node is fine, but a stroke may not pass through another stroke's middle, or through a **dot**, a circle of diameter 0). `NodesOnly`: a crossing is accepted only where it lies within `nodeTolerance` of a node. `Anywhere`: crossing is free. `Strict`: **no contact at all** - no crossing, and not even a shared node or an edge ending on another; nothing of this shape may touch any other shape (a pair is judged by the stricter of the two, so a `Strict` shape also keeps later shapes off it). Own consecutive edges still meet at their nodes. Not allowed with `placement.start.onExistingNode`. `AnywhereButRespectStrict`: **for `combination.arrangement` (and a recipe's `arrangement`) only** - the components may cross anywhere, like `Anywhere`, except that strokes drawn by a shape whose own `crossing.mode` is `Strict` stay `Strict` inside the combined glyph: nothing of another component may touch them, and the shape's `spacing.minEdgeDistance` (if enabled) is kept too. Use it so a dot of one component is never covered by another component's strokes (give the dot shape `crossing.mode: Strict` and `spacing.minEdgeDistance`). Rejected on a shape. |
 | `nodeTolerance` | `0.3` | `NodesOnly`: how far (lattice units) from a node a crossing may lie and still count as "at" it. So a stroke that passes *near* a node, though not exactly through it, is fine. |
-| `nodesOfShapes` | *(all)* | `NodesOnly`: only the nodes of these shapes (ids) count. Missing/empty = every node of every shape, and the shape's own nodes too. With a list, the shape's own nodes count only if its own id is in it. |
+| `nodesOfShapes` | *(all)* | `NodesOnly`: only the nodes of these shapes (ids) count. Missing/empty = every node of every shape, and the shape's own nodes too. With a list, the shape's own nodes count only if its own id is in it. In `combination.arrangement.crossing` (and a recipe's) the ids are still **shape ids** (`shapes[].id`, never glyph names like `numberBase`): a node counts when the shape that owns it is listed, whether it belongs to a component already placed or to the one being placed. A glyph name or unknown id is reported. |
 
 ```json
 "arrangement": { "crossing": { "mode": "NodesOnly", "nodeTolerance": 0.4, "nodesOfShapes": ["frame"] } }
@@ -498,7 +592,6 @@ A "shape" here is one placed instance of a shapes entry, and in composites a who
 | `minEdgeDistance` | `0` | Minimum distance, in grid units, between the **paths** of this shape's strokes and every other stroke in the glyph, and between the shape's own strokes - measured along the real curves (arcs, circles and bent lines included), not between nodes. It keeps strokes from hugging each other: parallel lines one cell apart, an arc resting on a line, a hairpin turn. Dots keep the distance too. Where strokes meet on purpose (a shared node, an allowed crossing) the rule is waived within 1.5 x the distance of the meeting point, so a stroke has to leave a junction at roughly 40 degrees or more. Between two shapes the larger of their two values applies. Needs `enabled: true`; for shapes only (rejected on `combination.arrangement` and recipes). A good value is about the stroke width in grid units (2 for a thick brush on a 25-cell grid). Costs generation time and makes placements fail more often, so raise `maxPlacementAttempts` / `redoShape` with it. |
 | `maxNodeDistance` | `0` | Maximum distance between the closest node pair of the candidate and an existing shape. Must be >= `minNodeDistance` when both are set. |
 | `maxDistanceMode` | `NearestShape` | `NearestShape`: within range of **at least one** existing shape (keeps the glyph connected). `AllShapes`: within range of **every** existing shape. |
-| `ignoreStartNode` | `false` | Only for a shape with `placement.startOnExistingNode: true`: leaves the node it starts on out of the spacing checks (only when it really sits on an existing node) (centroid, min and max node distance), since that node is shared and so at distance 0. Every other node is still measured. Not allowed on `combination.arrangement` or recipes. |
 | `onlyShapes` | none | Shape ids. The spacing of this shape (`minCenterDistance`, `minNodeDistance`, `maxNodeDistance` and `minEdgeDistance`) is measured **only** against strokes drawn by these shapes; everything else is ignored by it. May name the shape itself (its own other instances, e.g. keep one dot away from other dots only). Not together with `excludeShapes`. Shapes only. |
 | `excludeShapes` | none | Shape ids this shape's spacing ignores: it is measured against everything else. E.g. a `minEdgeDistance` that keeps a stroke away from everything except the `bottomLine`. Not together with `onlyShapes`. Shapes only. |
 
@@ -526,16 +619,17 @@ Block: `usageSizeBias`. Counteracts a size skew towards heavily-used component g
 ```json
 "usageSizeBias": {
   "strength": 0.5,
-  "affectSubSymbolCount": true,
-  "affectSubSymbolLength": true
+  "affectCount": true,
+  "affectLength": true
 }
 ```
 
 | Option | Default | Notes |
 |---|---|---|
 | `strength` | `0` | Extra draws added **per use**. `0` = off (generation is unchanged). Must be a finite number >= 0. |
-| `affectSubSymbolCount` | `true` | Bias each counted shape's `count`. |
-| `affectSubSymbolLength` | `true` | Bias each counted shape's `chain.length`. |
+| `affectCount` | `true` | Bias each counted shape's `count`. |
+| `affectLength` | `true` | Bias each counted shape's `chain.length`. |
+| `affectChance` | `false` | Bias each shape's `chance` and `requires.chance`. The chance roll is made `1 + n` times (n = the extra draws): with a **negative** `strength` the shape is drawn if **any** roll succeeds (a chance of *p* becomes 1-(1-*p*)^(1+n)), with a **positive** one only if **all** do. Use it to give a rarely drawn big shape (`chance` 10-15) to heavily-used glyphs far more often than to the rest. |
 
 How it works: "uses" = how many times the glyph's name appears across `combination.recipes`. A glyph with *u* uses rolls its count/length `1 + strength × u` times and keeps the **lowest** result (a fractional part is applied as a probability). The result always stays inside the configured `min..max`.
 
@@ -551,23 +645,24 @@ Turning this on changes the random draws of biased glyphs, so those glyphs will 
 
 ## 9. Quality gate
 
-Block: `quality`. Applied to every plain glyph (base glyphs included) against every glyph accepted earlier in the language. A failing glyph is regenerated with a fresh derived seed up to `maxRegenerationAttempts` times, then the run fails with an error naming the glyph. **Composites are exempt from these two checks** (they contain their components by construction); only `quality.rules`, below, can check them.
+Block: `quality`. Applied to every plain glyph (base glyphs included) against every glyph accepted earlier in the language. A failing glyph is regenerated with a fresh derived seed up to `retries` times, then the run fails with an error naming the glyph. **Composites are exempt from these two checks** (they contain their components by construction); only `quality.rules`, below, can check them.
 
 ```json
 "quality": {
-  "maxSimilarity": 0.7,
+  "similarity": { "max": 0.7, "compositeMax": 1.0, "basis": "Nodes", "comparePosition": false },
   "rejectStraightLineOnly": true,
-  "maxRegenerationAttempts": 10
+  "retries": 100
 }
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `maxSimilarity` | `0.7` | Jaccard similarity (0-1) at or above which two glyphs count as too alike. `1.0` or higher disables the check. |
-| `similarityBasis` | `Nodes` | What `maxSimilarity` compares. `Nodes`: which nodes two glyphs use - glyphs that touch the same nodes are alike however the nodes are joined. `Edges`: which strokes they draw (lines, circles, arcs and whether bent), so glyphs built on the same few nodes still differ when they join them differently. **Use `Edges` when the shapes are restricted to a small fixed set of nodes** (`placement.nodes`): with `Nodes`, every glyph on the same 6 points scores 1.00 against the others and generation fails with "too similar". |
-| `comparePosition` | `false` | `false`: each glyph is shifted so its bounding box starts at the origin before comparing, so the same shape drawn elsewhere is alike. `true`: compared where they lie on the grid - for glyphs whose position means something (coordinates, constellations). Applies to both bases. |
+| `similarity.max` | `0.7` | Jaccard similarity (0-1) at or above which two glyphs count as too alike. `1.0` or higher disables the check. |
+| `similarity.compositeMax` | `1.0` | The same limit for composites, which are only compared with each other. `1.0` (default) = no check for composites. |
+| `similarity.basis` | `Nodes` | What `similarity.max` compares. `Nodes`: which nodes two glyphs use - glyphs that touch the same nodes are alike however the nodes are joined. `Edges`: which strokes they draw (lines, circles, arcs and whether bent), so glyphs built on the same few nodes still differ when they join them differently. **Use `Edges` when the shapes are restricted to a small fixed set of nodes** (`placement.nodes`): with `Nodes`, every glyph on the same 6 points scores 1.00 against the others and generation fails with "too similar". |
+| `similarity.comparePosition` | `false` | `false`: each glyph is shifted so its bounding box starts at the origin before comparing, so the same shape drawn elsewhere is alike. `true`: compared where they lie on the grid - for glyphs whose position means something (coordinates, constellations). Applies to both bases. |
 | `rejectStraightLineOnly` | `true` | Reject a glyph whose whole geometry is one straight line. |
-| `maxRegenerationAttempts` | `10` | Attempts per glyph. |
+| `retries` | `100` | Attempts per glyph. |
 
 Similarity is the Jaccard index of the two glyphs' node sets after shifting each so its bounding box starts at the origin. It is **not** rotation-, mirror- or scale-invariant: the same shape rotated or mirrored is not flagged.
 
@@ -613,7 +708,7 @@ A rule looks at every stroke its **subject** selects, and for each one searches 
 | `similarityThreshold` | `0.7` | Similarity at or above which two strokes count as alike. |
 | `strokeWidth` | `1.5` | Visual similarity: brush width in lattice units. |
 | `whenCountsDiffer` | off | Composites. `{ "shape": id, "action": "Skip" or "Loosen", "factor": 0.5 }`. The number of instances of that shape (its rolled `count`) is compared between the two components of a pair of strokes. When they differ - one base has 1 dot and the other 3, which tells them apart by itself - `Skip` leaves that pair out, and `Loosen` multiplies the window `radius` (and `minDistance`) of that pair by `factor`. |
-| `onFail` | `Reject` | `Reject`: the glyph is thrown away and generated again (fresh seed, up to `maxRegenerationAttempts`), and the run fails with the rule's `id` and an example of what was found if no attempt passes. `Warn`: the glyph is kept; the problem is printed as a warning at the end of the run. `Score`: a soft rule - every stroke that breaks it adds `weight` to the glyph's **penalty**. A glyph whose total penalty is above `quality.acceptPenalty` (default 0) is tried again, and if no attempt gets under it, the attempt with the lowest penalty is kept (with a warning) instead of failing the run. |
+| `onFail` | `Reject` | `Reject`: the glyph is thrown away and generated again (fresh seed, up to `quality.retries`), and the run fails with the rule's `id` and an example of what was found if no attempt passes. `Warn`: the glyph is kept; the problem is printed as a warning at the end of the run. `Score`: a soft rule - every stroke that breaks it adds `weight` to the glyph's **penalty**. A glyph whose total penalty is above `quality.acceptPenalty` (default 0) is tried again, and if no attempt gets under it, the attempt with the lowest penalty is kept (with a warning) instead of failing the run. |
 | `weight` | `1` | Score only. |
 | `redo` | `Composite` | Composites, `onFail: Reject` only. A retried composite is always arranged again, but when the problem is inside a component (the dots belong to the bases) that alone never changes anything. `Subject` also redraws the component that holds the judged stroke, `Other` the component that holds the stroke it clashed with, `Either` alternates between them. Only plain and base glyphs are redrawn (a composite or derived component is not), each redraw uses a new seed, and **every other composite already built from the redrawn glyph is rebuilt with it**, so a symbol stays the same in every composite. If one of those composites no longer fits or breaks a Reject rule, the redraw is undone. |
 
@@ -662,7 +757,7 @@ Block: `combination`. A composite is a glyph whose name is a key in `recipes`; i
   ],
   "allowRotate": true,
   "rotation": { "allowed": [ 0, 90, 180, 270 ], "weight": 1.0 },
-  "maxRetriesPerRecipe": 5,
+  "retries": 100,
   "arrangement": {
     "spacing": { "enabled": true, "minNodeDistance": 1 },
     "bias": { "modes": [ "Shortest", "Narrowest" ], "includeScaleAndRotation": false }
@@ -677,15 +772,45 @@ Block: `combination`. A composite is a glyph whose name is a key in `recipes`; i
 | `allowedScales[]` | Default empty. Each item is `{ numerator, denominator, weight }`, defaulting to `1`, `1`, `1.0`. Shrinking (`< 1`) is only used when every node coordinate scales to a whole number (lattice-safe); enlarging always is. A scale's `weight`, times `rotation.weight` for a non-zero angle, sets how early that combination is tried (0 = never). Keep numerator and denominator positive. |
 | `allowRotate` | Default `false`. Allow rotated placements as a fallback. Does nothing while `rotation.allowed` is just `[0]`. |
 | `rotation.allowed` | Default `[0]`. Allowed rotation angles in degrees. **Only `0`, `90`, `180` and `270` are supported**; the loader rejects anything else. |
-| `maxRetriesPerRecipe` | Default `5`. How many attempts (each followed by regenerating a dependency) before the recipe fails. |
+| `retries` | Default `100`. How many attempts (each followed by regenerating a dependency) before the recipe fails. |
 | `arrangement` | How the components relate to each other: crossing, spacing, bias (below). Same block as a shape's arrangement. |
+| `partners` | Default none. Map of a glyph to the glyphs it is **drawn against** (see *Drawing against partners* below). |
+| `partnerContact` | Default `true`. A glyph drawn against partners has to touch every one of them; a draw that misses one is rejected and drawn again. |
+
+### Drawing against partners (`partners`)
+
+Normally every glyph is drawn alone and a recipe then searches for a placement where the components fit, touch and don't collide. When they don't, a component is redrawn and the search starts again, which is where most of the time goes. `combination.partners` turns this around: a glyph is **drawn knowing the glyphs it will be combined with**, so it fits by construction.
+
+```json
+"combination": {
+  "recipes":  { "Seek": ["verbBase", "seekBase"], "Find": ["verbBase", "findBase"] },
+  "partners": { "seekBase": ["verbBase"], "findBase": ["verbBase"] }
+}
+...
+{ "id": "specificStrokes", "onlyForGlyphs": ["seekBase", "findBase"],
+  "placement": { "start": { "onPartnerNode": { "shapes": ["linker"], "ifNone": "Anywhere" } } } }
+```
+
+- The partners are drawn first (the order follows the dependencies, whatever the list order) and sit in the **same frame**. Their strokes are obstacles for every shape of the glyph, under `combination.arrangement.crossing` and `spacing.minEdgeDistance`, and under the shape's own `crossing`.
+- A recipe that contains such a glyph is a **plain overlay**: every component stays where it was drawn, there is no placement search, no redrawing to make them fit, and `arrangement.placements`, `contact` and `bias` do not apply to it. It must list the glyph together with **all its partners**, and have **at least one component without partners** (a root, drawn on its own). With several roots (say `peopleBase` and `personBase` for `brotherBase`), each stays where it was drawn and the partner glyph is drawn against all of them, touching each; nothing arranges the roots relative to each other, so they may overlap. Use the placement search (leave the glyph out of `partners`) when the roots must be spaced or arranged.
+- `placement.start.onPartnerNode` starts a shape on a node of a partner (`partner` names one, default every partner; `shapes` limits it to nodes of those partner shapes; `chance` per attempt). With several partners give one shape per partner. `ifNone` says what happens when there is no such node: `Anywhere` (default) starts at a random point, `Skip` leaves the shape out, `Fail` stops with an error. Not together with `onExistingNode`.
+- With `partnerContact` (default) the finished glyph must share a node with, or cross, each partner; otherwise the draw is rejected like any other quality failure and drawn again (only that glyph, not its partners).
+- **Redraws:** quality rules whose `redo` points at a partner redraw it, and every glyph drawn against it is drawn again (through the same quality checks), then the composites are rebuilt. A partner may itself be a derived glyph (for example a rotated one). A partner cycle is an error.
+- `partners` keys are glyphs drawn from shapes (not composites or derived glyphs); a partner is any non-composite glyph.
 
 ### Arrangement for components
 
 `combination.arrangement` applies to every recipe; a recipe in the object form can override parts of it. **Whatever the recipe's `arrangement` lists (`crossing`, `spacing`, `bias`) replaces that key of the combination's; keys it leaves out are inherited.** `spacing` and `bias` are replaced as whole blocks, not merged field by field.
 
 - **Crossing**: default `false`. Overlay composition is controlled stacking: components don't cross each other unless the arrangement allows it. They may always touch at shared nodes. This is independent of any shape's `crossing` (which governs strokes inside one glyph).
-- **Spacing**: each placed component counts as **one** shape, checked against the components already placed in this composite. With `minCenterDistance` / `minNodeDistance` set, the plain (0,0) overlay of two components usually fails and components get pushed apart.
+- **Spacing**: each placed component counts as **one** shape, checked against the components already placed in this composite. With `minCenterDistance` / `minNodeDistance` set, the plain (0,0) overlay of two components usually fails and components get pushed apart. `minEdgeDistance` keeps the **paths** of different components apart (strokes that meet at a shared node or cross where crossing is allowed are waived near the meeting point), which is the setting to reach for when components lie on top of each other.
+- **Contact**: `arrangement.contact` makes the components of a composite touch.
+
+```json
+"contact": { "chance": 100, "min": 1, "kind": "Either", "nodesOfShapes": ["frame", "linker"] }
+```
+
+  At least `min` contacts (default 1), counted over the whole composite, are needed, with `chance` (0-100, default 100) deciding per composite whether it is held to this. `kind` is `Junction` (a node two components share), `Crossing` (an edge cutting through another; needs `crossing.mode` `NodesOnly`, `Anywhere` or `AnywhereButRespectStrict`) or `Either` (default). `nodesOfShapes` (shape ids, not glyph names; default: any) limits what counts: a shared node counts when it is a node of a listed shape (in either component), a crossing when one of the two crossing edges belongs to a listed shape. If the components do not touch, the last placed one is moved to a position where they do, then the other movable ones are tried in turn. A component with a `Fixed` placement is not moved, and a recipe whose components (after the first) are all `Fixed` is exempt.
 - **Bias**: below. `candidates` does not apply: components search every placement exhaustively.
 
 ### Placing individual components
@@ -704,9 +829,11 @@ Block: `combination`. A composite is a glyph whose name is a key in `recipes`; i
 
 | Option | Default | Notes |
 |---|---|---|
-| `glyph` | (required) | The component's name. It applies wherever that glyph is a component of a recipe the arrangement covers, and to every instance if a recipe lists it twice. Use `"*"` to apply the rule to **every component** that has no rule of its own naming it (a rule naming a glyph always wins over `"*"`). With `SetRandom` each component still draws for itself, and with `Fixed` they all get the same offset (so they would overlap, unless crossing allows it). Only one `"*"` rule per list. |
+| `glyph` | (required) | The component's name, **or a list of names** (`["dot", "tick"]`) to give them all the same rule. It applies wherever that glyph is a component of a recipe the arrangement covers, and to every instance if a recipe lists it twice. Use `"*"` to apply the rule to **every component** that has no rule of its own naming it (a rule naming a glyph always wins over `"*"`). With `SetRandom` each component still draws for itself, and with `Fixed` they all get the same offset (so they would overlap, unless crossing allows it). Only one `"*"` rule per list. |
 | `mode` | `Prefer` | `Prefer`, `SetRandom` or `Fixed`, see below. |
-| `sides` | `[]` | `Prefer` only: `Left`, `Right`, `Top`, `Bottom`; one or two. |
+| `sides` | `[]` | `Prefer` only: `Left`, `Right`, `Top`, `Bottom`; one or two. Or `Center` alone: a soft pull towards the middle of the grid (not a hard rule, and not combinable with other sides). |
+| `nodes` | none | `Prefer` and `SetRandom`: a **node mask** the component's nodes must hit. Same regions as a shape's `placement.area.nodes` (`points`, `box`, `pattern`) plus `nodesOfComponents`: `{ "components": [glyph names], "shapes": [shape ids] }`, the nodes of components placed earlier (optionally only those of some shapes inside them). Only components placed before this one exist, so put the others earlier in the recipe or give them a `Fixed` placement. |
+| `anchor` | `FirstThenAny` | With `nodes`: which node of the component has to be on the mask. `FirstThenAny`: its very first node, and only if no placement is found that way, any node of it. `FirstNode`: the first node, no fallback. `AnyNode`: any node from the start. |
 | `pick` | `Any` | `SetRandom` only: `Any`, `Corner`, `Horizontal` or `Vertical`. |
 | `scope` | `Language` | `SetRandom` only: `Language` or `Composite`, see below. |
 | `offset` | none | `Fixed` only: `{ "x": 2, "y": 0 }` or `[2, 0]`. |
@@ -761,10 +888,10 @@ Block: `derivations` (language level), a map from glyph name to a recipe for edi
 
 - The name must be listed in `glyphs` or `baseGlyphs` and must not also have a recipe. It is generated **after** its source wherever the two are listed; the source may be a plain, base, composite or itself derived glyph (a composite is flattened into plain strokes). Circular dependencies are rejected.
 - A derived glyph can be a component of a recipe, or the source of another derivation.
-- `finalOutputRotation` (default `FollowMoves`) decides whether the derived glyph is drawn at its source's `render.rotateOptions` angle instead of its own. Only steps that actually ran count (one skipped by `chance` or `onlyIf` does not): `Own` never follows; `FollowMoves` follows when only `Scale`, `Mirror`, `Rotate` or `Nudge` ran; `FollowRemovals` also follows after `DeleteNodes`, `DeleteEdges` and `Keep` (what is left is a part of the source); `FollowAlways` follows whatever ran, `Add` included.
+- `finalOutputRotation` (default `FollowMoves`) decides whether the derived glyph is drawn at its source's `render.transform.rotateOptions` angle instead of its own. Only steps that actually ran count (one skipped by `chance` or `onlyIf` does not): `Own` never follows; `FollowMoves` follows when only `Scale`, `Mirror`, `Rotate` or `Nudge` ran; `FollowRemovals` also follows after `DeleteNodes`, `DeleteEdges` and `Keep` (what is left is a part of the source); `FollowAlways` follows whatever ran, `Add` included.
 - Everything random comes from the glyph's seed and the step's position, so the same seed gives the same result; a quality retry draws a different edit.
 - **Curves are kept.** An edge that survives untouched (not moved, and not new) keeps the source's exact curve, scaled/mirrored/rotated with the glyph. New or moved edges get a fresh curve from the connection rule that made them.
-- **Quality gate.** The derived glyph is compared with every glyph **except** its source using `quality.maxSimilarity`, and with the source using `maxSimilarityToSource` (0-1, default `0.9`; `1` turns it off). So it can never be a copy. Similarity is measured on the node positions (shifted to the top left), so deleting edges but keeping their nodes (`removeOrphanNodes: false`) leaves it identical in that measure.
+- **Quality gate.** The derived glyph is compared with every glyph **except** its source using `quality.similarity.max`, and with the source using `maxSimilarityToSource` (0-1, default `0.9`; `1` turns it off). So it can never be a copy. Similarity is measured on the node positions (shifted to the top left), so deleting edges but keeping their nodes (`removeOrphanNodes: false`) leaves it identical in that measure.
 
 | Option | Default | Notes |
 |---|---|---|
@@ -872,18 +999,16 @@ Language level (`curve`):
 
 ## 12. Rendering
 
-Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink is filled as **one path**, so overlaps and crossings come out solid even with a semi-transparent colour.
+Block: `render` (pixel size and margin come from `render.canvas`). All of a glyph's ink is filled as **one path**, so overlaps and crossings come out solid even with a semi-transparent colour.
 
 ```json
 "render": {
   "framing": "Language",
   "foreground": "#FFFFFFFF",
   "background": "#00000000",
-  "debugShowNodes": false,
-  "debugColorComponents": false,
-  "debugColorParts": false,
-  "debugColorShapes": false,
-  "debugShowUndrawn": false,
+  "canvas": { "sizePx": 512, "marginPx": 32 },
+  "transform": { "rotateDegrees": 0, "rotateOptions": [] },
+  "debug": { "showNodes": false, "colorComponents": false, "colorParts": false, "colorShapes": false, "showUndrawn": false },
   "typeface": {
     "kind": "Rectangular",
     "perGlyphJitter": 0.0,
@@ -902,21 +1027,22 @@ Block: `render` (pixel size and margin come from `canvas`). All of a glyph's ink
 | Option | Notes |
 |---|---|
 | `framing` | How glyphs are scaled and positioned on the canvas (default `Grid`): `Grid` = the whole grid maps to the canvas, so a glyph's size and position on the grid carry through; `Glyph` = crop to each glyph's own bounding box and centre it (relative sizes are lost); `Language` = crop to the combined bounding box of every glyph in the language, one shared scale for all; `GlyphCentered` = the grid's scale, but each glyph re-centred on the canvas. |
-| `rotateOptions` | Per-glyph random turn **added to** `rotateDegrees`: a list of `{ "min", "max", "weight" }` ranges in degrees. Each glyph draws one option by weight (default 1, 0 = never), then an angle uniformly from its range. The draw comes from the glyph's own seed, so a glyph always turns the same way, in normal and debug images alike. Example: `[ { "min": -8, "max": 8, "weight": 4 }, { "min": 85, "max": 95, "weight": 1 } ]` mostly tilts a little and now and then lays a glyph on its side. A derived glyph can take its source's angle (followed back through such derivations) so the two stay turned alike; the derivation's `finalOutputRotation` decides when (see Derivations). Empty (default) = none. |
-| `rotateDegrees` | Turns every glyph by this many degrees, **clockwise**, around the middle of its grid (default `0`); the canvas stays as it is. Any angle works and curves turn exactly. The framing then fits the turned glyphs: with `Grid` framing the grid's square is what turns, so its corners can reach past the canvas margin; `Glyph` and `Language` framing rescale to fit the turned shapes. Applies to the normal and the debug images (lattice, labels and node dots turn too). |
+| `canvas.sizePx`, `canvas.marginPx` | The output image size (square, minimum 16) and the space around the drawing; see section 3. |
+| `transform.rotateOptions` | Per-glyph random turn **added to** `transform.rotateDegrees`: a list of `{ "min", "max", "weight" }` ranges in degrees. Each glyph draws one option by weight (default 1, 0 = never), then an angle uniformly from its range. The draw comes from the glyph's own seed, so a glyph always turns the same way, in normal and debug images alike. Example: `[ { "min": -8, "max": 8, "weight": 4 }, { "min": 85, "max": 95, "weight": 1 } ]` mostly tilts a little and now and then lays a glyph on its side. A derived glyph can take its source's angle (followed back through such derivations) so the two stay turned alike; the derivation's `finalOutputRotation` decides when (see Derivations). Empty (default) = none. |
+| `transform.rotateDegrees` | Turns every glyph by this many degrees, **clockwise**, around the middle of its grid (default `0`); the canvas stays as it is. Any angle works and curves turn exactly. The framing then fits the turned glyphs: with `Grid` framing the grid's square is what turns, so its corners can reach past the canvas margin; `Glyph` and `Language` framing rescale to fit the turned shapes. Applies to the normal and the debug images (lattice, labels and node dots turn too). |
 | `foreground`, `background` | `#RRGGBB` or `#AARRGGBB`. Defaults: foreground `#000000`, background `#00000000` (transparent). Unparseable values fall back to black / transparent. |
-| `debugShowNodes` | Draws the faint lattice with coordinate labels every 5 cells, plus node dots: red = free-form sub-symbol, blue = motif, **gold = a node used more than once** (a revisit or a node shared by shapes). |
-| `debugColorComponents` | Fills each combination component in its own colour. |
-| `debugColorParts` | Colours the ink each kind of part adds: **grey** caps (and Ball / Ink terminals), **violet** corner joins, **pink** junction joins (including straightening). Strokes keep the foreground (or component) colour. Each part shows only where it goes beyond the strokes, painted over them in build order: corner joins, junction joins, caps. A cap removed by `trimCaps` is not drawn, so it is not shown. |
-| `debugColorShapes` | Gives every shape its own colour in the `.debug.png` images, in the order of the shapes list. Instances of one shape (a shape with a `count`, or a copy of each instance) share a hue and differ in lightness, so they can be told apart. Joins between strokes keep the foreground colour; chains with no shape (derived strokes from before this option, circles' joins) are grey. Takes the place of `debugColorComponents` when both are on, and combines with `debugColorParts` (parts are then drawn over each shape's colour). |
-| `debugShowUndrawn` | Draws the shapes that have `isDrawn: false` in the `.debug.png` images, in one translucent orange. They are never in the normal images. |
+| `debug.showNodes` | Draws the faint lattice with coordinate labels every 5 cells, plus node dots: red = a shape with a `count`, blue = a shape without one, **gold = a node used more than once** (a revisit or a node shared by shapes). Extra nodes the stroke only passes (circle outline nodes, `split` mode `ExtraNodes`) are drawn as smaller dots. |
+| `debug.colorComponents` | Fills each combination component in its own colour. |
+| `debug.colorParts` | Colours the ink each kind of part adds: **grey** caps (and Ball / Ink terminals), **violet** corner joins, **pink** junction joins (including straightening). Strokes keep the foreground (or component) colour. Each part shows only where it goes beyond the strokes, painted over them in build order: corner joins, junction joins, caps. A cap removed by `trimCaps` is not drawn, so it is not shown. |
+| `debug.colorShapes` | Gives every shape its own colour in the `.debug.png` images, in the order of the shapes list. Instances of one shape (a shape with a `count`, or a copy of each instance) share a hue and differ in lightness, so they can be told apart. Joins between strokes keep the foreground colour; chains with no shape (derived strokes from before this option, circles' joins) are grey. Takes the place of `debug.colorComponents` when both are on, and combines with `debug.colorParts` (parts are then drawn over each shape's colour). |
+| `debug.showUndrawn` | Draws the shapes that have `isDrawn: false` in the `.debug.png` images, in one translucent orange. They are never in the normal images. |
 | `typeface.kind` | `Rectangular` (default), `ThickEnds` or `Brush`. Selects which sub-block below is used; a missing sub-block means that typeface's defaults. |
 | `typeface.perGlyphJitter` | `0` (default) = every glyph uses the identical typeface; `0.1` = each glyph's widths vary by up to +-10%. Clamped to 0-0.9. |
 
 ### Framing and padding
 
 - The grid-to-pixel mapping is **uniform** (one scale for both axes), so shapes are never distorted. `framing` (above) chooses what gets scaled and centred.
-- The drawing is fitted to the canvas minus a padding on every side: `canvas.marginPx` plus the typeface's largest ink extent (including `perGlyphJitter`) plus 1 px, so strokes at the edge don't clip. Bounds come from the actual sampled curves, not just the nodes.
+- The drawing is fitted to the canvas minus a padding on every side: `render.canvas.marginPx` plus the typeface's largest ink extent (including `perGlyphJitter`) plus 1 px, so strokes at the edge don't clip. Bounds come from the actual sampled curves, not just the nodes.
 - A minimum extent of one grid unit is used when scaling, so a lone straight line isn't blown up without limit.
 - Stroke widths are fixed in pixels (canvas fraction x canvas size), so framing never changes stroke weight: a zoomed-in crop has the same thickness as a full-grid view.
 
@@ -1046,7 +1172,7 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 ## 13. Output files
 
 ```
-<outputDirectory>/
+<run.outputDirectory>/
   <Language>/
     warrior.png              plain glyphs and composites
     warrior.debug.png        same glyph with nodes + component colours
@@ -1058,7 +1184,7 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 ```
 
 - File and folder names are sanitized (characters invalid in file names become `_`).
-- The contact sheet lists real glyphs in the order of `glyphs`, at each glyph's own pixel size, edge to edge: no margins, gaps or frames, no labels. Columns come from `render.contactSheet.columns`. It uses `render.background` exactly as configured; if that is transparent or translucent, so is the sheet.
+- The contact sheet lists real glyphs in the order of `glyphs`, at each glyph's own pixel size, edge to edge: no margins, gaps or frames, no labels. Columns come from `run.contactSheet.columns`. It uses `render.background` exactly as configured; if that is transparent or translucent, so is the sheet.
 - The console also prints an ASCII preview of every glyph (straight lines only), marking base glyphs.
 - PNGs can differ slightly between platforms and Skia versions because of anti-aliasing; geometry is deterministic, but don't expect byte-identical files.
 
@@ -1070,7 +1196,7 @@ Errors aim to say what to change. A value of the wrong kind (a misspelled name, 
 
 `RootConfigLoader` works in three steps and reports **all** problems of the failing step at once (`Invalid config: - ...`):
 
-1. **Structure** (on the raw JSON): unknown properties (with a "did you mean" hint), unexpected `null`s, the per-language `grid`, and **options from the old layout** (each error names where the option lives now, and points at `--migrate`).
+1. **Structure** (on the raw JSON): unknown properties (with a "did you mean" hint), unexpected `null`s, and the per-language `grid`. An option that is not part of the current layout is simply an unknown property.
 2. **Recipe overrides** are merged into `combination.arrangement` (section 10).
 3. **Values**:
 
@@ -1082,20 +1208,21 @@ Errors aim to say what to change. A value of the wrong kind (a misspelled name, 
 | `derivations` | Each name listed in `glyphs`/`baseGlyphs`, with no recipe; `from` listed and not itself, no circles through derivations and recipes; at least one step; each step's options valid for its op (exactly one of `percent`/`count`, ids in `shapes` exist, Bridge has rules, ratios positive, rotations 90/180/270); `maxSimilarityToSource` 0-1. |
 | `shapes` | At least one when there are plain/base glyphs (derived glyphs don't count). Each `id` non-empty and unique; `seedLabel` unique. `count` >= 0 with `max` >= `min`. Literal: `nodes` present, >= 2 points, no repeated consecutive point. Generative: no `nodes`; `chain.length` >= 2; at least one valid `connectionRules` entry (valid direction, `minLength` >= 1 (0 for `Circle`), `maxLength` >= `minLength`, weights >= 0 and not all 0, angles within 0-180 with `maxAngle` >= `minAngle`, no preset together with explicit angles, `Angle` has a limit, `Circle` has none, `backToStartChance` and `chanceToBeCurved` within 0-100, `chainLengthCost` 0 or more, valid `curve` block); each `selfSpacing` rule valid. |
 | `chance` | Number from 0 to 100. |
-| `copyOf` | `shape` names an earlier shape (not itself); known `flip`/`auto`/`anchor`; `flips` only with `Random`, not empty, `auto.shapes` only with `Auto` and naming earlier shapes, no `Random`/`Auto` inside; `gap` max >= min; `regenerateBase` and `redrawGlyph` >= 0; `shift` >= 0; no `count`, `nodes`, `chain` rules or `placement` on a copy entry; in a derivation step the original is listed first. |
-| `placement` | Known `mode`; `Fixed` needs a `fixedOrigin` on the grid, other modes must not have one; `maxPlacementAttempts` >= 1; `rotations` only on Literal shapes, with `allowRotationOnPlace` on, using only 0/90/180/270; `startOnExistingNode` only with `RandomValid` and not with `arrangement.spacing.minNodeDistance` > 0 unless `spacing.ignoreStartNode` is on. |
+| `copyOf` | `shape` names an earlier shape (not itself); known `flip`/`auto`/`anchor`; `flips` only with `Random`, not empty, `auto.shapes` only with `Auto` and naming earlier shapes, no `Random`/`Auto` inside; `gap` max >= min; `retries.base` and `retries.glyph` >= 0; `shift` >= 0; no `count`, `nodes`, `chain` rules or `placement` on a copy entry; in a derivation step the original is listed first. |
+| `placement` | Known `start.mode`; `Fixed` needs a `start.origin` on the grid (and inside `area.bounds`), other modes must not have one; `retries.placement` >= 1, `retries.shape` and `retries.glyph` >= 0; `rotation.angles` only on Literal shapes, with `rotation.allowed` on, using only 0/90/180/270; `start.onExistingNode` only with `RandomValid`, `chance` 0-100, `shapes` naming earlier shapes, and not with `arrangement.spacing.minNodeDistance` > 0 (at `chance` 100) unless `ignoreStartNode` is on; node masks: each region sets exactly one kind, `nodesOfGlyph` names a listed glyph without cycles. |
 | `arrangement` | Spacing distances (including `minEdgeDistance`, shapes only) finite and >= 0, `maxNodeDistance` >= `minNodeDistance`, valid `maxDistanceMode`; known bias modes, no `Tallest`+`Shortest` or `Widest`+`Narrowest`, bias weights valid; `candidates` >= 1; `includeScaleAndRotation` not on a shape. Checked for every shape, for `combination.arrangement` and for each recipe override. |
-| `placement.side` | Only with `mode: RandomValid`; `Prefer` needs one or two sides, none cancelling, and no `pick`; `SetRandom` takes no `sides`; `weight` >= 0. |
+| `placement.side` | Only with `start.mode: RandomValid`; `Prefer` needs one or two sides, none cancelling, and no `pick`; `SetRandom` takes no `sides`; `weight` >= 0. |
 | `placements` | The glyph must be listed in `glyphs` or `baseGlyphs` (in a recipe's own arrangement: be one of its components) and have only one rule; `Prefer` needs one or two sides, none cancelling, and no `offset` or `pick`; `SetRandom` takes no `sides` or `offset`; `Fixed` takes no `sides`, `pick` or `scope`; `weight` >= 0. |
-| `combination` | `maxRetriesPerRecipe` >= 1; scale numerators/denominators positive; rotation angles 0/90/180/270. |
+| `combination` | `retries` >= 1; scale numerators/denominators positive; rotation angles 0/90/180/270. |
 | `render.joins` | Known styles; `miterLimit` >= 1; `size` >= 0; `straightenInnerDegrees` and `straightenOuterDegrees` 0..90; `straightenLength` >= 0; each `byAngle` rule has an angle range within 0..180 with `max` >= `min`, and sets `outer` and/or `inner`. |
 | `usageSizeBias` | `strength` is finite and >= 0. |
+| `run`, `render.canvas`, `render.transform`, `quality` | `run.outputDirectory` not empty; `run.maxParallelism` 0 or more; `run.contactSheet.columns` >= 1; `canvas.sizePx` >= 16, `marginPx` >= 0 and leaving room; `rotateDegrees` finite, `rotateOptions` with a positive weight somewhere; `similarity.max` and `compositeMax` 0-1; `quality.retries` >= 1. |
 
 Generation-time errors you may meet:
 
-- *"Shape 'x' (instance i/n) for glyph 'g' could not be placed"*: the message says which kind of failure dominated. Loosen `arrangement` (crossing, spacing), the chain rules, or raise `placement.maxPlacementAttempts` (or set `placement.redoShape` / `placement.redrawGlyph` to retry with fresh draws).
-- *"Could not generate a sufficiently distinct, non-trivial glyph"*: raise `maxRegenerationAttempts`, raise `maxSimilarity`, or widen the `count` / `chain.length` ranges.
-- *"Could not satisfy combination recipe"*: allow scale/rotation, raise `maxRetriesPerRecipe`, relax `combination.arrangement` (or that recipe's), or use a larger grid.
+- *"Shape 'x' (instance i/n) for glyph 'g' could not be placed"*: the message says which kind of failure dominated. Loosen `arrangement` (crossing, spacing), the chain rules, or raise `placement.retries.placement` (`retries.shape` and `retries.glyph` retry with fresh draws; all three default to 100).
+- *"Could not generate a sufficiently distinct, non-trivial glyph"*: raise `quality.retries`, raise `quality.similarity.max`, or widen the `count` / `chain.length` ranges.
+- *"Could not satisfy combination recipe"*: allow scale/rotation, raise `combination.retries`, relax `combination.arrangement` (or that recipe's), or use a larger grid.
 - *"Circular combination dependency"*: two recipes depend on each other's components.
 
 ---
@@ -1111,7 +1238,7 @@ Generation-time errors you may meet:
 **Strokes that branch from each other.**
 
 ```json
-"placement": { "mode": "RandomValid", "startOnExistingNode": true, "maxPlacementAttempts": 30 },
+"placement": { "start": { "onExistingNode": {} }, "retries": { "placement": 30 } },
 "arrangement": { "crossing": { "mode": "Anywhere" } }
 ```
 
@@ -1141,9 +1268,9 @@ Interactions to keep in mind:
 
 - Spacing applies to composites too, through `combination.arrangement`; it is separate from the spacing on shapes.
 - Spacing is order-dependent: a shape's rules are checked against the shapes before it, so give the shape that should "stay close" the `maxNodeDistance`.
-- `startOnExistingNode` and `minNodeDistance > 0` cannot coexist on the same shape, unless `arrangement.spacing.ignoreStartNode` is true (it leaves the shared start node out of the check), or every shape in `placement.startOnShapes` is left out of the spacing by `onlyShapes` / `excludeShapes`.
-- `usageSizeBias` and `quality.maxSimilarity` both influence how varied plain glyphs are; strong low-size bias plus a strict similarity limit can make distinct glyphs harder to find.
-- The rotation settings live under `combination` but also feed placement of Literal shapes unless the shape lists its own `rotations`; see section 6.
+- `start.onExistingNode` and `minNodeDistance > 0` cannot coexist on the same shape, unless `onExistingNode.ignoreStartNode` is true (it leaves the shared start node out of the check), or every shape in `placement.startOnShapes` is left out of the spacing by `onlyShapes` / `excludeShapes`.
+- `usageSizeBias` and `quality.similarity.max` both influence how varied plain glyphs are; strong low-size bias plus a strict similarity limit can make distinct glyphs harder to find.
+- The rotation settings live under `combination` but also feed placement of Literal shapes unless the shape lists its own `rotation.angles`; see section 6.
 - With `crossing.mode: None` on every shape, no stroke can cross another, which makes dense glyphs on small grids hard to place. Edges may still meet at shared nodes.
 - A bias with many `candidates` on a tight grid multiplies the placement work per shape.
 
@@ -1155,13 +1282,11 @@ A valid config using the current schema. Everything not shown takes its default.
 
 ```json
 {
-  "rootSeed": 20260927,
-  "outputDirectory": "./output",
+  "run": { "seed": 20260927, "outputDirectory": "./output" },
   "languages": [
     {
       "name": "Example",
       "grid": { "width": 15, "height": 15 },
-      "canvas": { "sizePx": 512, "marginPx": 32 },
 
       "baseGlyphs": [ "shield_base" ],
       "glyphs": [ "warrior", "weapon", "protect", "fortress" ],
@@ -1171,7 +1296,7 @@ A valid config using the current schema. Everything not shown takes its default.
           "id": "bar",
           "kind": "Literal",
           "nodes": [ [0, 0], [3, 0] ],
-          "placement": { "mode": "CenterAnchor" },
+          "placement": { "start": { "mode": "CenterAnchor" } },
           "arrangement": { "crossing": { "mode": "None" } }
         },
         {
@@ -1192,7 +1317,7 @@ A valid config using the current schema. Everything not shown takes its default.
               { "mode": "AllNodes", "maxDistance": 7 }
             ]
           },
-          "placement": { "mode": "RandomValid", "maxPlacementAttempts": 30, "startOnExistingNode": true },
+          "placement": { "start": { "onExistingNode": {} }, "retries": { "placement": 30 } },
           "arrangement": {
             "crossing": { "mode": "Anywhere" },
             "spacing": { "enabled": true, "minCenterDistance": 1, "maxNodeDistance": 4, "maxDistanceMode": "NearestShape" },
@@ -1202,9 +1327,9 @@ A valid config using the current schema. Everything not shown takes its default.
         }
       ],
 
-      "usageSizeBias": { "strength": 0.5, "affectSubSymbolCount": true, "affectSubSymbolLength": true },
+      "usageSizeBias": { "strength": 0.5, "affectCount": true, "affectLength": true },
 
-      "quality": { "maxSimilarity": 0.7, "rejectStraightLineOnly": true, "maxRegenerationAttempts": 10 },
+      "quality": { "similarity": { "max": 0.7 }, "rejectStraightLineOnly": true, "retries": 100 },
 
       "combination": {
         "recipes": { "fortress": [ "warrior", "shield_base" ] },
@@ -1215,14 +1340,13 @@ A valid config using the current schema. Everything not shown takes its default.
         ],
         "allowRotate": true,
         "rotation": { "allowed": [ 0, 90, 180, 270 ], "weight": 1.0 },
-        "maxRetriesPerRecipe": 5,
+        "retries": 100,
         "arrangement": {
           "bias": { "modes": [ "Squarest" ], "includeScaleAndRotation": false }
         }
       },
 
       "curve": {
-        "mode": "Derived",
         "contextMode": "CurvedMiniStraightCombined",
         "proximityGuard": { "enabled": true, "minEdgeLength": 2 }
       },
@@ -1231,8 +1355,8 @@ A valid config using the current schema. Everything not shown takes its default.
         "framing": "Language",
         "foreground": "#FFFFFFFF",
         "background": "#00000000",
-        "debugShowNodes": false,
-        "debugColorComponents": false,
+        "canvas": { "sizePx": 512, "marginPx": 32 },
+        "debug": { "showNodes": false, "colorComponents": false },
         "joins": {
           "corner":   { "outer": { "style": "Miter", "miterLimit": 4 }, "inner": { "style": "Overlap" } },
           "junction": { "outer": { "style": "Round" }, "inner": { "style": "Round", "size": 0.5 } }
@@ -1247,51 +1371,3 @@ A valid config using the current schema. Everything not shown takes its default.
   ]
 }
 ```
-
----
-
-## 17. Migrating from the earlier layout
-
-Before the shapes layout, a language had language-wide options (`subSymbolCount`, `subSymbolLength`, `connectionRules`, `allowSymbolsToCross`, `guaranteedMotifs`, `subSymbolPlacement`, `subSymbolSpacing`, ...) and `combination.allowComponentsToCross` / `combination.bias`. This is a **clean break**: the loader rejects old keys with a message naming the new location. To convert a config:
-
-```
-GlyphGen.Cli --migrate old.json new.json      # or omit new.json to print to the console
-```
-
-The migrated config **generates the same glyphs** for the same seed. To make that possible the tool writes a `seedLabel` on each shape (the name of its old random stream); you can delete those once you no longer need identical output (the glyphs will change). Where the old layout did something implicitly, the tool makes it explicit.
-
-| Old | New |
-|---|---|
-| `subSymbolCount` | `count` on the free-form shape (the tool names it `strokes`) |
-| `subSymbolLength` | `chain.length` |
-| `connectionRules`, `connectionWeighting`, `allowNodeRevisit`, `allowEdgeRevisit`, `allowClosedLoop` | the same names under `chain`, **copied onto every generative shape** (guaranteed generative motifs used to inherit the revisit flags and weighting silently) |
-| `guaranteedMotifs[]` | entries of `shapes` without a `count`. `type` becomes `kind`; `literal.nodes` becomes `nodes`; `generative.lengthRange` becomes `chain.length`; the rest moves under `chain` |
-| `subSymbolPlacement`, a motif's `placement` | `placement` on the shape |
-| `allowSymbolsToCross` (or `arrangement.allowCrossing`) | `arrangement.crossing` on every shape. Note it is now per shape and needs both shapes' permission |
-| `subSymbolSpacing` (distances, `maxDistanceMode`, `enabled`) | `arrangement.spacing` on every shape, **and** `combination.arrangement.spacing` (it used to apply to components too) |
-| `subSymbolSpacing.selfSpacing` | `chain.selfSpacing` on every generative shape; **dropped if `subSymbolSpacing.enabled` was false** (it was inactive then) |
-| `combination.allowComponentsToCross` | `combination.arrangement.crossing` |
-| `combination.bias` | `combination.arrangement.bias` |
-| `combination.recipes` lists | unchanged (the list form still loads) |
-| `usageSizeBias` | unchanged; now affects shapes that have a `count` |
-| `quality`, `curve`, `render`, `canvas`, `grid`, `combination.allowScale` etc. | unchanged |
-
-Things that differ from the old behaviour once you edit a migrated config: crossing is decided per shape (both must allow it); spacing is the placing shape's own; a guaranteed motif's chain rules are its own (changing the language no longer changes it).
-
-### Checking that nothing changed
-
-`GlyphGen.SelfCheck` migrates a set of old-format configs (`LegacyConfigs/`) and compares the generated glyphs with snapshots recorded from the **original** build (`Baselines/`), then checks the new behaviours (per-shape crossing, best-of-N bias, recipe overrides, loader errors):
-
-```
-dotnet run --project GlyphGen.SelfCheck
-```
-
-It exits non-zero on any difference. Re-record the baselines on purpose with `--record` (only after deciding a generation change is intended).
-
-### The schema
-
-`config.schema.json` is generated from the config classes: regenerate it after changing an option with `GlyphGen.Cli --schema config.schema.json` (hover text comes from the XML documentation file, now produced by the Core project).
-
-### Curve and loop options moved onto the rules
-
-`curve.mode`, `curve.straightLineBias`, `curve.tension`, `curve.explicitJitterDegrees` and `chain.closedLoopWeight` no longer exist as language/chain options. The loader converts them automatically (the file on disk is not touched): every connection rule without its own `curve` block gets the old language settings, with `chanceToBeCurved = 100 - the middle of straightLineBias`, they are also copied to `curve.edge`, and `closedLoopWeight` *w* becomes `backToStartChance = 100·w / (w + rule weight)` on each rule. The loop chance is an approximation, since the old weight competed with the rules' moves while the new chance is rolled once a rule is picked, so loops (and everything generated after them) can differ for the same seed. Re-save your config with the new options when convenient.

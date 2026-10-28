@@ -26,8 +26,9 @@ public sealed class LanguageDefinition
 {
     /// <summary>The language's name. Its random seed is derived from it, so renaming a language changes every glyph.</summary>
     public string Name { get; set; } = "";
-    /// <summary>Size of each rendered glyph image and its margin.</summary>
-    public CanvasConfig Canvas { get; set; } = new();
+    /// <summary>Shortcut to render.canvas (the image size and margin).</summary>
+    [JsonIgnore]
+    public CanvasConfig Canvas { get => Render.Canvas; set => Render.Canvas = value; }
 
     /// <summary>The lattice this language's glyphs are drawn on. Required per language.</summary>
     public GridConfig Grid { get; set; } = new();
@@ -75,19 +76,42 @@ public sealed class GridConfig
     public int Height { get; set; } = 25;
 }
 
-/// <summary>Top-level config for one full run — deserialized directly from the JSON file.</summary>
-public sealed class RootConfig
+/// <summary>The run itself: the seed, where the files go, how many threads to use and the contact sheet layout.</summary>
+public sealed class RunConfig
 {
     /// <summary>Sole source of true randomness for the entire run; everything else is derived
     /// deterministically from this via SeedTree.</summary>
-    public ulong RootSeed { get; set; }
+    public ulong Seed { get; set; }
 
+    /// <summary>Folder the images are written to (one sub-folder per language). Default "./output".</summary>
     public string OutputDirectory { get; set; } = "./output";
 
-    /// <summary>How many threads generation may use. 1 (default) = one thread. 0 = every core. The result is identical whatever the
+    /// <summary>How many threads generation and rendering may use. 1 (default) = one thread. 0 = every core. The result is identical whatever the
     /// number: threads only try quality retries of a plain/base glyph ahead of time, and the first attempt that passes in attempt
     /// order is the one kept.</summary>
     public int MaxParallelism { get; set; } = 1;
+
+    /// <summary>The overview sheet(s) the CLI writes next to the glyph images, for every language.</summary>
+    public ContactSheetConfig ContactSheet { get; set; } = new();
+}
+
+/// <summary>Top-level config for one full run — deserialized directly from the JSON file.</summary>
+public sealed class RootConfig
+{
+    /// <summary>Seed, output folder, thread count and contact sheet of the run.</summary>
+    public RunConfig Run { get; set; } = new();
+
+    /// <summary>Shortcut to run.seed.</summary>
+    [JsonIgnore]
+    public ulong RootSeed { get => Run.Seed; set => Run.Seed = value; }
+
+    /// <summary>Shortcut to run.outputDirectory.</summary>
+    [JsonIgnore]
+    public string OutputDirectory { get => Run.OutputDirectory; set => Run.OutputDirectory = value; }
+
+    /// <summary>Shortcut to run.maxParallelism.</summary>
+    [JsonIgnore]
+    public int MaxParallelism { get => Run.MaxParallelism; set => Run.MaxParallelism = value; }
 
     public List<LanguageDefinition> Languages { get; set; } = new();
 

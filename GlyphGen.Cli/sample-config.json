@@ -1,16 +1,15 @@
 {
-  "rootSeed": 20260928,
-  "outputDirectory": "./output",
+  "$schema": "./config.schema.json",
+  "run": {
+    "seed": 20260928,
+    "outputDirectory": "./output"
+  },
   "languages": [
     {
       "name": "Warrior",
       "grid": {
         "width": 15,
         "height": 15
-      },
-      "canvas": {
-        "sizePx": 512,
-        "marginPx": 32
       },
       "glyphs": [
         "warrior",
@@ -93,13 +92,20 @@
             "allowEdgeRevisit": true
           },
           "placement": {
-            "mode": "RandomValid",
-            "fixedOrigin": null,
-            "allowRotationOnPlace": true,
-            "maxPlacementAttempts": 20
+            "start": {
+              "mode": "RandomValid"
+            },
+            "rotation": {
+              "allowed": true
+            },
+            "retries": {
+              "placement": 20
+            }
           },
           "arrangement": {
-            "crossing": { "mode": "Anywhere" }
+            "crossing": {
+              "mode": "Anywhere"
+            }
           }
         }
       ],
@@ -132,16 +138,16 @@
         }
       },
       "quality": {
-        "maxSimilarity": 0.7,
         "rejectStraightLineOnly": true,
-        "maxRegenerationAttempts": 10
+        "similarity": {
+          "max": 0.7
+        },
+        "retries": 10
       },
       "render": {
         "framing": "Language",
         "foreground": "#FFFFFFFF",
         "background": "#00000000",
-        "debugShowNodes": false,
-        "debugColorComponents": false,
         "typeface": {
           "kind": "Rectangular",
           "perGlyphJitter": 0.0,
@@ -170,6 +176,14 @@
               "size": 0.5
             }
           }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": false,
+          "colorComponents": false
         }
       },
       "combination": {
@@ -217,7 +231,7 @@
           ],
           "weight": 1.0
         },
-        "maxRetriesPerRecipe": 5
+        "retries": 5
       }
     },
     {
@@ -225,10 +239,6 @@
       "grid": {
         "width": 15,
         "height": 15
-      },
-      "canvas": {
-        "sizePx": 512,
-        "marginPx": 32
       },
       "baseGlyphs": [
         "you_base",
@@ -267,14 +277,14 @@
           ],
           "weight": 1.0
         },
-        "maxRetriesPerRecipe": 5,
         "arrangement": {
           "spacing": {
             "enabled": true,
             "minCenterDistance": 1,
             "minNodeDistance": 0.1
           }
-        }
+        },
+        "retries": 5
       },
       "shapes": [
         {
@@ -353,10 +363,15 @@
             "allowEdgeRevisit": false
           },
           "placement": {
-            "mode": "RandomValid",
-            "fixedOrigin": null,
-            "allowRotationOnPlace": true,
-            "maxPlacementAttempts": 20
+            "start": {
+              "mode": "RandomValid"
+            },
+            "rotation": {
+              "allowed": true
+            },
+            "retries": {
+              "placement": 20
+            }
           },
           "arrangement": {
             "spacing": {
@@ -396,16 +411,16 @@
         }
       },
       "quality": {
-        "maxSimilarity": 0.7,
         "rejectStraightLineOnly": true,
-        "maxRegenerationAttempts": 10
+        "similarity": {
+          "max": 0.7
+        },
+        "retries": 10
       },
       "render": {
         "framing": "Language",
         "foreground": "#FFFFFFFF",
         "background": "#00000000",
-        "debugShowNodes": false,
-        "debugColorComponents": false,
         "typeface": {
           "kind": "Rectangular",
           "perGlyphJitter": 0.0,
@@ -434,9 +449,16 @@
               "size": 0.5
             }
           }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": false,
+          "colorComponents": false
         }
       }
     }
-  ],
-  "$schema": "./config.schema.json"
+  ]
 }

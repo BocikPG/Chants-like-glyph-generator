@@ -144,14 +144,13 @@ public sealed class CopyConfig
     /// source's position.</summary>
     public bool MoveGlyphToFit { get; set; } = true;
 
-    /// <summary>First retry: when no position works for the copy, redraw the base shape (the first shape in this chain of
-    /// copies that is not itself a copy) with fresh random numbers and try again, up to this many times. Everything placed
-    /// after the base is rebuilt around the new draw. 0 turns it off. Only helps when the base is generated, not a literal.</summary>
-    public int RegenerateBase { get; set; } = 3;
+    /// <summary>How often a copy that fits nowhere is retried: first the base shape is redrawn, then the whole glyph.</summary>
+    public CopyRetries Retries { get; set; } = new();
 
-    /// <summary>Second retry, after the base redraws are spent: redraw the whole glyph from a fresh seed, up to this many
-    /// times, before giving up with the error. 0 turns it off. Neither retry applies to copies added by a derivation step.</summary>
-    public int RedrawGlyph { get; set; } = 3;
+    /// <summary>Shortcut to copyOf.retries.base.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public int RegenerateBase { get => Retries.Base; set => Retries.Base = value; }
+    /// <summary>Shortcut to copyOf.retries.glyph.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public int RedrawGlyph { get => Retries.Glyph; set => Retries.Glyph = value; }
 
     /// <summary>The copy's curves are the origin's curves, flipped with it, so the two look like mirror
     /// images. Turn off to give the copy curves of its own. (Copies added by a derivation step always draw
@@ -168,4 +167,17 @@ public sealed class CopyConfig
     /// copy against every OTHER node already in the glyph instead (the original's own nodes do not count, so the copy
     /// may sit as close to it as arrangement allows). Adjacent rules still compare with the original. Default false.</summary>
     public bool SelfSpacingIgnoresOriginal { get; set; }
+}
+
+/// <summary>copyOf.retries: what is tried when no position works for a copy.</summary>
+public sealed class CopyRetries
+{
+    /// <summary>First retry: when no position works for the copy, redraw the base shape (the first shape in this chain of
+    /// copies that is not itself a copy) with fresh random numbers and try again, up to this many times. Everything placed
+    /// after the base is rebuilt around the new draw. 0 turns it off. Only helps when the base is generated, not a literal. Default 100.</summary>
+    public int Base { get; set; } = 100;
+
+    /// <summary>Second retry, after the base redraws are spent: redraw the whole glyph from a fresh seed, up to this many
+    /// times, before giving up with the error. 0 turns it off. Neither retry applies to copies added by a derivation step. Default 100.</summary>
+    public int Glyph { get; set; } = 100;
 }

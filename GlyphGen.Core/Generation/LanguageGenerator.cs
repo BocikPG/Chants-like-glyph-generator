@@ -16,7 +16,7 @@ namespace GlyphGen.Core.Generation;
 /// against every plain/base glyph accepted before it, and regenerated with a fresh seed if it is
 /// too similar to one of them or is just a single straight line. Composites contain their
 /// components by construction, so they are never compared with plain or base glyphs; they are
-/// only compared with each other, and only when quality.compositeMaxSimilarity is below 1.
+/// only compared with each other, and only when quality.similarity.compositeMax is below 1.
 /// Doing this per glyph, in generation order, means all standalone glyphs are finalized BEFORE
 /// any composite is built - so a standalone glyph never changes after a composite has already
 /// used it (which would leave that composite stale).
@@ -228,7 +228,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
         double maxSimilarity = isComposite ? quality.CompositeMaxSimilarity : quality.MaxSimilarity;
         bool rejectStraightLine = !isComposite && quality.RejectStraightLineOnly;
 
-        int maxAttempts = Math.Max(1, quality.MaxRegenerationAttempts);
+        int maxAttempts = Math.Max(1, quality.Retries);
 
         var rejections = new List<string>();
 
@@ -318,6 +318,8 @@ public sealed class LanguageGenerator : ILanguageGenerator
             {
                 if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g))
                     return $"'{key}' as a single straight line";
+                if (PartnerContact.FirstUntouched(language, key, g, generated) is { } untouchedPartner)
+                    return $"'{key}' not touching its partner '{untouchedPartner}'";
                 string? source = derived ? language.Derivations[key].From : null;
                 var others = generated.Where(kv => kv.Key != key && kv.Key != source && !language.Combination.Recipes.ContainsKey(kv.Key)).Select(kv => kv.Value);
                 if (GlyphQualityChecker.FindTooSimilar(g, others, quality.MaxSimilarity, quality) is { } sim)
@@ -390,6 +392,13 @@ public sealed class LanguageGenerator : ILanguageGenerator
                 var old = before[k];
                 int i = accepted.IndexOf(old); if (i >= 0) accepted[i] = v;
                 i = acceptedComposites.IndexOf(old); if (i >= 0) acceptedComposites[i] = v;
+            }
+
+            // A glyph drawn against partners has to touch every one of them (combination.partners / partnerContact).
+            if (!isComposite && PartnerContact.FirstUntouched(language, glyphDef.Name, candidate, generated) is { } untouched)
+            {
+                rejections.Add($"it does not touch its partner '{untouched}'");
+                continue;
             }
 
             bool trivialLine = rejectStraightLine && GlyphQualityChecker.IsTrivialStraightLine(candidate);
@@ -471,18 +480,21 @@ public sealed class LanguageGenerator : ILanguageGenerator
         string reasons = string.Join("; ", rejections.Take(shown).Select((r, i) => $"attempt {i + 1}: {r}"))
             + (rejections.Count > shown ? $"; ... and {rejections.Count - shown} more" : "");
 
+        bool mostlyUntouched = rejections.Count(r => r.StartsWith("it does not touch its partner")) * 2 >= rejections.Count && rejections.Count > 0;
         bool mostlySimilar = rejections.Count(r => r.StartsWith("too similar")) * 2 >= rejections.Count;
         bool derivedGlyph = language.Derivations.TryGetValue(glyphDef.Name, out var derivedFrom);
         bool similarToSource = derivedGlyph && rejections.Any(r => r.Contains($"'{derivedFrom!.From}'"));
-        string moreAttempts = maxAttempts <= 3 ? $" quality.maxRegenerationAttempts is only {maxAttempts}: raising it gives the generator more tries." : "";
-        string hint = isComposite
-            ? "Try raising quality.compositeMaxSimilarity, or giving the recipes different components or more placement freedom (scale/rotation, a larger grid)." + moreAttempts
+        string moreAttempts = maxAttempts <= 3 ? $" quality.retries is only {maxAttempts}: raising it gives the generator more tries." : "";
+        string hint = mostlyUntouched
+            ? "The glyph is drawn against partner glyphs (combination.partners) and keeps missing one: let a shape start on its nodes (placement.start.onPartnerNode), give the shapes more freedom to reach it, or set combination.partnerContact to false." + moreAttempts
+            : isComposite
+            ? "Try raising quality.similarity.compositeMax, or giving the recipes different components or more placement freedom (scale/rotation, a larger grid)." + moreAttempts
             : similarToSource
                 ? $"A derived glyph must differ from its source: raise derivations['{glyphDef.Name}'].maxSimilarityToSource, or make its steps change more (delete more, add a shape, mirror or rotate)." + moreAttempts
             : derivedGlyph && mostlySimilar
-                ? "Derived glyphs are held to quality.maxSimilarity against every glyph except their source: raise it, or make the steps change the source more." + moreAttempts
+                ? "Derived glyphs are held to quality.similarity.max against every glyph except their source: raise it, or make the steps change the source more." + moreAttempts
             : mostlySimilar
-                ? "Try raising quality.maxSimilarity, widening the shapes' chain.length or count ranges, adding connectionRules or shapes, or using a larger grid." + moreAttempts
+                ? "Try raising quality.similarity.max, widening the shapes' chain.length or count ranges, adding connectionRules or shapes, or using a larger grid." + moreAttempts
                 : "Try longer chains (chain.length) or a higher count on the shapes, or set quality.rejectStraightLineOnly to false." + moreAttempts;
 
         string what = isComposite ? "a composite sufficiently distinct from the other composites" : "a sufficiently distinct, non-trivial glyph";

@@ -136,9 +136,10 @@ public sealed class SpacingConfig
 
     public ProximityMode MaxDistanceMode { get; set; } = ProximityMode.NearestShape;
 
-    /// <summary>For a shape with placement.startOnExistingNode: leave the node it starts on out of the spacing checks
-    /// (centroid, minimum and maximum node distance), since that node is shared with an existing shape and so sits at distance 0
-    /// from it. Every other node of the shape is still measured. Default false.</summary>
+    /// <summary>Set by the loader from placement.start.onExistingNode.ignoreStartNode: the node the shape starts on is left out of the spacing
+    /// checks (centroid, minimum and maximum node distance), since it is shared with an existing shape and so sits at distance 0 from it.
+    /// Not a json option of its own.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public bool IgnoreStartNode { get; set; } = false;
 
     /// <summary>Returns a human-readable message per problem found (empty = valid). Checked

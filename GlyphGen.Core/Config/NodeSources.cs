@@ -1,6 +1,6 @@
 namespace GlyphGen.Core.Config;
 
-/// <summary>Which glyphs a glyph's shapes take nodes from (placement.nodes: nodesOfGlyph): they have to be drawn before it.</summary>
+/// <summary>Which glyphs a glyph is drawn after: the ones its shapes take nodes from (placement.nodes: nodesOfGlyph) and its partners (combination.partners).</summary>
 public static class NodeSources
 {
     /// <summary>The glyphs whose nodes the shapes drawn in <paramref name="glyph"/> read (never the glyph itself).</summary>
@@ -12,6 +12,11 @@ public static class NodeSources
         IEnumerable<ShapeDefinition> shapes = language.Shapes.Where(s => s.AppliesTo(glyph));
         if (language.Derivations.TryGetValue(glyph, out var derivation))
             shapes = shapes.Concat(language.Shapes.Where(s => derivation.Steps.Any(st => st.Shapes?.Contains(s.Id) == true)));
+
+        // A glyph drawn against partners comes after them (and is drawn again when one of them is).
+        if (language.Combination.Partners.TryGetValue(glyph, out var partners))
+            foreach (var partner in partners)
+                if (partner != glyph && !result.Contains(partner)) result.Add(partner);
 
         foreach (var shape in shapes.Distinct())
         {
