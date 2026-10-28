@@ -1,0 +1,469 @@
+{
+  "Scribe": [
+    {
+      "Name": "ring_base",
+      "Chains": [
+        {
+          "Nodes": [
+            "7,7",
+            "10,7",
+            "10,4"
+          ],
+          "Edges": [
+            "7,7-10,7",
+            "10,7-10,4",
+            "10,4-7,7"
+          ],
+          "IsClosedLoop": true,
+          "MotifId": "spine"
+        },
+        {
+          "Nodes": [
+            "2,2",
+            "3,3"
+          ],
+          "Edges": [
+            "2,2-3,3"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "dot"
+        },
+        {
+          "Nodes": [
+            "7,7",
+            "5,5",
+            "2,5",
+            "0,3",
+            "0,6",
+            "1,7"
+          ],
+          "Edges": [
+            "7,7-5,5",
+            "5,5-2,5",
+            "2,5-0,3",
+            "0,3-0,6",
+            "0,6-1,7"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "tick_base",
+      "Chains": [
+        {
+          "Nodes": [
+            "7,7",
+            "7,6",
+            "8,6"
+          ],
+          "Edges": [
+            "7,7-7,6",
+            "7,6-8,6"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "spine"
+        },
+        {
+          "Nodes": [
+            "2,2",
+            "3,3"
+          ],
+          "Edges": [
+            "2,2-3,3"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "dot"
+        },
+        {
+          "Nodes": [
+            "7,6",
+            "4,6",
+            "4,7",
+            "4,9"
+          ],
+          "Edges": [
+            "7,6-4,6",
+            "4,6-4,7",
+            "4,7-4,9"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "sun",
+      "Chains": [
+        {
+          "Nodes": [
+            "7,7",
+            "7,5",
+            "5,3"
+          ],
+          "Edges": [
+            "7,7-7,5",
+            "7,5-5,3",
+            "5,3-7,7"
+          ],
+          "IsClosedLoop": true,
+          "MotifId": "spine"
+        },
+        {
+          "Nodes": [
+            "2,2",
+            "3,3"
+          ],
+          "Edges": [
+            "2,2-3,3"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "dot"
+        },
+        {
+          "Nodes": [
+            "5,3",
+            "4,3",
+            "5,4",
+            "3,6"
+          ],
+          "Edges": [
+            "5,3-4,3",
+            "4,3-5,4",
+            "5,4-3,6"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "moon",
+      "Chains": [
+        {
+          "Nodes": [
+            "7,7",
+            "8,8",
+            "11,5",
+            "12,4"
+          ],
+          "Edges": [
+            "7,7-8,8",
+            "8,8-11,5",
+            "11,5-12,4"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "spine"
+        },
+        {
+          "Nodes": [
+            "2,2",
+            "3,3"
+          ],
+          "Edges": [
+            "2,2-3,3"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "dot"
+        },
+        {
+          "Nodes": [
+            "3,3",
+            "4,4",
+            "0,4"
+          ],
+          "Edges": [
+            "3,3-4,4",
+            "4,4-0,4",
+            "0,4-3,3"
+          ],
+          "IsClosedLoop": true,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "8,8",
+            "9,8",
+            "9,11",
+            "10,11",
+            "14,11",
+            "14,14"
+          ],
+          "Edges": [
+            "8,8-9,8",
+            "9,8-9,11",
+            "9,11-10,11",
+            "10,11-14,11",
+            "14,11-14,14"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "star",
+      "Chains": [
+        {
+          "Nodes": [
+            "7,7",
+            "6,7",
+            "6,9"
+          ],
+          "Edges": [
+            "7,7-6,7",
+            "6,7-6,9"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "spine"
+        },
+        {
+          "Nodes": [
+            "2,2",
+            "3,3"
+          ],
+          "Edges": [
+            "2,2-3,3"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": "dot"
+        },
+        {
+          "Nodes": [
+            "3,3",
+            "3,5",
+            "4,6",
+            "4,2",
+            "2,2"
+          ],
+          "Edges": [
+            "3,3-3,5",
+            "3,5-4,6",
+            "4,6-4,2",
+            "4,2-2,2"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "eclipse",
+      "Chains": [],
+      "Components": [
+        {
+          "SourceGlyphName": "sun",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "7,7",
+                "7,5",
+                "5,3"
+              ],
+              "Edges": [
+                "7,7-7,5",
+                "7,5-5,3",
+                "5,3-7,7"
+              ],
+              "IsClosedLoop": true,
+              "MotifId": "spine"
+            },
+            {
+              "Nodes": [
+                "2,2",
+                "3,3"
+              ],
+              "Edges": [
+                "2,2-3,3"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": "dot"
+            },
+            {
+              "Nodes": [
+                "5,3",
+                "4,3",
+                "5,4",
+                "3,6"
+              ],
+              "Edges": [
+                "5,3-4,3",
+                "4,3-5,4",
+                "5,4-3,6"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        },
+        {
+          "SourceGlyphName": "ring_base",
+          "T": "3,7",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "10,14",
+                "13,14",
+                "13,11"
+              ],
+              "Edges": [
+                "10,14-13,14",
+                "13,14-13,11",
+                "13,11-10,14"
+              ],
+              "IsClosedLoop": true,
+              "MotifId": "spine"
+            },
+            {
+              "Nodes": [
+                "5,9",
+                "6,10"
+              ],
+              "Edges": [
+                "5,9-6,10"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": "dot"
+            },
+            {
+              "Nodes": [
+                "10,14",
+                "8,12",
+                "5,12",
+                "3,10",
+                "3,13",
+                "4,14"
+              ],
+              "Edges": [
+                "10,14-8,12",
+                "8,12-5,12",
+                "5,12-3,10",
+                "3,10-3,13",
+                "3,13-4,14"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "comet",
+      "Chains": [],
+      "Components": [
+        {
+          "SourceGlyphName": "star",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "7,7",
+                "6,7",
+                "6,9"
+              ],
+              "Edges": [
+                "7,7-6,7",
+                "6,7-6,9"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": "spine"
+            },
+            {
+              "Nodes": [
+                "2,2",
+                "3,3"
+              ],
+              "Edges": [
+                "2,2-3,3"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": "dot"
+            },
+            {
+              "Nodes": [
+                "3,3",
+                "3,5",
+                "4,6",
+                "4,2",
+                "2,2"
+              ],
+              "Edges": [
+                "3,3-3,5",
+                "3,5-4,6",
+                "4,6-4,2",
+                "4,2-2,2"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        },
+        {
+          "SourceGlyphName": "tick_base",
+          "T": "-2,3",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "5,10",
+                "5,9",
+                "6,9"
+              ],
+              "Edges": [
+                "5,10-5,9",
+                "5,9-6,9"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": "spine"
+            },
+            {
+              "Nodes": [
+                "0,5",
+                "1,6"
+              ],
+              "Edges": [
+                "0,5-1,6"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": "dot"
+            },
+            {
+              "Nodes": [
+                "5,9",
+                "2,9",
+                "2,10",
+                "2,12"
+              ],
+              "Edges": [
+                "5,9-2,9",
+                "2,9-2,10",
+                "2,10-2,12"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

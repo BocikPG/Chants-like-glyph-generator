@@ -1,0 +1,669 @@
+{
+  "Warrior": [
+    {
+      "Name": "warrior",
+      "Chains": [
+        {
+          "Nodes": [
+            "7,12",
+            "7,14",
+            "3,14",
+            "5,12",
+            "7,10",
+            "12,10",
+            "12,9"
+          ],
+          "Edges": [
+            "7,12-7,14",
+            "7,14-3,14",
+            "3,14-5,12",
+            "5,12-7,10",
+            "7,10-12,10",
+            "12,10-12,9"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "weapon",
+      "Chains": [
+        {
+          "Nodes": [
+            "2,7",
+            "6,3",
+            "6,6",
+            "4,6",
+            "4,10",
+            "5,9",
+            "10,4"
+          ],
+          "Edges": [
+            "2,7-6,3",
+            "6,3-6,6",
+            "6,6-4,6",
+            "4,6-4,10",
+            "4,10-5,9",
+            "5,9-10,4"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "protect",
+      "Chains": [
+        {
+          "Nodes": [
+            "6,8",
+            "9,8",
+            "13,8",
+            "13,7",
+            "14,6",
+            "9,6",
+            "9,1",
+            "12,1"
+          ],
+          "Edges": [
+            "6,8-9,8",
+            "9,8-13,8",
+            "13,8-13,7",
+            "13,7-14,6",
+            "14,6-9,6",
+            "9,6-9,1",
+            "9,1-12,1"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "7,5",
+            "11,5",
+            "11,4",
+            "11,3",
+            "11,1",
+            "11,0"
+          ],
+          "Edges": [
+            "7,5-11,5",
+            "11,5-11,4",
+            "11,4-11,3",
+            "11,3-11,1",
+            "11,1-11,0"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "3,0",
+            "3,3",
+            "5,1",
+            "7,1",
+            "8,1",
+            "9,1",
+            "9,2",
+            "9,6"
+          ],
+          "Edges": [
+            "3,0-3,3",
+            "3,3-5,1",
+            "5,1-7,1",
+            "7,1-8,1",
+            "8,1-9,1",
+            "9,1-9,2",
+            "9,2-9,6"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "fortress",
+      "Chains": [],
+      "Components": [
+        {
+          "SourceGlyphName": "warrior",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "7,12",
+                "7,14",
+                "3,14",
+                "5,12",
+                "7,10",
+                "12,10",
+                "12,9"
+              ],
+              "Edges": [
+                "7,12-7,14",
+                "7,14-3,14",
+                "3,14-5,12",
+                "5,12-7,10",
+                "7,10-12,10",
+                "12,10-12,9"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        },
+        {
+          "SourceGlyphName": "protect",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "6,8",
+                "9,8",
+                "13,8",
+                "13,7",
+                "14,6",
+                "9,6",
+                "9,1",
+                "12,1"
+              ],
+              "Edges": [
+                "6,8-9,8",
+                "9,8-13,8",
+                "13,8-13,7",
+                "13,7-14,6",
+                "14,6-9,6",
+                "9,6-9,1",
+                "9,1-12,1"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "7,5",
+                "11,5",
+                "11,4",
+                "11,3",
+                "11,1",
+                "11,0"
+              ],
+              "Edges": [
+                "7,5-11,5",
+                "11,5-11,4",
+                "11,4-11,3",
+                "11,3-11,1",
+                "11,1-11,0"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "3,0",
+                "3,3",
+                "5,1",
+                "7,1",
+                "8,1",
+                "9,1",
+                "9,2",
+                "9,6"
+              ],
+              "Edges": [
+                "3,0-3,3",
+                "3,3-5,1",
+                "5,1-7,1",
+                "7,1-8,1",
+                "8,1-9,1",
+                "9,1-9,2",
+                "9,2-9,6"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Devotee": [
+    {
+      "Name": "you_base",
+      "Chains": [
+        {
+          "Nodes": [
+            "6,4",
+            "6,9",
+            "8,9",
+            "7,10",
+            "8,11"
+          ],
+          "Edges": [
+            "6,4-6,9",
+            "6,9-8,9",
+            "8,9-7,10",
+            "7,10-8,11"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "me_base",
+      "Chains": [
+        {
+          "Nodes": [
+            "2,11",
+            "2,13"
+          ],
+          "Edges": [
+            "2,11-2,13"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "3,8",
+            "3,11"
+          ],
+          "Edges": [
+            "3,8-3,11"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "1,9",
+            "1,5"
+          ],
+          "Edges": [
+            "1,9-1,5"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "devotee_base",
+      "Chains": [
+        {
+          "Nodes": [
+            "2,0",
+            "2,2",
+            "0,0"
+          ],
+          "Edges": [
+            "2,0-2,2",
+            "2,2-0,0"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "13,10",
+            "14,11",
+            "12,11",
+            "12,8"
+          ],
+          "Edges": [
+            "13,10-14,11",
+            "14,11-12,11",
+            "12,11-12,8"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "4,14",
+            "7,11"
+          ],
+          "Edges": [
+            "4,14-7,11"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "11,5",
+            "12,5",
+            "9,8"
+          ],
+          "Edges": [
+            "11,5-12,5",
+            "12,5-9,8"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "man",
+      "Chains": [
+        {
+          "Nodes": [
+            "11,9",
+            "6,14"
+          ],
+          "Edges": [
+            "11,9-6,14"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        },
+        {
+          "Nodes": [
+            "12,1",
+            "7,1",
+            "5,3",
+            "8,3",
+            "10,3",
+            "14,3",
+            "14,2"
+          ],
+          "Edges": [
+            "12,1-7,1",
+            "7,1-5,3",
+            "5,3-8,3",
+            "8,3-10,3",
+            "10,3-14,3",
+            "14,3-14,2"
+          ],
+          "IsClosedLoop": false,
+          "MotifId": null
+        }
+      ],
+      "Components": []
+    },
+    {
+      "Name": "you",
+      "Chains": [],
+      "Components": [
+        {
+          "SourceGlyphName": "man",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "11,9",
+                "6,14"
+              ],
+              "Edges": [
+                "11,9-6,14"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "12,1",
+                "7,1",
+                "5,3",
+                "8,3",
+                "10,3",
+                "14,3",
+                "14,2"
+              ],
+              "Edges": [
+                "12,1-7,1",
+                "7,1-5,3",
+                "5,3-8,3",
+                "8,3-10,3",
+                "10,3-14,3",
+                "14,3-14,2"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        },
+        {
+          "SourceGlyphName": "you_base",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "6,4",
+                "6,9",
+                "8,9",
+                "7,10",
+                "8,11"
+              ],
+              "Edges": [
+                "6,4-6,9",
+                "6,9-8,9",
+                "8,9-7,10",
+                "7,10-8,11"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "me",
+      "Chains": [],
+      "Components": [
+        {
+          "SourceGlyphName": "man",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "11,9",
+                "6,14"
+              ],
+              "Edges": [
+                "11,9-6,14"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "12,1",
+                "7,1",
+                "5,3",
+                "8,3",
+                "10,3",
+                "14,3",
+                "14,2"
+              ],
+              "Edges": [
+                "12,1-7,1",
+                "7,1-5,3",
+                "5,3-8,3",
+                "8,3-10,3",
+                "10,3-14,3",
+                "14,3-14,2"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        },
+        {
+          "SourceGlyphName": "me_base",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "2,11",
+                "2,13"
+              ],
+              "Edges": [
+                "2,11-2,13"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "3,8",
+                "3,11"
+              ],
+              "Edges": [
+                "3,8-3,11"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "1,9",
+                "1,5"
+              ],
+              "Edges": [
+                "1,9-1,5"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "devotee",
+      "Chains": [],
+      "Components": [
+        {
+          "SourceGlyphName": "man",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "11,9",
+                "6,14"
+              ],
+              "Edges": [
+                "11,9-6,14"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "12,1",
+                "7,1",
+                "5,3",
+                "8,3",
+                "10,3",
+                "14,3",
+                "14,2"
+              ],
+              "Edges": [
+                "12,1-7,1",
+                "7,1-5,3",
+                "5,3-8,3",
+                "8,3-10,3",
+                "10,3-14,3",
+                "14,3-14,2"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        },
+        {
+          "SourceGlyphName": "devotee_base",
+          "T": "0,0",
+          "RotationDegrees": 0,
+          "ScaleNumerator": 1,
+          "ScaleDenominator": 1,
+          "Chains": [
+            {
+              "Nodes": [
+                "2,0",
+                "2,2",
+                "0,0"
+              ],
+              "Edges": [
+                "2,0-2,2",
+                "2,2-0,0"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "13,10",
+                "14,11",
+                "12,11",
+                "12,8"
+              ],
+              "Edges": [
+                "13,10-14,11",
+                "14,11-12,11",
+                "12,11-12,8"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "4,14",
+                "7,11"
+              ],
+              "Edges": [
+                "4,14-7,11"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            },
+            {
+              "Nodes": [
+                "11,5",
+                "12,5",
+                "9,8"
+              ],
+              "Edges": [
+                "11,5-12,5",
+                "12,5-9,8"
+              ],
+              "IsClosedLoop": false,
+              "MotifId": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

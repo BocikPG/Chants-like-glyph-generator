@@ -1,0 +1,294 @@
+{
+  "name": "Anchorites",
+  "grid": {
+    "width": 7,
+    "height": 7
+  },
+  "glyphs": [
+    "Ascend",
+    "Come",
+    "Dead",
+    "Die",
+    "Disregard",
+    "Door",
+    "Doors",
+    "Exile",
+    "Fear",
+    "Go",
+    "Greetings",
+    "Help",
+    "Key",
+    "Make/Create",
+    "Man/Human",
+    "Me",
+    "My People",
+    "Not",
+    "Open",
+    "People",
+    "Peoples",
+    "Plural",
+    "Revive",
+    "Seek/Want",
+    "Stop",
+    "Stranger",
+    "Talk",
+    "Tower",
+    "Up",
+    "Us/We",
+    "Wait",
+    "You"
+  ],
+  "combination": {
+    "recipes": {
+      "Ascend": [
+        "Go",
+        "Up"
+      ],
+      "Come": [
+        "Go",
+        "Me"
+      ],
+      "Die": [
+        "Go",
+        "Dead"
+      ],
+      "Disregard": [
+        "Not",
+        "Seek/Want"
+      ],
+      "Doors": [
+        "Door",
+        "Plural"
+      ],
+      "My People": [
+        "People",
+        "Me"
+      ],
+      "Peoples": [
+        "People",
+        "Plural"
+      ],
+      "Revive": [
+        "Go",
+        "Not",
+        "Dead"
+      ],
+      "Stop": [
+        "Go",
+        "Not"
+      ],
+      "Stranger": [
+        "Me",
+        "Not"
+      ],
+      "Us/We": [
+        "Me",
+        "Plural"
+      ]
+    },
+    "arrangement": {
+      "crossing": {
+        "mode": "None"
+      },
+      "placements": [
+        {
+          "glyph": "*",
+          "mode": "Fixed",
+          "ifBlocked": "Translate"
+        }
+      ]
+    },
+    "retries": 50
+  },
+  "shapes": [
+    {
+      "id": "blockForTrue16Segments",
+      "isDrawn": false,
+      "count": {
+        "min": 4,
+        "max": 4
+      },
+      "chain": {
+        "length": {
+          "min": 2,
+          "max": 2
+        },
+        "allowNodeRevisit": true,
+        "connectionRules": [
+          {
+            "direction": "Circle",
+            "minLength": 0,
+            "maxLength": 0
+          }
+        ]
+      },
+      "arrangement": {
+        "crossing": {
+          "mode": "Strict"
+        }
+      },
+      "placement": {
+        "start": {
+          "mode": "Fixed",
+          "origin": [
+            [
+              2,
+              1
+            ],
+            [
+              4,
+              1
+            ],
+            [
+              2,
+              5
+            ],
+            [
+              4,
+              5
+            ]
+          ],
+          "discardUsed": true
+        },
+        "retries": {
+          "placement": 50
+        }
+      }
+    },
+    {
+      "id": "strokes",
+      "count": {
+        "min": 1,
+        "max": 2
+      },
+      "chain": {
+        "allowNodeRevisit": true,
+        "length": {
+          "min": 3,
+          "max": 12
+        },
+        "connectionRules": [
+          {
+            "direction": "Orthogonal",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          {
+            "direction": "Diagonal",
+            "minLength": 3,
+            "maxLength": 3
+          }
+        ],
+        "allowEdgeRevisit": true
+      },
+      "placement": {
+        "start": {
+          "mode": "Fixed",
+          "origin": [
+            [
+              0,
+              0
+            ],
+            [
+              3,
+              0
+            ],
+            [
+              6,
+              0
+            ],
+            [
+              0,
+              3
+            ],
+            [
+              3,
+              3
+            ],
+            [
+              6,
+              3
+            ],
+            [
+              0,
+              6
+            ],
+            [
+              3,
+              6
+            ],
+            [
+              6,
+              6
+            ]
+          ]
+        },
+        "retries": {
+          "placement": 50
+        }
+      }
+    }
+  ],
+  "usageSizeBias": {
+    "strength": 0.5,
+    "affectCount": true,
+    "affectLength": true
+  },
+  "quality": {
+    "rejectStraightLineOnly": false,
+    "similarity": {
+      "max": 0.9
+    }
+  },
+  "render": {
+    "framing": "Grid",
+    "foreground": "#FFFFFFFF",
+    "background": "#00000000",
+    "typeface": {
+      "kind": "Rectangular",
+      "perGlyphJitter": 0.0,
+      "rectangular": {
+        "width": {
+          "min": 0.045,
+          "max": 0.045
+        },
+        "cap": "Level",
+        "capLevel": "Both",
+        "capLevelFlat": "ExtendToNeighbours"
+      }
+    },
+    "joins": {
+      "junction": {
+        "inner": {
+          "style": "Level",
+          "axis": "Both"
+        },
+        "outer": {
+          "style": "Level",
+          "axis": "Both"
+        },
+        "trimCaps": true
+      },
+      "corner": {
+        "inner": {
+          "style": "Level",
+          "axis": "Both"
+        },
+        "outer": {
+          "style": "Level",
+          "axis": "Both"
+        }
+      }
+    },
+    "canvas": {
+      "sizePx": 512,
+      "marginPx": 32
+    },
+    "debug": {
+      "showNodes": true,
+      "colorComponents": true,
+      "colorParts": true,
+      "showUndrawn": true
+    }
+  }
+}

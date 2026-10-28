@@ -1,8 +1,9 @@
 // GlyphGen.Cli entry point.
 // Deliberately thin: all real logic lives in GlyphGen.Core (generation) and GlyphGen.Rendering
 // (PNG output), so both can be reused as referenced DLLs later without dragging along any
-// console-specific code.
+// console-specific code. Batch planning (configs, seeds, threads) is in BatchRunner / CliOptions.
 
+using GlyphGen.Cli;
 using GlyphGen.Core.Config;
 using GlyphGen.Core.Generation;
 using GlyphGen.Rendering;
@@ -23,64 +24,64 @@ if (args.Length >= 1 && args[0] == "--schema")
     return;
 }
 
-if (args.Length < 1)
+var options = CliOptions.Parse(args);
+if (options.Help)
 {
-    Console.WriteLine("Usage: GlyphGen.Cli <path-to-config.json>");
-    Console.WriteLine("       GlyphGen.Cli --schema [config.schema.json]");
+    Console.WriteLine(CliOptions.Usage);
+    return;
+}
+
+var configs = options.ResolveConfigs(Directory.GetCurrentDirectory(), out string? notice);
+if (options.Errors.Count > 0)
+{
+    foreach (var e in options.Errors) Console.WriteLine(e);
+    Console.WriteLine();
+    Console.WriteLine(CliOptions.Usage);
     Environment.ExitCode = 1;
     return;
 }
 
-RootConfig config;
-try
+if (configs.Count == 0)
 {
-    config = RootConfigLoader.LoadFromFile(args[0]);
-}
-catch (ConfigValidationException ex)
-{
-    // Already reads "Invalid config:" followed by one problem per line.
-    Console.WriteLine(ex.Message);
-    Environment.ExitCode = 1;
-    return;
-}
-catch (System.Text.Json.JsonException ex)
-{
-    Console.WriteLine($"Could not read the config as JSON: {ex.Message}");
-    Environment.ExitCode = 1;
-    return;
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"Could not load config '{args[0]}': {ex.Message}");
+    Console.WriteLine("No GlyphGen config found. Name one, or put them in a 'configs' folder.");
+    Console.WriteLine();
+    Console.WriteLine(CliOptions.Usage);
     Environment.ExitCode = 1;
     return;
 }
 
-ILanguageGenerator languageGenerator = new LanguageGenerator(
-    new GlyphGenerator(
-        new ChainGenerator(),
-        new PlacementResolver(),
-        new CombinationResolver()));
-var orchestrator = new RunOrchestrator(languageGenerator);
+if (notice is not null) Console.WriteLine(notice);
 
-IReadOnlyDictionary<string, IReadOnlyList<GlyphGen.Core.Model.Glyph>> results;
-try
+var runner = new BatchRunner(options, Console.Out, WriteOutput);
+var loaded = runner.LoadAll(configs);
+if (loaded is null)
 {
-    results = orchestrator.Run(config);
-}
-catch (GlyphGenerationException ex)
-{
-    Console.WriteLine($"Generation failed: {ex.Message}");
     Environment.ExitCode = 1;
     return;
 }
 
-foreach (var warning in orchestrator.Warnings) Console.WriteLine($"Warning: {warning}");
+if (options.ValidateOnly)
+{
+    Console.WriteLine($"{configs.Count} config(s) are valid.");
+    return;
+}
 
-var renderer = new LanguageRenderer();
-Directory.CreateDirectory(config.OutputDirectory);
+var jobs = runner.Plan(configs, loaded);
+if (jobs.Count > 1)
+    Console.WriteLine($"{jobs.Count} run(s): {configs.Count} config(s), {runner.ConcurrentRuns} at a time, {runner.ThreadsPerRun} thread(s) each (budget {runner.ThreadBudget}).");
 
-foreach (var language in config.Languages)
+var results = runner.Run(jobs);
+runner.Summarize(results);
+if (results.Any(r => !r.Ok)) Environment.ExitCode = 1;
+return;
+
+static void WriteOutput(RootConfig config, IReadOnlyDictionary<string, IReadOnlyList<GlyphGen.Core.Model.Glyph>> results, bool verbose, TextWriter log)
+{
+    int written = 0;
+    var renderer = new LanguageRenderer();
+    Directory.CreateDirectory(config.OutputDirectory);
+
+    foreach (var language in config.Languages)
 {
     if (!results.TryGetValue(language.Name, out var glyphs)) continue;
 
@@ -90,11 +91,14 @@ foreach (var language in config.Languages)
 
     // ASCII preview, straight lines only - same view used during generation-only debugging,
     // useful to compare against the PNG when something looks off.
-    Console.WriteLine($"=== {language.Name} ===");
+    if (verbose) log.WriteLine($"=== {language.Name} ===");
     foreach (var glyph in glyphs)
     {
-        if (baseNames.Contains(glyph.Name)) Console.WriteLine("(base glyph)");
-        Console.WriteLine(glyph.ToString());
+        if (verbose)
+        {
+            if (baseNames.Contains(glyph.Name)) log.WriteLine("(base glyph)");
+            log.WriteLine(glyph.ToString());
+        }
     }
 
     var languageDir = Path.Combine(config.OutputDirectory, SanitizeFileName(language.Name));
@@ -141,16 +145,16 @@ foreach (var language in config.Languages)
     {
         string path = Path.Combine(baseNames.Contains(r.GlyphName) ? basesDir : languageDir, SanitizeFileName(r.GlyphName) + ".png");
         File.WriteAllBytes(path, r.Png);
-        Console.WriteLine($"Wrote {path}");
+        if (verbose) log.WriteLine($"Wrote {path}"); else written++;
     }
 
     var sheetSettings = config.Run.ContactSheet;
     WriteContactSheet(languageDir, rendered.Where(r => !baseNames.Contains(r.GlyphName)).ToList(),
-        sheetSettings.Columns, language.Render.Background, config.MaxParallelism);
+        sheetSettings.Columns, language.Render.Background, config.MaxParallelism, verbose, log, ref written);
     if (sheetSettings.BaseGlyphsSheet && baseNames.Count > 0)
     {
         WriteContactSheet(basesDir, rendered.Where(r => baseNames.Contains(r.GlyphName)).ToList(),
-            sheetSettings.Columns, language.Render.Background, config.MaxParallelism);
+            sheetSettings.Columns, language.Render.Background, config.MaxParallelism, verbose, log, ref written);
     }
 
     if (debugRendered is not null)
@@ -159,19 +163,21 @@ foreach (var language in config.Languages)
         {
             string path = Path.Combine(baseNames.Contains(r.GlyphName) ? basesDir : languageDir, SanitizeFileName(r.GlyphName) + ".debug.png");
             File.WriteAllBytes(path, r.Png);
-            Console.WriteLine($"Wrote {path}");
+            if (verbose) log.WriteLine($"Wrote {path}"); else written++;
         }
     }
 }
+    if (!verbose) log.WriteLine($"      wrote {written} file(s) to {config.OutputDirectory}");
+}
 
-static void WriteContactSheet(string directory, IReadOnlyList<RenderedGlyph> items, int columns, string background, int maxParallelism)
+static void WriteContactSheet(string directory, IReadOnlyList<RenderedGlyph> items, int columns, string background, int maxParallelism, bool verbose, TextWriter log, ref int written)
 {
     byte[] sheet = ContactSheet.Create(items, columns, background, maxParallelism);
     if (sheet.Length == 0) return;
 
     string sheetPath = Path.Combine(directory, "_contact-sheet.png");
     File.WriteAllBytes(sheetPath, sheet);
-    Console.WriteLine($"Wrote {sheetPath}");
+    if (verbose) log.WriteLine($"Wrote {sheetPath}"); else written++;
 }
 
 static string SanitizeFileName(string name)

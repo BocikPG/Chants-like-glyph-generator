@@ -3,9 +3,28 @@
 GlyphGen builds a set of glyphs ("a language") from a JSON config: it grows random strokes on a lattice under your constraints, combines glyphs into composites, and renders everything to PNG.
 
 ```
-GlyphGen.Cli <path-to-config.json>
+GlyphGen.Cli [config.json | folder | glob ...] [options]
 GlyphGen.Cli --schema [config.schema.json]
 ```
+
+**Command line.** Run with no arguments: the `configs` (or `config`) folder is used if it exists, else the GlyphGen configs in the current folder (a json file with a top-level `languages` list; `*.schema.json` is skipped). A folder argument means every config in it.
+
+| Option | Meaning |
+|---|---|
+| *(no seed option)* | One run per config: its `run.seed` if the file sets one, else a random seed (printed, with the master seed it was drawn from). Configs without a seed share one random seed. |
+| `--seed 7`, `--seed 1-20`, `--seed 3,7,11` | Run exactly these seeds, overriding `run.seed`. The same seeds for every config. |
+| `--runs N` | N runs with random, distinct seeds, shared by every config. Cannot be combined with `--seed`. |
+| `--master-seed X` | Draw the random seeds from X. A batch prints its master seed; `--master-seed X --runs N` repeats it. |
+| `--threads N\|auto` | The thread budget. `auto` (default) is every core the process may use. |
+| `--parallel-runs N` | Runs at once. Default: as many as the budget allows (never more than there are runs). |
+| `--threads-per-run N` | Threads inside one run. Default: the budget divided by the runs at once. |
+| `--out DIR` | Output to `DIR/<config>/<seed>/<language>/`. Default: the same layout under each config's `run.outputDirectory`. `<config>` is the file name without `.json` / `.language.json`. |
+| `--no-render` | Generate only, write no images. Much faster when you only want to know how often a config succeeds. |
+| `--fail-fast` | Start no new run after one failed (runs already going finish). |
+| `--validate-only` | Load and check the configs, then stop. |
+| `--summary-json FILE` | Write every run's config, seed, status, time and error to FILE. |
+
+A single run prints the ASCII preview and every file written; a batch prints one line per run as it finishes and a summary per config (runs ok, min / median / max time, and each failing seed with the first line of its error). The exit code is 1 when any run failed. The output does not depend on the thread count: the same seed gives the same glyphs with 1 or 16 threads. A run's own `run.maxParallelism` is replaced by the command line's thread plan.
 
 - Property names are **case-insensitive** (the guide uses camelCase).
 - Enums are written as **strings** (`"Orthogonal"`, `"RandomValid"`, ...).

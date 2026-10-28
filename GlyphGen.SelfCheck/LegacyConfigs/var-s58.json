@@ -1,0 +1,367 @@
+{
+  "$schema": "./config.schema.json",
+  "run": {
+    "seed": 58,
+    "outputDirectory": "./output-advanced",
+    "contactSheet": {
+      "columns": 4,
+      "baseGlyphsSheet": true
+    }
+  },
+  "languages": [
+    {
+      "name": "Scribe",
+      "grid": {
+        "width": 15,
+        "height": 15
+      },
+      "baseGlyphs": [
+        "ring_base",
+        "tick_base"
+      ],
+      "glyphs": [
+        "sun",
+        "moon",
+        "star",
+        "eclipse",
+        "comet"
+      ],
+      "shapes": [
+        {
+          "id": "spine",
+          "kind": "Generative",
+          "seedLabel": "motif-spine",
+          "chain": {
+            "length": {
+              "min": 3,
+              "max": 4
+            },
+            "connectionRules": [
+              {
+                "direction": "Both",
+                "minLength": 1,
+                "maxLength": 3,
+                "weight": 1.0,
+                "curve": {
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 2
+                      },
+                      {
+                        "min": 0.3,
+                        "max": 0.45,
+                        "weight": 3
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 15,
+                    "max": 35
+                  },
+                  "chanceToBeCurved": 55
+                },
+                "backToStartChance": 33.3
+              }
+            ],
+            "allowClosedLoop": true,
+            "connectionWeighting": "PerRule",
+            "allowNodeRevisit": true,
+            "allowEdgeRevisit": false,
+            "selfSpacing": [
+              {
+                "mode": "Adjacent",
+                "minDistance": 1,
+                "lookback": 2
+              },
+              {
+                "mode": "AllNodes",
+                "maxDistance": 9
+              }
+            ]
+          },
+          "placement": {
+            "start": {
+              "mode": "CenterAnchor"
+            },
+            "retries": {
+              "placement": 30
+            }
+          },
+          "arrangement": {
+            "spacing": {
+              "enabled": true,
+              "minCenterDistance": 0.5,
+              "maxNodeDistance": 6,
+              "maxDistanceMode": "NearestShape"
+            }
+          }
+        },
+        {
+          "id": "dot",
+          "kind": "Literal",
+          "seedLabel": "motif-dot",
+          "nodes": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              1
+            ]
+          ],
+          "placement": {
+            "start": {
+              "mode": "Fixed",
+              "origin": {
+                "x": 2,
+                "y": 2
+              }
+            },
+            "rotation": {
+              "allowed": false
+            }
+          },
+          "arrangement": {
+            "spacing": {
+              "enabled": true,
+              "minCenterDistance": 0.5,
+              "maxNodeDistance": 6,
+              "maxDistanceMode": "NearestShape"
+            }
+          }
+        },
+        {
+          "id": "strokes",
+          "seedLabel": "subsymbol",
+          "count": {
+            "min": 1,
+            "max": 2
+          },
+          "chain": {
+            "length": {
+              "min": 4,
+              "max": 6
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 1,
+                "maxLength": 4,
+                "weight": 3.0,
+                "curve": {
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 2
+                      },
+                      {
+                        "min": 0.3,
+                        "max": 0.45,
+                        "weight": 3
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 15,
+                    "max": 35
+                  },
+                  "chanceToBeCurved": 55
+                },
+                "backToStartChance": 9.1
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 1,
+                "maxLength": 2,
+                "weight": 1.0,
+                "curve": {
+                  "mode": "Hybrid",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 2
+                      },
+                      {
+                        "min": 0.3,
+                        "max": 0.45,
+                        "weight": 3
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 15,
+                    "max": 35
+                  },
+                  "chanceToBeCurved": 55
+                },
+                "backToStartChance": 23.1
+              }
+            ],
+            "allowClosedLoop": true,
+            "connectionWeighting": "PerRule",
+            "allowNodeRevisit": true,
+            "allowEdgeRevisit": false,
+            "selfSpacing": [
+              {
+                "mode": "Adjacent",
+                "minDistance": 1,
+                "lookback": 2
+              },
+              {
+                "mode": "AllNodes",
+                "maxDistance": 9
+              }
+            ]
+          },
+          "placement": {
+            "start": {
+              "mode": "RandomValid",
+              "onExistingNode": {}
+            },
+            "retries": {
+              "placement": 40
+            }
+          },
+          "arrangement": {
+            "spacing": {
+              "enabled": true,
+              "minCenterDistance": 0.5,
+              "maxNodeDistance": 6,
+              "maxDistanceMode": "NearestShape"
+            }
+          }
+        }
+      ],
+      "usageSizeBias": {
+        "strength": 1.0,
+        "affectCount": true,
+        "affectLength": true
+      },
+      "quality": {
+        "rejectStraightLineOnly": true,
+        "similarity": {
+          "max": 0.8,
+          "compositeMax": 0.95
+        },
+        "retries": 20
+      },
+      "combination": {
+        "recipes": {
+          "eclipse": [
+            "sun",
+            "ring_base"
+          ],
+          "comet": [
+            "star",
+            "tick_base"
+          ]
+        },
+        "allowScale": true,
+        "allowedScales": [
+          {
+            "numerator": 1,
+            "denominator": 1,
+            "weight": 3.0
+          },
+          {
+            "numerator": 2,
+            "denominator": 1,
+            "weight": 1.0
+          }
+        ],
+        "allowRotate": true,
+        "rotation": {
+          "allowed": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "weight": 0.5
+        },
+        "arrangement": {
+          "spacing": {
+            "enabled": true,
+            "minCenterDistance": 0.5,
+            "maxNodeDistance": 6,
+            "maxDistanceMode": "NearestShape"
+          }
+        },
+        "retries": 8
+      },
+      "curve": {
+        "contextMode": "AllCurved",
+        "proximityGuard": {
+          "enabled": true,
+          "minEdgeLength": 1.5
+        },
+        "edge": {
+          "mode": "Hybrid",
+          "tension": {
+            "options": [
+              {
+                "min": 0,
+                "max": 0,
+                "weight": 2
+              },
+              {
+                "min": 0.3,
+                "max": 0.45,
+                "weight": 3
+              }
+            ]
+          },
+          "explicitJitterDegrees": {
+            "min": 15,
+            "max": 35
+          },
+          "chanceToBeCurved": 55
+        }
+      },
+      "render": {
+        "framing": "Language",
+        "foreground": "#FFF1E6D0",
+        "background": "#FF1B1A17",
+        "typeface": {
+          "kind": "ThickEnds",
+          "perGlyphJitter": 0.05,
+          "thickEnds": {
+            "width": {
+              "min": 0.03,
+              "max": 0.03
+            },
+            "endWidth": {
+              "min": 0.055,
+              "max": 0.055
+            },
+            "flareLength": {
+              "min": 0.25,
+              "max": 0.25
+            },
+            "profile": "Smooth",
+            "appliesTo": "ChainEndsAndCorners",
+            "terminal": "Round"
+          }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": true,
+          "colorComponents": true
+        }
+      }
+    }
+  ]
+}

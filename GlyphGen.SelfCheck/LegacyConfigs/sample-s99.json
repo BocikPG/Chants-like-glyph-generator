@@ -1,0 +1,429 @@
+{
+  "run": {
+    "seed": 99,
+    "outputDirectory": "./output"
+  },
+  "languages": [
+    {
+      "name": "Warrior",
+      "grid": {
+        "width": 15,
+        "height": 15
+      },
+      "glyphs": [
+        "warrior",
+        "weapon",
+        "protect",
+        "fortress"
+      ],
+      "shapes": [
+        {
+          "id": "strokes",
+          "seedLabel": "subsymbol",
+          "count": {
+            "min": 1,
+            "max": 3
+          },
+          "chain": {
+            "length": {
+              "min": 6,
+              "max": 8
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 3.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 2
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 80,
+                    "max": 100
+                  },
+                  "chanceToBeCurved": 10
+                }
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 1.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 2
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 80,
+                    "max": 100
+                  },
+                  "chanceToBeCurved": 10
+                }
+              }
+            ],
+            "allowClosedLoop": false,
+            "allowNodeRevisit": true,
+            "allowEdgeRevisit": true
+          },
+          "placement": {
+            "start": {
+              "mode": "RandomValid"
+            },
+            "rotation": {
+              "allowed": true
+            },
+            "retries": {
+              "placement": 20
+            }
+          },
+          "arrangement": {
+            "crossing": {
+              "mode": "Anywhere"
+            }
+          }
+        }
+      ],
+      "curve": {
+        "proximityGuard": {
+          "enabled": true,
+          "minEdgeLength": 2
+        },
+        "edge": {
+          "mode": "Derived",
+          "tension": {
+            "options": [
+              {
+                "min": 0,
+                "max": 0,
+                "weight": 3
+              },
+              {
+                "min": 0.4,
+                "max": 0.5,
+                "weight": 2
+              }
+            ]
+          },
+          "explicitJitterDegrees": {
+            "min": 80,
+            "max": 100
+          },
+          "chanceToBeCurved": 10
+        }
+      },
+      "quality": {
+        "rejectStraightLineOnly": true,
+        "similarity": {
+          "max": 0.7
+        },
+        "retries": 10
+      },
+      "render": {
+        "framing": "Language",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.045,
+              "max": 0.045
+            },
+            "cap": "Butt"
+          }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": false,
+          "colorComponents": false
+        }
+      },
+      "combination": {
+        "recipes": {
+          "fortress": [
+            "warrior",
+            "protect"
+          ]
+        },
+        "allowScale": true,
+        "allowedScales": [
+          {
+            "numerator": 1,
+            "denominator": 3,
+            "weight": 1.0
+          },
+          {
+            "numerator": 1,
+            "denominator": 2,
+            "weight": 1.0
+          },
+          {
+            "numerator": 1,
+            "denominator": 1,
+            "weight": 2.0
+          },
+          {
+            "numerator": 2,
+            "denominator": 1,
+            "weight": 1.0
+          },
+          {
+            "numerator": 3,
+            "denominator": 1,
+            "weight": 0.5
+          }
+        ],
+        "allowRotate": true,
+        "rotation": {
+          "allowed": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "weight": 1.0
+        },
+        "retries": 5
+      }
+    },
+    {
+      "name": "Devotee",
+      "grid": {
+        "width": 15,
+        "height": 15
+      },
+      "baseGlyphs": [
+        "you_base",
+        "me_base",
+        "devotee_base"
+      ],
+      "glyphs": [
+        "man",
+        "you",
+        "me",
+        "devotee"
+      ],
+      "combination": {
+        "recipes": {
+          "you": [
+            "man",
+            "you_base"
+          ],
+          "me": [
+            "man",
+            "me_base"
+          ],
+          "devotee": [
+            "man",
+            "devotee_base"
+          ]
+        },
+        "allowScale": false,
+        "allowRotate": false,
+        "rotation": {
+          "allowed": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "weight": 1.0
+        },
+        "arrangement": {
+          "spacing": {
+            "enabled": true,
+            "minCenterDistance": 1,
+            "minNodeDistance": 0.1
+          }
+        },
+        "retries": 5
+      },
+      "shapes": [
+        {
+          "id": "strokes",
+          "seedLabel": "subsymbol",
+          "count": {
+            "min": 1,
+            "max": 5
+          },
+          "chain": {
+            "length": {
+              "min": 2,
+              "max": 8
+            },
+            "connectionRules": [
+              {
+                "direction": "Orthogonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 3.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 1
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 20,
+                    "max": 20
+                  },
+                  "chanceToBeCurved": 30
+                },
+                "backToStartChance": 18.9
+              },
+              {
+                "direction": "Diagonal",
+                "minLength": 1,
+                "maxLength": 5,
+                "weight": 1.0,
+                "curve": {
+                  "mode": "Derived",
+                  "tension": {
+                    "options": [
+                      {
+                        "min": 0,
+                        "max": 0,
+                        "weight": 3
+                      },
+                      {
+                        "min": 0.4,
+                        "max": 0.5,
+                        "weight": 1
+                      }
+                    ]
+                  },
+                  "explicitJitterDegrees": {
+                    "min": 20,
+                    "max": 20
+                  },
+                  "chanceToBeCurved": 30
+                },
+                "backToStartChance": 41.2
+              }
+            ],
+            "allowClosedLoop": false,
+            "allowNodeRevisit": false,
+            "allowEdgeRevisit": false
+          },
+          "placement": {
+            "start": {
+              "mode": "RandomValid"
+            },
+            "rotation": {
+              "allowed": true
+            },
+            "retries": {
+              "placement": 20
+            }
+          },
+          "arrangement": {
+            "spacing": {
+              "enabled": true,
+              "minCenterDistance": 1,
+              "minNodeDistance": 0.1
+            }
+          }
+        }
+      ],
+      "curve": {
+        "proximityGuard": {
+          "enabled": true,
+          "minEdgeLength": 2
+        },
+        "edge": {
+          "mode": "Derived",
+          "tension": {
+            "options": [
+              {
+                "min": 0,
+                "max": 0,
+                "weight": 3
+              },
+              {
+                "min": 0.4,
+                "max": 0.5,
+                "weight": 1
+              }
+            ]
+          },
+          "explicitJitterDegrees": {
+            "min": 20,
+            "max": 20
+          },
+          "chanceToBeCurved": 30
+        }
+      },
+      "quality": {
+        "rejectStraightLineOnly": true,
+        "similarity": {
+          "max": 0.7
+        },
+        "retries": 10
+      },
+      "render": {
+        "framing": "Language",
+        "foreground": "#FFFFFFFF",
+        "background": "#00000000",
+        "typeface": {
+          "kind": "Rectangular",
+          "perGlyphJitter": 0.0,
+          "rectangular": {
+            "width": {
+              "min": 0.045,
+              "max": 0.045
+            },
+            "cap": "Square"
+          }
+        },
+        "canvas": {
+          "sizePx": 512,
+          "marginPx": 32
+        },
+        "debug": {
+          "showNodes": false,
+          "colorComponents": false
+        }
+      }
+    }
+  ]
+}

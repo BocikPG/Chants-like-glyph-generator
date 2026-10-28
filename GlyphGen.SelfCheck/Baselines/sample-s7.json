@@ -1,0 +1,3 @@
+{
+  "error": "[Devotee] Could not satisfy combination recipe for \u0027you\u0027 after 5 attempts. \u0027you_base\u0027 could not be placed in 5 of 5 attempt(s); of 116 placement(s) tried, 116 crossed another component. Components cross each other by default: set arrangement.crossing.mode, or give the recipe components that are smaller or sparser."
+}

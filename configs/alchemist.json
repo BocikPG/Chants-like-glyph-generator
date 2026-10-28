@@ -1,5 +1,5 @@
 {
-  "$schema": "./GlyphGen.Cli/config.schema.json",
+  "$schema": "../GlyphGen.Cli/config.schema.json",
   "run": {
     "seed": 2026092763,
     "outputDirectory": "./output",

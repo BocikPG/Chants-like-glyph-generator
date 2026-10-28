@@ -1,0 +1,402 @@
+{
+	"$schema": "../GlyphGen.Cli/config.schema.json",
+	"run": {
+		"seed": 20260927,
+		"outputDirectory": "./output",
+		"maxParallelism": 4
+	},
+	"languages": [
+		{
+			"name": "Devotee",
+			"grid": {
+				"width": 15,
+				"height": 15
+			},
+			"glyphs": [
+				"Man/Human",
+				"You",
+				"Me",
+				"Devotee",
+				"Warrior",
+				"Preacher",
+				"Close",
+				"Open",
+				"Help",
+				"Go/Pass",
+				"Talk",
+				"Seek/Want",
+				"Find",
+				"See/Look",
+				"Love/Like",
+				"Make/Create",
+				"Abbey",
+				"Cemetery",
+				"Church",
+				"Garden",
+				"Door",
+				"Key",
+				"Instrument",
+				"Pot",
+				"Plant",
+				"Potion",
+				"Lens",
+				"Greetings",
+				"God",
+				"Death/Dead",
+				"Up/Great",
+				"Not",
+				"Music",
+				"Free"
+			],
+			"baseGlyphs": [
+				"Action",
+				"Place",
+				"Object",
+				"you_base",
+				"me_base",
+				"devotee_base",
+				"warrior_base",
+				"talk_base",
+				"close_base",
+				"open_base",
+				"help_base",
+				"go_base",
+				"seek_base",
+				"find_base",
+				"see_base",
+				"love_base",
+				"make_base",
+				"abbey_base",
+				"door_base",
+				"pot_base",
+				"potion_base",
+				"lens_base"
+			],
+			"combination": {
+				"recipes": {
+					"You": [
+						"Man/Human",
+						"you_base"
+					],
+					"Me": [
+						"Man/Human",
+						"me_base"
+					],
+					"Devotee": [
+						"Man/Human",
+						"devotee_base"
+					],
+					"Warrior": [
+						"Man/Human",
+						"warrior_base"
+					],
+					"Preacher": [
+						"Man/Human",
+						"talk_base"
+					],
+					"Close": [
+						"Action",
+						"close_base"
+					],
+					"Open": [
+						"Action",
+						"open_base"
+					],
+					"Help": [
+						"Action",
+						"help_base"
+					],
+					"Go/Pass": [
+						"Action",
+						"go_base"
+					],
+					"Talk": [
+						"Action",
+						"talk_base"
+					],
+					"Seek/Want": [
+						"Action",
+						"seek_base"
+					],
+					"Find": [
+						"Action",
+						"find_base"
+					],
+					"See/Look": [
+						"Action",
+						"see_base"
+					],
+					"Love/Like": [
+						"Action",
+						"love_base"
+					],
+					"Make/Create": [
+						"Action",
+						"make_base"
+					],
+					"Abbey": [
+						"Place",
+						"abbey_base"
+					],
+					"Cemetery": [
+						"Place",
+						"Death/Dead"
+					],
+					"Church": [
+						"Place",
+						"devotee_base"
+					],
+					"Garden": [
+						"Place",
+						"Plant"
+					],
+					"Door": [
+						"Object",
+						"door_base"
+					],
+					"Key": [
+						"Object",
+						"open_base"
+					],
+					"Instrument": [
+						"Object",
+						"Music"
+					],
+					"Pot": [
+						"Object",
+						"pot_base"
+					],
+					"Potion": [
+						"Object",
+						"potion_base"
+					],
+					"Lens": [
+						"Object",
+						"lens_base"
+					]
+				},
+				"allowScale": false,
+				"allowRotate": false,
+				"arrangement": {
+					"placements": [
+						{
+							"glyph": "Man/Human",
+							"mode": "SetRandom",
+							"pick": "Corner"
+						},
+						{
+							"glyph": "Action",
+							"mode": "SetRandom",
+							"pick": "Corner"
+						},
+						{
+							"glyph": "Object",
+							"mode": "SetRandom",
+							"pick": "Corner"
+						},
+						{
+							"glyph": "Place",
+							"mode": "SetRandom",
+							"pick": "Corner"
+						}
+					],
+					"spacing": {
+						"enabled": true,
+						"minCenterDistance": 1,
+						"minNodeDistance": 3.5,
+						"maxNodeDistance": 4,
+						"maxDistanceMode": "AllShapes"
+					},
+					"bias": {
+						"modes": [
+							"Shortest",
+							"Narrowest",
+							"Squarest"
+						],
+						"includeScaleAndRotation": false
+					}
+				},
+				"retries": 50
+			},
+			"derivations": {
+				"devotee_base": {
+					"from": "God",
+					"maxSimilarityToSource": 0.85,
+					"steps": [
+						{
+							"onlyIf": {
+								"minNodes": 6,
+								"minEdges": 4
+							},
+							"op": "DeleteNodes",
+							"mode": "Bridge",
+							"amount": {
+								"count": {
+									"min": 1,
+									"max": 2
+								}
+							},
+							"connectionRules": [
+								{
+									"direction": "Any",
+									"minLength": 2,
+									"maxLength": 10
+								}
+							],
+							"keepConnected": true
+						},
+						{
+							"onlyIf": {
+								"maxNodes": 5,
+								"maxEdges": 4
+							},
+							"op": "Add",
+							"shapes": [
+								"strokes"
+							],
+							"optional": false
+						}
+					]
+				}
+			},
+			"shapes": [
+				{
+					"id": "strokes",
+					"count": {
+						"min": 1,
+						"max": 3
+					},
+					"chain": {
+						"length": {
+							"min": 3,
+							"max": 5
+						},
+						"connectionRules": [
+							{
+								"direction": "Orthogonal",
+								"minLength": 3,
+								"maxLength": 7,
+								"weight": 4,
+								"backToStartChance": 25
+							},
+							{
+								"direction": "Diagonal",
+								"minLength": 2,
+								"maxLength": 5,
+								"weight": 1.5
+							},
+							{
+								"direction": "Arc",
+								"minLength": 3,
+								"maxLength": 5,
+								"weight": 0.3,
+								"arc": {
+									"angles": "Cardinal",
+									"minSweep": 90,
+									"maxSweep": 180,
+									"anchor": "Node"
+								},
+								"outlineNodes": {
+									"mode": "EveryLatticePoint"
+								}
+							},
+							{
+								"direction": "Circle",
+								"minLength": 3,
+								"maxLength": 8,
+								"weight": 0.5,
+								"chainLengthCost": 3
+							}
+						],
+						"connectionWeighting": "PerRule",
+						"allowClosedLoop": true,
+						"allowNodeRevisit": true,
+						"selfSpacing": [
+							{
+								"mode": "Existing",
+								"minDistance": 3
+							},
+							{
+								"mode": "Adjacent",
+								"lookback": 2,
+								"minDistance": 3
+							}
+						]
+					},
+					"arrangement": {
+						"crossing": {
+							"mode": "None"
+						},
+						"spacing": {
+							"enabled": true,
+							"minNodeDistance": 3
+						}
+					},
+					"placement": {
+						"start": {
+							"onExistingNode": {
+								"ignoreStartNode": true
+							}
+						}
+					}
+				}
+			],
+			"usageSizeBias": {
+				"strength": 0.8,
+				"affectCount": true,
+				"affectLength": false
+			},
+			"quality": {
+				"rejectStraightLineOnly": true,
+				"similarity": {
+					"max": 0.7
+				},
+				"retries": 50
+			},
+			"render": {
+				"framing": "GlyphCentered",
+				"foreground": "#FFFFFFFF",
+				"background": "#00000000",
+				"typeface": {
+					"kind": "Rectangular",
+					"perGlyphJitter": 0.0,
+					"rectangular": {
+						"width": {
+							"min": 0.065,
+							"max": 0.065
+						},
+						"cap": "Square"
+					}
+				},
+				"joins": {
+					"corner": {
+						"outer": {
+							"style": "Miter"
+						},
+						"inner": {
+							"style": "Miter"
+						}
+					},
+					"junction": {
+						"inner": {
+							"style": "Miter"
+						},
+						"outer": {
+							"style": "Miter"
+						},
+						"trimCaps": true
+					}
+				},
+				"canvas": {
+					"sizePx": 512,
+					"marginPx": 32
+				},
+				"debug": {
+					"showNodes": true,
+					"colorComponents": true,
+					"colorParts": true
+				}
+			}
+		}
+	]
+}

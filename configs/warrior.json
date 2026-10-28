@@ -1,0 +1,290 @@
+{
+	"$schema": "../GlyphGen.Cli/config.schema.json",
+	"run": {
+		"seed": 20260927,
+		"outputDirectory": "./output",
+		"maxParallelism": 4
+	},
+	"languages": [
+		{
+			"name": "Warrior",
+			"grid": {
+				"width": 25,
+				"height": 25
+			},
+			"glyphs": [
+				"Balance",
+				"Bellman",
+				"Big",
+				"Bottle",
+				"Call",
+				"Carry/Possess",
+				"Chosen",
+				"Crate",
+				"Death",
+				"Duty",
+				"Fear",
+				"Fortress",
+				"Go/Pass",
+				"Help",
+				"Impure",
+				"Instrument",
+				"Key",
+				"Lay",
+				"Love",
+				"Make/Create",
+				"Moon",
+				"Music",
+				"Not",
+				"Plural",
+				"Protect",
+				"Push",
+				"Scientist",
+				"Seek/Want",
+				"Small",
+				"Sun",
+				"Treasure",
+				"Trolley",
+				"Vessel",
+				"Wait",
+				"Warrior",
+				"Weapon"
+			],
+			"derivations": {
+				"Big": {
+					"from": "Small",
+					"maxSimilarityToSource": 1,
+					"finalOutputRotation": "FollowMoves",
+					"steps": [
+						{
+							"op": "Mirror",
+							"axis": "Horizontal"
+						},
+						{
+							"op": "Mirror",
+							"axis": "Vertical"
+						}
+					]
+				}
+			},
+			"shapes": [
+				{
+					"id": "firstStroke",
+					"count": {
+						"min": 1,
+						"max": 1
+					},
+					"chain": {
+						"length": {
+							"min": 2,
+							"max": 4
+						},
+						"connectionRules": [
+							{
+								"direction": "Orthogonal",
+								"minLength": 3,
+								"maxLength": 5,
+								"weight": 3
+							},
+							{
+								"direction": "Angle",
+								"anglePreset": "Gentle",
+								"minLength": 2,
+								"maxLength": 5,
+								"weight": 1
+							},
+							{
+								"direction": "Diagonal",
+								"minLength": 2,
+								"maxLength": 5,
+								"weight": 2
+							}
+						],
+						"connectionWeighting": "PerRule",
+						"selfSpacing": [
+							{
+								"mode": "Existing",
+								"minDistance": 1.5
+							},
+							{
+								"mode": "Adjacent",
+								"lookback": 2,
+								"minDistance": 2
+							}
+						]
+					},
+					"arrangement": {
+						"crossing": {
+							"mode": "None"
+						}
+					},
+					"placement": {
+						"start": {
+							"onExistingNode": {}
+						}
+					}
+				},
+				{
+					"id": "secondStroke",
+					"count": {
+						"min": 1,
+						"max": 1
+					},
+					"chain": {
+						"length": {
+							"min": 2,
+							"max": 5
+						},
+						"connectionRules": [
+							{
+								"direction": "Orthogonal",
+								"minLength": 3,
+								"maxLength": 5,
+								"weight": 3
+							},
+							{
+								"direction": "Angle",
+								"anglePreset": "Gentle",
+								"minLength": 2,
+								"maxLength": 5,
+								"weight": 1
+							},
+							{
+								"direction": "Angle",
+								"anglePreset": "Sharp",
+								"minLength": 2,
+								"maxLength": 5,
+								"weight": 1
+							},
+							{
+								"direction": "Diagonal",
+								"minLength": 2,
+								"maxLength": 5,
+								"weight": 2
+							}
+						],
+						"connectionWeighting": "PerRule",
+						"selfSpacing": [
+							{
+								"mode": "Existing",
+								"minDistance": 2.5
+							},
+							{
+								"mode": "Adjacent",
+								"lookback": 2,
+								"minDistance": 1
+							}
+						]
+					},
+					"arrangement": {
+						"crossing": {
+							"mode": "Anywhere"
+						}
+					},
+					"placement": {
+						"start": {
+							"onExistingNode": {}
+						}
+					}
+				},
+				{
+					"id": "copyOfSecondStroke",
+					"copyOf": {
+						"shape": "secondStroke",
+						"flip": "Auto",
+						"respectSelfSpacing": true,
+						"selfSpacingIgnoresOriginal": true,
+						"auto": {
+							"by": "LongestStraight",
+							"axis": "Random",
+							"shapes": [
+								"firstStroke"
+							]
+						},
+						"anchor": "OriginStart",
+						"retries": {
+							"base": 50,
+							"glyph": 50
+						}
+					},
+					"arrangement": {
+						"crossing": {
+							"mode": "Anywhere"
+						}
+					}
+				}
+			],
+			"usageSizeBias": {
+				"strength": 0.8,
+				"affectCount": true,
+				"affectLength": false
+			},
+			"quality": {
+				"rejectStraightLineOnly": true,
+				"similarity": {
+					"max": 0.7
+				},
+				"retries": 50
+			},
+			"render": {
+				"framing": "GlyphCentered",
+				"foreground": "#FFFFFFFF",
+				"background": "#00000000",
+				"typeface": {
+					"kind": "Rectangular",
+					"perGlyphJitter": 0.0,
+					"rectangular": {
+						"width": {
+							"min": 0.035,
+							"max": 0.035
+						},
+						"cap": "Square"
+					}
+				},
+				"joins": {
+					"corner": {
+						"outer": {
+							"style": "Miter"
+						},
+						"inner": {
+							"style": "Miter"
+						}
+					},
+					"junction": {
+						"inner": {
+							"style": "Miter"
+						},
+						"outer": {
+							"style": "Miter"
+						},
+						"trimCaps": true
+					}
+				},
+				"canvas": {
+					"sizePx": 512,
+					"marginPx": 32
+				},
+				"debug": {
+					"showNodes": true,
+					"colorComponents": true,
+					"colorParts": true,
+					"colorShapes": true
+				},
+				"transform": {
+					"rotateOptions": [
+						{
+							"min": 0,
+							"max": 0,
+							"weight": 5
+						},
+						{
+							"min": -15,
+							"max": 15,
+							"weight": 1
+						}
+					]
+				}
+			}
+		}
+	]
+}

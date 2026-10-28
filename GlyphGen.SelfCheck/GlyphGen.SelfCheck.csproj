@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GlyphGen.Core\GlyphGen.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The CLI's option parsing and batch runner have no rendering in them: they are checked here, without the Skia project. -->
+  <ItemGroup>
+    <Compile Include="..\GlyphGen.Cli\CliOptions.cs" Link="Cli\CliOptions.cs" />
+    <Compile Include="..\GlyphGen.Cli\BatchRunner.cs" Link="Cli\BatchRunner.cs" />
+  </ItemGroup>
+
+  <!-- Copied next to the exe so `dotnet run` finds them from any working directory. -->
+  <ItemGroup>
+    <None Include="Baselines\*.json" CopyToOutputDirectory="PreserveNewest" LinkBase="Baselines" />
+    <None Include="Anchorites.language.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="LegacyConfigs\*.json" CopyToOutputDirectory="PreserveNewest" LinkBase="LegacyConfigs" />
+  </ItemGroup>
+
+</Project>
