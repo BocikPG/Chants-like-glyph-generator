@@ -51,10 +51,6 @@
                       }
                     ]
                   },
-                  "explicitJitterDegrees": {
-                    "min": 80,
-                    "max": 100
-                  },
                   "chanceToBeCurved": 10
                 }
               },
@@ -78,10 +74,6 @@
                         "weight": 2
                       }
                     ]
-                  },
-                  "explicitJitterDegrees": {
-                    "min": 80,
-                    "max": 100
                   },
                   "chanceToBeCurved": 10
                 }
@@ -129,10 +121,6 @@
                 "weight": 2
               }
             ]
-          },
-          "explicitJitterDegrees": {
-            "min": 80,
-            "max": 100
           },
           "chanceToBeCurved": 10
         }
@@ -268,15 +256,6 @@
         },
         "allowScale": false,
         "allowRotate": false,
-        "rotation": {
-          "allowed": [
-            0,
-            90,
-            180,
-            270
-          ],
-          "weight": 1.0
-        },
         "arrangement": {
           "spacing": {
             "enabled": true,
@@ -320,13 +299,8 @@
                       }
                     ]
                   },
-                  "explicitJitterDegrees": {
-                    "min": 20,
-                    "max": 20
-                  },
                   "chanceToBeCurved": 30
-                },
-                "backToStartChance": 18.9
+                }
               },
               {
                 "direction": "Diagonal",
@@ -349,13 +323,8 @@
                       }
                     ]
                   },
-                  "explicitJitterDegrees": {
-                    "min": 20,
-                    "max": 20
-                  },
                   "chanceToBeCurved": 30
-                },
-                "backToStartChance": 41.2
+                }
               }
             ],
             "allowClosedLoop": false,
@@ -402,10 +371,6 @@
                 "weight": 1
               }
             ]
-          },
-          "explicitJitterDegrees": {
-            "min": 20,
-            "max": 20
           },
           "chanceToBeCurved": 30
         }
