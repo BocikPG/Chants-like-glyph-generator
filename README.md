@@ -184,3 +184,7 @@ This project was developed with use of AI (Claude).
 I was interested in end result, not how the code inside works.
 
 The glyphs produced by the program come from the author's configs and the generator's random process; no AI model is involved when the program runs.
+
+### Not affiliated with or endorsed by the creators of Chants of Sennaar.
+
+But very grateful for the creation of such masterpiece.
