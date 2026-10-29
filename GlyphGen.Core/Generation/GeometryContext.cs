@@ -62,6 +62,8 @@ public sealed class GeometryContext : IIntersectionContext
 
     private int _partnerEdgeCount; // the first edges of _edges belong to partner glyphs (combination.partners): obstacles, not part of this glyph
     private readonly List<(GridPoint Point, string Glyph, string? ShapeId)> _partnerNodes = new();
+    private readonly List<(string Glyph, GridEdge Edge)> _partnerEdges = new();
+    private readonly List<string> _partnerOrder = new(); // the partners in the order they were committed (the order of combination.partners)
 
     /// <summary>Adds a chain of a partner glyph (combination.partners): its edges block and keep clear of the shapes drawn after it like any
     /// committed edge, its nodes count for NodesOnly crossings and can be started on, but it is not part of this glyph. Call before any
@@ -70,6 +72,8 @@ public sealed class GeometryContext : IIntersectionContext
     {
         if (_edges.Count != _partnerEdgeCount) throw new InvalidOperationException("Partner chains must be committed before the glyph's own shapes.");
         string? shapeId = ShapeIdOf(chain);
+        if (!_partnerOrder.Contains(partnerGlyph)) _partnerOrder.Add(partnerGlyph);
+        foreach (var e in chain.Edges) _partnerEdges.Add((partnerGlyph, e));
         _edges.AddRange(chain.Edges);
         for (int i = 0; i < chain.Edges.Count; i++) { _edgeShapes.Add(null); _edgeCrossing.Add(crossing); _edgeClearance.Add(clearance); _edgeSpacing.Add(null); _edgePaths.Add(null); _edgeBoxes.Add(default); }
         _partnerEdgeCount += chain.Edges.Count;
@@ -89,6 +93,50 @@ public sealed class GeometryContext : IIntersectionContext
             if (shapes is { Count: > 0 } && (shapeId is null || !shapes.Contains(shapeId))) continue;
             if (seen.Add(point)) yield return point;
         }
+    }
+
+    /// <summary>Whether what this glyph has drawn so far touches the partner: shares a node with it or crosses one of its edges (the same test
+    /// as combination.partnerContact).</summary>
+    private bool TouchesPartner(string partner)
+    {
+        var own = ExistingEdges.ToList();
+        if (own.Count == 0) return false;
+        var theirs = new HashSet<GridPoint>(_partnerNodes.Where(x => x.Glyph == partner).Select(x => x.Point));
+        foreach (var e in own)
+        {
+            if (theirs.Contains(e.From) || theirs.Contains(e.To) || e.ExtraNodes().Any(theirs.Contains)) return true;
+        }
+
+        var edges = _partnerEdges.Where(x => x.Glyph == partner).Select(x => x.Edge).ToList();
+        return own.Any(a => edges.Any(b => EdgePaths.Crosses(a, b)));
+    }
+
+    /// <summary>The nodes a shape with start.onPartnerNode may start on. A named partner: its nodes. Otherwise, with one partner: its nodes;
+    /// with several: those of the first partner (in combination.partners order) this glyph has not touched yet, so each start reaches
+    /// another partner; when every partner is touched (or the untouched ones have no matching node) the nodes of all of them.
+    /// <c>shapesByPartner</c> overrides <c>shapes</c> for the partners it names.</summary>
+    public IEnumerable<GridPoint> PartnerStartNodes(PartnerNodeStart start)
+    {
+        IReadOnlyCollection<string>? ShapesFor(string partner) =>
+            start.ShapesByPartner is { } map && map.TryGetValue(partner, out var list) ? list : start.Shapes;
+
+        if (start.Partner is not null) return PartnerNodes(start.Partner, ShapesFor(start.Partner)).ToList();
+
+        if (_partnerOrder.Count > 1)
+        {
+            foreach (var partner in _partnerOrder.Where(p => !TouchesPartner(p)))
+            {
+                var nodes = PartnerNodes(partner, ShapesFor(partner)).ToList();
+                if (nodes.Count > 0) return nodes;
+            }
+        }
+
+        var all = new List<GridPoint>();
+        var seen = new HashSet<GridPoint>();
+        foreach (var partner in _partnerOrder)
+            foreach (var n in PartnerNodes(partner, ShapesFor(partner)))
+                if (seen.Add(n)) all.Add(n);
+        return all;
     }
 
     /// <summary>True when some partner glyph is committed (a glyph drawn against partners).</summary>

@@ -4,6 +4,15 @@ GlyphGen generates invented writing systems. You describe a "language" in a JSON
 
 Everything is **deterministic**: one seed drives the whole run, so the same config and seed always give the same glyphs, whatever the thread count.
 
+If you run [`configs\all_chants_languages.json`](configs\all_chants_languages.json) you should expect glyphs below:
+
+<img src="wiki\img\alchemist%20glyph%20view.png" alt="Alchemist language" width="200" height="200">
+<img src="wiki\img\anchorites%20glyph%20view.png" alt="Anchorites language" width="200" height="200">
+<img src="wiki\img\bard%20glyph%20view.png" alt="Bard language" width="200" height="200">
+<img src="wiki\img\devotee%20glyph%20view.png" alt="Devotee language" width="200" height="200">
+<img src="wiki\img\warrior%20glyph%20view.png" alt="Warrior language" width="200" height="200">
+
+
 ## What it does
 
 - **Grows glyphs on a lattice.** A glyph is built from *shapes*: guaranteed motifs or free-form strokes, each with its own chain rules (length, directions, angles, curves), placement, spacing and crossing rules.
@@ -13,7 +22,9 @@ Everything is **deterministic**: one seed drives the whole run, so the same conf
 - **Renders.** Rectangular, broad-nib and other typefaces, join styles, framing, per-glyph rotation, and optional debug overlays (nodes, components, parts, shapes). Output is one PNG per glyph plus a contact sheet.
 - **Runs in batches.** Several configs, many seeds, in parallel, with a success summary.
 
-The full option reference is in [`GlyphGen-Config-Guide.md`](GlyphGen-Config-Guide.md). A JSON Schema for editor completion is in `GlyphGen.Cli/config.schema.json`, and two examples are `GlyphGen.Cli/sample-config.json` and `sample-config-advanced.json`.
+The full option reference is in [`GlyphGen-Config-Guide.md`](GlyphGen-Config-Guide.md). A JSON Schema for editor completion is in [`GlyphGen.Cli/config.schema.json`](GlyphGen.Cli\config.schema.json), and two examples are [`GlyphGen.Cli/sample-config.json`](GlyphGen.Cli\sample-config.json) and [`sample-config-advanced.json`](GlyphGen.Cli\sample-config-advanced.json).
+
+More ready to go configs can be found in [configs](configs) folder.
 
 ## Using a release (no programming needed)
 
@@ -156,7 +167,7 @@ The seed-stability baselines were recorded from a Debug build; a Release build c
 
 ## Contributions
 
-If you want to enchant functionalities of this project fell free to do so.
+If you want to enchant functionalities of this project, or fix bugs you encountered fell free to do so.
 
 New brushes, caps are first what comes to mind, but generational changes are welcome to if it's limited by current version.
 
@@ -167,7 +178,5 @@ Make a PR we will test it and merge after discussion.
 This project was developed with use of AI (Claude).
 
 I was interested in end result, not how the code inside works.
-
-As with any generated code, review it before relying on it.
 
 The glyphs produced by the program come from the author's configs and the generator's random process; no AI model is involved when the program runs.

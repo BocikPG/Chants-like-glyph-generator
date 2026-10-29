@@ -49,4 +49,20 @@ public sealed class CombinationConfig
     /// <summary>With <c>partners</c>: a glyph drawn against partners has to touch every one of them (share a node with it, or cross one of its
     /// strokes where crossing is allowed); a draw that misses one is rejected and drawn again like any other quality failure. Default true.</summary>
     public bool PartnerContact { get; set; } = true;
+
+    /// <summary>With <c>partners</c>: what happens when a glyph drawn against partners keeps failing. The partner itself is redrawn (one of
+    /// them per step, in turn), together with everything that depends on it - glyphs drawn against it, derived from it or reading its nodes -
+    /// and the glyph is tried again against the new partner.</summary>
+    public PartnerRedrawConfig PartnerRedraw { get; set; } = new();
+}
+
+/// <summary>combination.partnerRedraw: redrawing the partners of a glyph that cannot be drawn against them.</summary>
+public sealed class PartnerRedrawConfig
+{
+    /// <summary>How many times the partners of one glyph may be redrawn before it is given up on. 0 turns it off. Default 3.</summary>
+    public int Max { get; set; } = 3;
+
+    /// <summary>A partner is redrawn when the glyph's shapes could not be placed at all (all their own retries spent), and also after this
+    /// many draws in a row were rejected for missing a partner (then again after every further so many). Default 10.</summary>
+    public int AfterContactMisses { get; set; } = 10;
 }

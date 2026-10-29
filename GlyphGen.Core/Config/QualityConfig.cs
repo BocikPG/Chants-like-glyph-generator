@@ -24,6 +24,10 @@ public sealed class QualityConfig
     /// <summary>How alike two glyphs may be: the limits and what is compared.</summary>
     public SimilarityConfig Similarity { get; set; } = new();
 
+    /// <summary>Ids of the language's shapes with isDrawn false. Filled by the loader (never part of the json): similarity and the
+    /// straight-line check look at the visible strokes only.</summary>
+    [JsonIgnore] public HashSet<string> UndrawnShapeIds { get; set; } = new();
+
     /// <summary>Shortcut to quality.similarity.max.</summary>
     [JsonIgnore] public double MaxSimilarity { get => Similarity.Max; set => Similarity.Max = value; }
     /// <summary>Shortcut to quality.similarity.compositeMax.</summary>

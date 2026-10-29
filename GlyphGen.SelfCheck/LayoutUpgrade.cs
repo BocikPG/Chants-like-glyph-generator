@@ -133,6 +133,7 @@ internal static class LayoutUpgrade
             Move(p, "maxPlacementAttempts", retries, "placement");
             Move(p, "redoShape", retries, "shape");
             Move(p, "redrawGlyph", retries, "glyph");
+            Move(p, "onFail", retries, "onFail");
             if (retries.Count > 0) p["retries"] = retries;
         }
 

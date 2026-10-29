@@ -30,6 +30,10 @@ public interface IIntersectionContext
     /// the nodes of some of its shapes (null = every node). Contexts without partners return nothing.</summary>
     IEnumerable<GlyphGen.Core.Grid.GridPoint> PartnerNodes(string? partner, IReadOnlyCollection<string>? shapes) =>
         Enumerable.Empty<GlyphGen.Core.Grid.GridPoint>();
+
+    /// <summary>The nodes a shape with start.onPartnerNode starts on right now (see GeometryContext.PartnerStartNodes).</summary>
+    IEnumerable<GlyphGen.Core.Grid.GridPoint> PartnerStartNodes(GlyphGen.Core.Config.PartnerNodeStart start) =>
+        Enumerable.Empty<GlyphGen.Core.Grid.GridPoint>();
 }
 
 /// <summary>

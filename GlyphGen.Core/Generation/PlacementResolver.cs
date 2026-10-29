@@ -48,7 +48,7 @@ public sealed class PlacementResolver : IPlacementResolver
         double anchorChance = config.StartOnExistingNodeChance;
         if (config.Mode == PlacementMode.RandomValid && config.Start.OnPartnerNode is { } onPartner)
         {
-            anchorNodes = existingGeometry.PartnerNodes(onPartner.Partner, onPartner.Shapes).Where(grid.Contains).ToList();
+            anchorNodes = existingGeometry.PartnerStartNodes(onPartner).Where(grid.Contains).ToList();
             anchorChance = onPartner.Chance;
         }
 

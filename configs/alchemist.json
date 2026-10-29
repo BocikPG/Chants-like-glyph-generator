@@ -2,8 +2,7 @@
   "$schema": "../GlyphGen.Cli/config.schema.json",
   "run": {
     "seed": 2026092763,
-    "outputDirectory": "./output",
-    "maxParallelism": 4
+    "outputDirectory": "./output"
   },
   "languages": [
     {
@@ -749,7 +748,15 @@
                 "direction": "Orthogonal",
                 "weight": 1,
                 "minLength": 4,
-                "maxLength": 22
+                "maxLength": 22,
+                "split": {
+                  "mode": "ExtraNodes",
+                  "distribution": "Equal",
+                  "parts": {
+                    "min": 2,
+                    "max": 4
+                  }
+                }
               }
             ]
           },
@@ -860,12 +867,14 @@
             "retries": {
               "placement": 100,
               "shape": 2,
-              "glyph": 2
+              "glyph": 2,
+              "onFail": "Skip"
             },
             "start": {
               "onPartnerNode": {
                 "shapes": [
-                  "linker"
+                  "linker",
+                  "simpleOnesLine"
                 ],
                 "ifNone": "Anywhere"
               }
@@ -987,7 +996,8 @@
             "start": {
               "onPartnerNode": {
                 "shapes": [
-                  "linker"
+                  "linker",
+                  "simpleOnesLine"
                 ],
                 "ifNone": "Anywhere"
               }

@@ -112,12 +112,18 @@ public enum PartnerFallback
 /// <summary>placement.start.onPartnerNode: starting a shape on a node of a partner glyph (combination.partners).</summary>
 public sealed class PartnerNodeStart
 {
-    /// <summary>The partner whose nodes count (it has to be one of the partners of the glyph being drawn). Left out = the nodes of every
-    /// partner of the glyph. For a glyph drawn against several partners, give one shape per partner to touch each of them.</summary>
+    /// <summary>The partner whose nodes count (it has to be one of the partners of the glyph being drawn). Left out: with one partner, its
+    /// nodes; with several, each start goes to the first partner (in the order of <c>combination.partners</c>) that the glyph has not touched
+    /// yet, so the starts reach every partner one after another. Once all are touched, any partner's nodes count.</summary>
     public string? Partner { get; set; }
 
-    /// <summary>Only the nodes of these shapes (ids) of the partner count. Left out = every node of the partner.</summary>
+    /// <summary>Only the nodes of these shapes (ids) of the partner count. Left out = every node of the partner. Applies to every partner
+    /// unless <c>shapesByPartner</c> names it.</summary>
     public List<string>? Shapes { get; set; }
+
+    /// <summary>Per partner: only the nodes of these shapes (ids) count, for the partners named here (they replace <c>shapes</c> for that
+    /// partner). A partner not named uses <c>shapes</c>.</summary>
+    public Dictionary<string, List<string>>? ShapesByPartner { get; set; }
 
     /// <summary>The chance (0-100) that an attempt starts on a partner node; otherwise that attempt starts on a random grid point. Rolled
     /// per attempt. Default 100.</summary>
@@ -171,6 +177,22 @@ public sealed class PlacementRetries
     /// <summary>After <c>shape</c> is spent: how many times to redraw the WHOLE glyph from a fresh seed (every shape again) before the
     /// failure is reported. Default 100.</summary>
     public int Glyph { get; set; } = 100;
+
+    /// <summary>What happens when <c>shape</c> is spent and the shape still cannot be placed. <c>Fail</c> (default): the whole glyph is
+    /// redrawn (<c>glyph</c> times), then generation fails. <c>Skip</c>: the shape is left out of this glyph (all its instances, and the
+    /// copies of it) and the rest is drawn without it. To skip right after the positions are tried, set <c>shape</c> to 0. Shapes that
+    /// need it (<c>requires</c>) see it as absent, and a copy shape (<c>copyOf</c>) of it makes no copies. Not for copy shapes themselves.</summary>
+    public PlacementFailure OnFail { get; set; } = PlacementFailure.Fail;
+}
+
+/// <summary>placement.retries.onFail: what a shape that cannot be placed does once its own redraws are spent.</summary>
+public enum PlacementFailure
+{
+    /// <summary>Redraw the whole glyph, and when that is spent too, fail the glyph.</summary>
+    Fail,
+
+    /// <summary>Leave the shape out of the glyph and carry on with the others.</summary>
+    Skip,
 }
 
 /// <summary>

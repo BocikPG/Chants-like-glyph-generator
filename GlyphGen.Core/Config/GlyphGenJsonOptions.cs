@@ -60,6 +60,8 @@ public static class RootConfigLoader
         ResolveRecipeArrangements(config);
         ResolveChainFrom(config);
         ApplyShapeStartSettings(config);
+        foreach (var language in config.Languages)
+            language.Quality.UndrawnShapeIds = language.Shapes.Where(sh => !sh.IsDrawn).Select(sh => sh.Id).ToHashSet(StringComparer.Ordinal);
 
         var errors = new List<string>();
         ConfigValidator.Validate(config, errors);

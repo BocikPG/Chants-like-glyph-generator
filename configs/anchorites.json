@@ -2,8 +2,7 @@
 	"$schema": "../GlyphGen.Cli/config.schema.json",
 	"run": {
 		"seed": 20260927,
-		"outputDirectory": "./output",
-		"maxParallelism": 4
+		"outputDirectory": "./output"
 	},
 	"languages": [
 		{

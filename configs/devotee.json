@@ -2,8 +2,7 @@
 	"$schema": "../GlyphGen.Cli/config.schema.json",
 	"run": {
 		"seed": 20260927,
-		"outputDirectory": "./output",
-		"maxParallelism": 4
+		"outputDirectory": "./output"
 	},
 	"languages": [
 		{
@@ -202,9 +201,10 @@
 					],
 					"spacing": {
 						"enabled": true,
-						"minCenterDistance": 1,
+						"minCenterDistance": 4,
 						"minNodeDistance": 3.5,
-						"maxNodeDistance": 4,
+						"maxNodeDistance": 6,
+						"minEdgeDistance": 1.5,
 						"maxDistanceMode": "AllShapes"
 					},
 					"bias": {
@@ -216,7 +216,7 @@
 						"includeScaleAndRotation": false
 					}
 				},
-				"retries": 50
+				"retries": 100
 			},
 			"derivations": {
 				"devotee_base": {
@@ -225,7 +225,7 @@
 					"steps": [
 						{
 							"onlyIf": {
-								"minNodes": 6,
+								"minNodes": 5,
 								"minEdges": 4
 							},
 							"op": "DeleteNodes",
@@ -255,6 +255,28 @@
 								"strokes"
 							],
 							"optional": false
+						},
+						{
+							"onlyIf": {
+								"minNodes": 9,
+								"minEdges": 6
+							},
+							"op": "DeleteNodes",
+							"mode": "Bridge",
+							"amount": {
+								"count": {
+									"min": 1,
+									"max": 2
+								}
+							},
+							"connectionRules": [
+								{
+									"direction": "Any",
+									"minLength": 2,
+									"maxLength": 10
+								}
+							],
+							"keepConnected": true
 						}
 					]
 				}
@@ -281,24 +303,23 @@
 							},
 							{
 								"direction": "Diagonal",
-								"minLength": 2,
+								"minLength": 3,
 								"maxLength": 5,
-								"weight": 1.5
+								"weight": 1.5,
+								"backToStartChance": 25
 							},
 							{
 								"direction": "Arc",
 								"minLength": 3,
-								"maxLength": 5,
-								"weight": 0.3,
+								"maxLength": 7,
+								"weight": 0.6,
 								"arc": {
 									"angles": "Cardinal",
 									"minSweep": 90,
 									"maxSweep": 180,
 									"anchor": "Node"
 								},
-								"outlineNodes": {
-									"mode": "EveryLatticePoint"
-								}
+								"backToStartChance": 25
 							},
 							{
 								"direction": "Circle",
@@ -329,7 +350,8 @@
 						},
 						"spacing": {
 							"enabled": true,
-							"minNodeDistance": 3
+							"minNodeDistance": 3,
+							"minEdgeDistance": 1.5
 						}
 					},
 					"placement": {
@@ -351,7 +373,7 @@
 				"similarity": {
 					"max": 0.7
 				},
-				"retries": 50
+				"retries": 100
 			},
 			"render": {
 				"framing": "GlyphCentered",

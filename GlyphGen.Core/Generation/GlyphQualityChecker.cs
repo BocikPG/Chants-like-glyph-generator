@@ -30,11 +30,11 @@ public static class GlyphQualityChecker
 
         var basis = options?.SimilarityBasis ?? SimilarityBasis.Nodes;
         bool position = options?.ComparePosition ?? false;
-        var candidateShape = NormalizedShape(candidate, basis, position);
+        var candidateShape = NormalizedShape(candidate, basis, position, options);
         (Glyph Other, double Similarity)? worst = null;
         foreach (var other in alreadyAccepted)
         {
-            double similarity = JaccardSimilarity(candidateShape, NormalizedShape(other, basis, position));
+            double similarity = JaccardSimilarity(candidateShape, NormalizedShape(other, basis, position, options));
             if (similarity >= maxSimilarity && (worst is null || similarity > worst.Value.Similarity))
                 worst = (other, similarity);
         }
@@ -42,12 +42,23 @@ public static class GlyphQualityChecker
         return worst;
     }
 
+    /// <summary>The strokes that are actually seen: the glyph's chains without those of shapes that have isDrawn false (blocks and
+    /// other invisible helpers). Quality compares what is visible, so an invisible block fixed in place cannot make two
+    /// identical strokes look different - or a single line look like more.</summary>
+    internal static IEnumerable<SubSymbolChain> DrawnChains(Glyph glyph, QualityConfig? options)
+    {
+        var hidden = options?.UndrawnShapeIds;
+        var all = GlyphGeometryUtils.GetAllChains(glyph);
+        if (hidden is null || hidden.Count == 0) return all;
+        return all.Where(c => c.ShapeTag is not { } tag || !hidden.Contains(tag.Contains('#') ? tag[..tag.IndexOf('#')] : tag));
+    }
+
     /// <summary>True when every node of the whole glyph lies on one single straight line (or
     /// there are too few distinct points to form anything else) - i.e. the glyph is visually
     /// just one stroke, however many nodes/chains it was generated from.</summary>
-    public static bool IsTrivialStraightLine(Glyph glyph)
+    public static bool IsTrivialStraightLine(Glyph glyph, QualityConfig? options = null)
     {
-        var points = GlyphGeometryUtils.GetAllNodes(glyph).Distinct().ToList();
+        var points = DrawnChains(glyph, options).SelectMany(c => c.Nodes).Distinct().ToList();
         if (points.Count <= 2) return true; // degenerate, or literally a single edge
 
         var a = points[0];
@@ -69,9 +80,10 @@ public static class GlyphQualityChecker
         return true;
     }
 
-    private static HashSet<(int, int, int, int, int, int, int)> NormalizedShape(Glyph glyph, SimilarityBasis basis, bool comparePosition)
+    private static HashSet<(int, int, int, int, int, int, int)> NormalizedShape(Glyph glyph, SimilarityBasis basis, bool comparePosition, QualityConfig? options)
     {
-        var nodes = GlyphGeometryUtils.GetAllNodes(glyph).ToList();
+        var drawn = DrawnChains(glyph, options).ToList();
+        var nodes = drawn.SelectMany(c => c.Nodes).ToList();
         var set = new HashSet<(int, int, int, int, int, int, int)>();
         if (nodes.Count == 0) return set;
 
@@ -82,7 +94,7 @@ public static class GlyphQualityChecker
             return set;
         }
 
-        foreach (var chain in GlyphGeometryUtils.GetAllChains(glyph))
+        foreach (var chain in drawn)
             foreach (var e in chain.Edges)
             {
                 var a = (X: e.From.X - minX, Y: e.From.Y - minY);

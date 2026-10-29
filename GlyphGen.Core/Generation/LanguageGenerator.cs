@@ -316,7 +316,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
             bool derived = !composite && language.Derivations.TryGetValue(key, out var dv) && generated.ContainsKey(dv.From);
             if (!composite)
             {
-                if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g))
+                if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g, quality))
                     return $"'{key}' as a single straight line";
                 if (PartnerContact.FirstUntouched(language, key, g, generated) is { } untouchedPartner)
                     return $"'{key}' not touching its partner '{untouchedPartner}'";
@@ -347,6 +347,27 @@ public sealed class LanguageGenerator : ILanguageGenerator
             return null;
         }
 
+        // combination.partnerRedraw: a glyph drawn against partners that cannot be drawn (or keeps missing them) gets its partners redrawn,
+        // one per step in turn, with everything that depends on them (RedrawComponent), and is then tried again against the new ones.
+        int partnerRedraws = 0, contactMisses = 0;
+        bool TryRedrawPartner()
+        {
+            var redraw = language.Combination.PartnerRedraw;
+            if (isComposite || !language.Combination.Partners.TryGetValue(glyphDef.Name, out var partnerList)) return false;
+            var targets = partnerList.Where(n => generated.ContainsKey(n) && defs.ContainsKey(n)
+                && !language.Combination.Recipes.ContainsKey(n) && !language.Derivations.ContainsKey(n)).ToList();
+            if (targets.Count == 0) return false;
+            while (partnerRedraws < redraw.Max)
+            {
+                var target = targets[partnerRedraws % targets.Count];
+                partnerRedraws++;
+                prepared.Clear(); // attempts drawn ahead were drawn against the old partner
+                if (RedrawComponent(language, grid, languageSeed, defs[target], generated, accepted, acceptedComposites, usageTracker, defs)) return true;
+            }
+
+            return false;
+        }
+
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             if (speculate && attempt > 0 && !prepared.ContainsKey(attempt)) Prepare(attempt);
@@ -362,9 +383,13 @@ public sealed class LanguageGenerator : ILanguageGenerator
                 }
                 else candidate = Draw(attempt);
             }
-            catch (GlyphGenerationException) when (best is not null)
+            catch (GlyphGenerationException ex)
             {
-                break; // a later attempt could not be built: fall back on the best one so far
+                if (best is not null) break; // a later attempt could not be built: fall back on the best one so far
+                if (TryRedrawPartner()) { attempt--; continue; } // the same attempt again, against a redrawn partner
+                if (partnerRedraws > 0)
+                    throw new GlyphGenerationException(ex.Message + $" Its partner(s) were redrawn {partnerRedraws} time(s) as well (combination.partnerRedraw.max).");
+                throw;
             }
 
             // Building this glyph may have regenerated a component and rebuilt finished composites around it. Those rebuilds
@@ -398,10 +423,12 @@ public sealed class LanguageGenerator : ILanguageGenerator
             if (!isComposite && PartnerContact.FirstUntouched(language, glyphDef.Name, candidate, generated) is { } untouched)
             {
                 rejections.Add($"it does not touch its partner '{untouched}'");
+                contactMisses++;
+                if (contactMisses % language.Combination.PartnerRedraw.AfterContactMisses == 0) TryRedrawPartner();
                 continue;
             }
 
-            bool trivialLine = rejectStraightLine && GlyphQualityChecker.IsTrivialStraightLine(candidate);
+            bool trivialLine = rejectStraightLine && GlyphQualityChecker.IsTrivialStraightLine(candidate, quality);
 
             // A derived glyph resembles its source by design: it is held to the (looser) maxSimilarityToSource
             // against that one glyph, and to the normal limit against every other.

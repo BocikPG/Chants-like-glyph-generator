@@ -348,6 +348,8 @@ internal static class ConfigValidator
     /// <summary>combination.partners: who is drawn against whom, and the recipes that contain such glyphs.</summary>
     private static void ValidatePartners(LanguageDefinition l, Ctx c)
     {
+        Number(c, "combination.partnerRedraw.max", l.Combination.PartnerRedraw.Max, 0, 1000);
+        Number(c, "combination.partnerRedraw.afterContactMisses", l.Combination.PartnerRedraw.AfterContactMisses, 1, 100000);
         var partners = l.Combination.Partners;
         if (partners.Count == 0) return;
         var known = new HashSet<string>(l.BaseGlyphs.Concat(l.Glyphs).Select(g => g.Name), StringComparer.Ordinal);
@@ -1238,6 +1240,16 @@ internal static class ConfigValidator
                 foreach (var id in onPartner.Shapes)
                     if (l.Shapes.All(x => x.Id != id)) c.Add(pat + ".shapes", $"'{id}' is not the id of a shape.");
             }
+
+            if (onPartner.ShapesByPartner is { } byPartner)
+                foreach (var (partnerName, ids) in byPartner)
+                {
+                    string at2 = $"{pat}.shapesByPartner['{partnerName}']";
+                    if (!l.Combination.Partners.Values.Any(v => v.Contains(partnerName))) c.Add(at2, $"'{partnerName}' is not the partner of any glyph in combination.partners.");
+                    if (ids is null || ids.Count == 0) c.Add(at2, "is empty, so there would be nothing to start on - list shape ids.");
+                    else foreach (var id in ids)
+                        if (l.Shapes.All(x => x.Id != id)) c.Add(at2, $"'{id}' is not the id of a shape.");
+                }
         }
 
         if (p.Start.OnExistingNode is not { } existing) return;

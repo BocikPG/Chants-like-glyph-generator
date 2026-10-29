@@ -802,6 +802,14 @@
           "type": "boolean",
           "description": "With partners: a glyph drawn against partners has to touch every one of them (share a node with it, or cross one of its strokes where crossing is allowed); a draw that misses one is rejected and drawn again like any other quality failure. Default true.",
           "default": true
+        },
+        "partnerRedraw": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PartnerRedrawConfig"
+            }
+          ],
+          "description": "With partners: what happens when a glyph drawn against partners keeps failing. The partner itself is redrawn (one of them per step, in turn), together with everything that depends on it - glyphs drawn against it, derived from it or reading its nodes - and the glyph is tried again against the new partner."
         }
       },
       "additionalProperties": false,
@@ -3779,14 +3787,24 @@
       "properties": {
         "partner": {
           "type": "string",
-          "description": "The partner whose nodes count (it has to be one of the partners of the glyph being drawn). Left out = the nodes of every partner of the glyph. For a glyph drawn against several partners, give one shape per partner to touch each of them."
+          "description": "The partner whose nodes count (it has to be one of the partners of the glyph being drawn). Left out: with one partner, its nodes; with several, each start goes to the first partner (in the order of combination.partners) that the glyph has not touched yet, so the starts reach every partner one after another. Once all are touched, any partner's nodes count."
         },
         "shapes": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Only the nodes of these shapes (ids) of the partner count. Left out = every node of the partner."
+          "description": "Only the nodes of these shapes (ids) of the partner count. Left out = every node of the partner. Applies to every partner unless shapesByPartner names it."
+        },
+        "shapesByPartner": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "Per partner: only the nodes of these shapes (ids) count, for the partners named here (they replace shapes for that partner). A partner not named uses shapes."
         },
         "chance": {
           "type": "number",
@@ -3816,6 +3834,23 @@
       },
       "additionalProperties": false,
       "description": "placement.start.onPartnerNode: starting a shape on a node of a partner glyph (combination.partners)."
+    },
+    "PartnerRedrawConfig": {
+      "type": "object",
+      "properties": {
+        "max": {
+          "type": "integer",
+          "description": "How many times the partners of one glyph may be redrawn before it is given up on. 0 turns it off. Default 3.",
+          "default": 3
+        },
+        "afterContactMisses": {
+          "type": "integer",
+          "description": "A partner is redrawn when the glyph's shapes could not be placed at all (all their own retries spent), and also after this many draws in a row were rejected for missing a partner (then again after every further so many). Default 10.",
+          "default": 10
+        }
+      },
+      "additionalProperties": false,
+      "description": "combination.partnerRedraw: redrawing the partners of a glyph that cannot be drawn against them."
     },
     "PercentRange": {
       "type": "object",
@@ -3981,6 +4016,23 @@
           "type": "integer",
           "description": "After shape is spent: how many times to redraw the WHOLE glyph from a fresh seed (every shape again) before the failure is reported. Default 100.",
           "default": 100
+        },
+        "onFail": {
+          "type": "string",
+          "enum": [
+            "Fail",
+            "Skip"
+          ],
+          "enumDescriptions": [
+            "Redraw the whole glyph, and when that is spent too, fail the glyph.",
+            "Leave the shape out of the glyph and carry on with the others."
+          ],
+          "markdownEnumDescriptions": [
+            "Redraw the whole glyph, and when that is spent too, fail the glyph.",
+            "Leave the shape out of the glyph and carry on with the others."
+          ],
+          "description": "What happens when shape is spent and the shape still cannot be placed. Fail (default): the whole glyph is redrawn (glyph times), then generation fails. Skip: the shape is left out of this glyph (all its instances, and the copies of it) and the rest is drawn without it. To skip right after the positions are tried, set shape to 0. Shapes that need it (requires) see it as absent, and a copy shape (copyOf) of it makes no copies. Not for copy shapes themselves.",
+          "default": "Fail"
         }
       },
       "additionalProperties": false,

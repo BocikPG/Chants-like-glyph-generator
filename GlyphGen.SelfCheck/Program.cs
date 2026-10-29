@@ -1186,6 +1186,21 @@ Check("errors: rotateOptions that can never be drawn are reported", zeroRotate.C
     string spent = "";
     try { for (int seed = 1; seed <= 12 && spent == ""; seed++) Run(Language("[" + Wall(false) + "," + Fussy(", \"redoShape\": 1, \"redrawGlyph\": 1") + "]", seed)); } catch (GlyphGenerationException ex) { spent = ex.Message; }
     Check("redoShape/redrawGlyph: the final error says how much was retried", spent == "" || spent.Contains("redrawn"), spent);
+
+    // placement.retries.onFail: Skip leaves a shape that cannot be placed out of the glyph instead of failing it.
+    int skipFailed = CountFailed(", \"redoShape\": 0, \"redrawGlyph\": 0, \"onFail\": \"Skip\"");
+    int skipMissing = 0, skipMade = 0;
+    for (int seed = 1; seed <= 12; seed++)
+    {
+        try
+        {
+            var g = Run(Language("[" + Wall(false) + "," + Fussy(", \"redoShape\": 0, \"redrawGlyph\": 0, \"onFail\": \"Skip\"") + "]", seed));
+            skipMade++;
+            skipMissing += g.Values.SelectMany(l => l).Count(x => x.Chains.All(c => c.ShapeTag is not { } t || !t.StartsWith("s#")));
+        }
+        catch (GlyphGenerationException) { }
+    }
+    Check("onFail Skip: a shape that cannot be placed is left out instead of failing the glyph", plainFailed > 0 && skipFailed == 0 && skipMissing > 0 && skipMade == 12, $"failed {plainFailed} -> {skipFailed}, glyphs without the shape {skipMissing}/{skipMade}");
     string badRedo = Error(Language("[" + Fussy(", \"redoShape\": -1, \"redrawGlyph\": -2") + "]", 3));
     Check("errors: negative redoShape / redrawGlyph are reported", badRedo.Contains("retries.shape") && badRedo.Contains("retries.glyph"), badRedo);
 }
@@ -1648,6 +1663,24 @@ Check("arc: a clockwise half circle from the right end of a horizontal diameter 
         double sameShape = GlyphQualityChecker.FindTooSimilar(triA, new[] { shifted }, 0.01, new QualityConfig { SimilarityBasis = SimilarityBasis.Edges })?.Similarity ?? 0;
         double inPlace = GlyphQualityChecker.FindTooSimilar(triA, new[] { shifted }, 0.01, new QualityConfig { SimilarityBasis = SimilarityBasis.Edges, ComparePosition = true })?.Similarity ?? 0;
         Check("quality.comparePosition: the same shape elsewhere is alike by default, not when position counts", Math.Abs(sameShape - 1) < 1e-9 && inPlace < 0.3, $"{sameShape:0.##} / {inPlace:0.##}");
+        // An undrawn shape (isDrawn false) is not part of what is seen: a block fixed in place must not hide that two glyphs are the same stroke moved.
+        Glyph WithBlock(string name, GridPoint from, GridPoint to)
+        {
+            var g = Drawn(name, (from, to));
+            g.Chains[0].ShapeTag = "stroke#0";
+            var block = new SubSymbolChain { ShapeTag = "block#0" };
+            block.Nodes.Add(Q(2, 1)); block.Nodes.Add(Q(4, 1)); block.Edges.Add(new GridEdge(Q(2, 1), Q(4, 1)));
+            g.Chains.Add(block);
+            return g;
+        }
+        var moveA = WithBlock("MA", Q(3, 0), Q(6, 0)); var moveB = WithBlock("MB", Q(0, 0), Q(3, 0));
+        var undrawnOpts = new QualityConfig { SimilarityBasis = SimilarityBasis.Edges, UndrawnShapeIds = new HashSet<string> { "block" } };
+        double withBlockSeen = GlyphQualityChecker.FindTooSimilar(moveA, new[] { moveB }, 0.0, new QualityConfig { SimilarityBasis = SimilarityBasis.Edges })?.Similarity ?? 0;
+        double blockIgnored = GlyphQualityChecker.FindTooSimilar(moveA, new[] { moveB }, 0.0, undrawnOpts)?.Similarity ?? 0;
+        Check("quality: undrawn shapes are left out of similarity, so a moved copy is still caught", withBlockSeen < 0.6 && Math.Abs(blockIgnored - 1) < 1e-9, $"{withBlockSeen:0.##} / {blockIgnored:0.##}");
+        var lineOnly = WithBlock("L", Q(0, 0), Q(3, 0));
+        Check("quality: a line plus an undrawn block counts as a single straight line only when the block is ignored",
+            !GlyphQualityChecker.IsTrivialStraightLine(lineOnly) && GlyphQualityChecker.IsTrivialStraightLine(lineOnly, undrawnOpts));
         string offGrid = Error(QLang("").Replace("\"placement\": { \"mode\": \"RandomValid\", \"maxPlacementAttempts\": 60 }", "\"placement\": { \"mode\": \"RandomValid\", \"nodes\": { \"allow\": [ { \"points\": [[1,1],[15,3]] } ] } }"));
         Check("errors: placement.nodes points outside the grid are reported", offGrid.Contains("[15, 3]") && offGrid.Contains("outside the grid") && !offGrid.Contains("[1, 1]"), offGrid);
     }
@@ -2198,6 +2231,54 @@ Check("arc: a clockwise half circle from the right end of a horizontal diameter 
     Check("partners: an overlay recipe may have several components without partners", !twoRoots.Contains("without partners"), twoRoots);
     string noPartnersAtAll = Error(PartnerLang().Replace("\"partners\": { \"c\": [\"r\"] }", "\"partners\": { }"));
     Check("errors: onPartnerNode without combination.partners is reported", noPartnersAtAll.Contains("needs combination.partners"), noPartnersAtAll);
+    // Several partners: each start (of a shape with onPartnerNode and no partner named) goes to the first partner not touched yet.
+    string TwoPartners(string startExtra, int count, int seed) => $$"""
+    { "rootSeed": {{seed}}, "outputDirectory": "./o", "languages": [ { "name": "T", "grid": { "width": 19, "height": 9 }, "glyphs": ["ABC"], "baseGlyphs": ["p1", "p2", "c"],
+      "combination": { "recipes": { "ABC": ["p1", "p2", "c"] }, "partners": { "c": ["p1", "p2"] } },
+      "shapes": [
+        { "id": "s1", "onlyForGlyphs": ["p1"], "kind": "Literal", "nodes": [[0,0],[0,4]], "placement": { "start": { "mode": "Fixed", "origin": [1,2] }, "rotation": { "allowed": false } } },
+        { "id": "s2", "onlyForGlyphs": ["p2"], "kind": "Literal", "nodes": [[0,0],[4,0],[4,4]], "placement": { "start": { "mode": "Fixed", "origin": [13,2] }, "rotation": { "allowed": false } } },
+        { "id": "hook", "onlyForGlyphs": ["c"], "count": { "min": {{count}}, "max": {{count}} }, "chain": { "length": { "min": 2, "max": 2 }, "connectionRules": [ { "direction": "Orthogonal", "minLength": 3, "maxLength": 4 } ] },
+          "placement": { "start": { "onPartnerNode": {{startExtra}} } }, "arrangement": { "crossing": { "mode": "None" } } } ],
+      "quality": { "maxSimilarity": 1, "rejectStraightLineOnly": false } } ] }
+    """;
+    bool reachesBoth = true; int ranTwo = 0;
+    for (int seed = 1; seed <= 15; seed++)
+    {
+        var made = Run(TwoPartners("{}", 2, seed))["T"];
+        var child = made.First(g => g.Name == "c"); var first = made.First(g => g.Name == "p1"); var second = made.First(g => g.Name == "p2");
+        var childNodes = GlyphGeometryUtils.GetAllNodes(child).ToHashSet();
+        bool touchesFirst = GlyphGeometryUtils.GetAllNodes(first).Any(childNodes.Contains), touchesSecond = GlyphGeometryUtils.GetAllNodes(second).Any(childNodes.Contains);
+        reachesBoth &= touchesFirst && touchesSecond; ranTwo++;
+    }
+    Check("partners: with two partners, two starts that name none reach both of them", reachesBoth && ranTwo == 15);
+    string oneStartOnly = RunFails(TwoPartners("{}", 1, 3));
+    Check("partners: a single start reaches one partner, so the glyph is redrawn until it fails to touch the other (and says so)", oneStartOnly.Contains("does not touch"), oneStartOnly);
+    string badByPartner = Error(TwoPartners("{ \"shapesByPartner\": { \"zzz\": [\"s1\"], \"p1\": [\"nope\"] } }", 2, 3));
+    Check("errors: bad shapesByPartner entries are reported", badByPartner.Contains("'zzz' is not the partner") && badByPartner.Contains("'nope' is not the id of a shape"), badByPartner);
+    bool byPartnerOk = true;
+    for (int seed = 1; seed <= 6; seed++)
+    {
+        var made = Run(TwoPartners("{ \"shapesByPartner\": { \"p1\": [\"s1\"], \"p2\": [\"s2\"] } }", 2, seed))["T"];
+        byPartnerOk &= made.First(g => g.Name == "c").Chains.Count == 2;
+    }
+    Check("partners: shapesByPartner naming the partners' shapes still draws both starts", byPartnerOk);
+    // combination.partnerRedraw: a partner that never lets its glyph touch it is drawn again.
+    string LuckyPartner(string redraw, int seed) => $$"""
+    { "rootSeed": {{seed}}, "outputDirectory": "./o", "languages": [ { "name": "T", "grid": { "width": 7, "height": 7 }, "glyphs": ["AB"], "baseGlyphs": ["r", "c"],
+      "combination": { "recipes": { "AB": ["r", "c"] }, "partners": { "c": ["r"] } {{redraw}} },
+      "shapes": [
+        { "id": "rs", "onlyForGlyphs": ["r"], "chain": { "length": { "min": 3, "max": 3 }, "connectionRules": [ { "direction": "Orthogonal", "minLength": 2, "maxLength": 2 } ] },
+          "placement": { "start": { "mode": "RandomValid" } } },
+        { "id": "cs", "onlyForGlyphs": ["c"], "kind": "Literal", "nodes": [[0,0],[0,2]], "placement": { "start": { "mode": "Fixed", "origin": [3,3] }, "rotation": { "allowed": false } },
+          "arrangement": { "crossing": { "mode": "NodesOnly" } } } ],
+      "quality": { "maxSimilarity": 1, "rejectStraightLineOnly": false, "retries": 4 } } ] }
+    """;
+    int missed(string redraw) { int n = 0; for (int seed = 1; seed <= 30; seed++) if (RunFails(LuckyPartner(redraw, seed)) != "") n++; return n; }
+    int withoutRedraw = missed(", \"partnerRedraw\": { \"max\": 0 }"), withRedraw = missed(", \"partnerRedraw\": { \"max\": 20, \"afterContactMisses\": 2 }");
+    Check("partnerRedraw: redrawing the partner rescues glyphs that could not touch it", withoutRedraw > 3 && withRedraw < withoutRedraw, $"{withoutRedraw} failures without, {withRedraw} with");
+    string badRedraw = Error(LuckyPartner(", \"partnerRedraw\": { \"max\": -1, \"afterContactMisses\": 0 }", 1));
+    Check("errors: bad partnerRedraw settings are reported", badRedraw.Contains("partnerRedraw.max") && badRedraw.Contains("afterContactMisses"), badRedraw);
     string bothStarts = Error(PartnerLang().Replace("\"onPartnerNode\": {}", "\"onPartnerNode\": {}, \"onExistingNode\": {}"));
     Check("errors: onPartnerNode together with onExistingNode is reported", bothStarts.Contains("cannot be combined with onExistingNode"), bothStarts);
 

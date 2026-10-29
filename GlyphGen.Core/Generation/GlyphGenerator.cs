@@ -156,19 +156,21 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
         {
             ulong seed = redraw == 0 ? glyphSeed : SplitMix64.DeriveSeed(glyphSeed, $"redraw-{redraw}");
             var salts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var skipped = new HashSet<string>(StringComparer.Ordinal); // shapes given up on (placement.retries.onFail: Skip) in this draw of the glyph
             if (redraw > 0) glyphRedraws++;
 
             while (true)
             {
                 try
                 {
-                    return BuildPlainGlyph(language, glyphDef, grid, seed, salts, generated);
+                    return BuildPlainGlyph(language, glyphDef, grid, seed, salts, skipped, generated);
                 }
                 catch (ShapePlacementException ex)
                 {
                     last = ex;
                     int used = salts.GetValueOrDefault(ex.Shape.Id);
                     if (used < ex.Shape.Placement.RedoShape) { salts[ex.Shape.Id] = used + 1; shapeRedos++; continue; }
+                    if (ex.Shape.Placement.Retries.OnFail == PlacementFailure.Skip) { skipped.Add(ex.Shape.Id); continue; }
                     if (redraw >= ex.Shape.Placement.RedrawGlyph) // nothing left to try for this shape
                         throw new GlyphGenerationException(ex.Message + Retried(shapeRedos, glyphRedraws, ex.Shape));
                     break; // redo spent: redraw the whole glyph
@@ -217,7 +219,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
     /// <summary>One go at building a plain glyph. salts: shapes whose random streams are re-keyed (a base shape being redrawn).</summary>
     private Glyph BuildPlainGlyph(
-        LanguageDefinition language, GlyphDefinition glyphDef, LatticeGrid grid, ulong glyphSeed, Dictionary<string, int> salts, IReadOnlyDictionary<string, Glyph> generated)
+        LanguageDefinition language, GlyphDefinition glyphDef, LatticeGrid grid, ulong glyphSeed, Dictionary<string, int> salts, ISet<string> skipped, IReadOnlyDictionary<string, Glyph> generated)
     {
         var rng = new DeterministicRandom(glyphSeed);
         var glyph = new Glyph
@@ -259,6 +261,13 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
         foreach (var shape in language.Shapes)
         {
+            // A shape given up on (placement.retries.onFail: Skip) draws nothing and takes no random draw.
+            if (skipped.Contains(shape.Id))
+            {
+                placedByShape[shape.Id] = new List<SubSymbolChain>();
+                continue;
+            }
+
             // A shape that is not for this glyph draws nothing (and so its copies make none); it takes no random draw,
             // so glyphs without a filter come out exactly as before.
             if (!shape.AppliesTo(glyphDef.Name) || !shape.PassesChance(rng, chanceExtraDraws)
@@ -270,7 +279,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
             // start.onPartnerNode with no node to start on: ifNone decides (Anywhere is handled by the placement itself).
             if (shape.CopyOf is null && shape.Placement.Start.OnPartnerNode is { IfNone: not PartnerFallback.Anywhere } onPartner
-                && !geometry.PartnerNodes(onPartner.Partner, onPartner.Shapes).Any())
+                && !geometry.PartnerStartNodes(onPartner).Any())
             {
                 if (onPartner.IfNone == PartnerFallback.Skip)
                 {
@@ -620,7 +629,7 @@ public sealed partial class GlyphGenerator : IGlyphGenerator
 
             bool Acceptable(Glyph g)
             {
-                if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g)) return false;
+                if (quality.RejectStraightLineOnly && GlyphQualityChecker.IsTrivialStraightLine(g, quality)) return false;
                 if (PartnerContact.FirstUntouched(language, name, g, generated) is not null) return false;
                 var others = generated.Where(kv => kv.Key != name && kv.Key != derivation?.From && !language.Combination.Recipes.ContainsKey(kv.Key)).Select(kv => kv.Value);
                 if (quality.MaxSimilarity < 1.0 && GlyphQualityChecker.FindTooSimilar(g, others, quality.MaxSimilarity, quality) is not null) return false;
