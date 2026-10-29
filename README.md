@@ -6,11 +6,13 @@ Everything is **deterministic**: one seed drives the whole run, so the same conf
 
 If you run [`configs\all_chants_languages.json`](configs\all_chants_languages.json) you should expect glyphs below:
 
-<img src="wiki\img\alchemist%20glyph%20view.png" alt="Alchemist language" width="200" height="200">
-<img src="wiki\img\anchorites%20glyph%20view.png" alt="Anchorites language" width="200" height="200">
-<img src="wiki\img\bard%20glyph%20view.png" alt="Bard language" width="200" height="200">
-<img src="wiki\img\devotee%20glyph%20view.png" alt="Devotee language" width="200" height="200">
-<img src="wiki\img\warrior%20glyph%20view.png" alt="Warrior language" width="200" height="200">
+<p align="center">
+  <img src="wiki/img/alchemist%20glyph%20view.png" alt="Alchemist" width="150">
+  <img src="wiki/img/anchorites%20glyph%20view.png" alt="Anchorites" width="150">
+  <img src="wiki/img/bard%20glyph%20view.png" alt="Bard" width="150">
+  <img src="wiki/img/devotee%20glyph%20view.png" alt="Devotee" width="150">
+  <img src="wiki/img/warrior%20glyph%20view.png" alt="Warrior" width="150">
+</p>
 
 
 ## What it does
