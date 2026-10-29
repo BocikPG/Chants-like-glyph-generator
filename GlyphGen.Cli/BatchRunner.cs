@@ -9,17 +9,20 @@ using GlyphGen.Core.Rng;
 namespace GlyphGen.Cli;
 
 /// <summary>One run: a config file with one seed.</summary>
-public sealed record BatchJob(int Index, string ConfigPath, string ConfigName, ulong Seed);
+public sealed record BatchJob(int Index, string ConfigPath, string ConfigName, ulong Seed, string SeedSource = "");
 
 /// <summary>What one run came to.</summary>
 public sealed record BatchResult(BatchJob Job, bool Ok, bool Skipped, double Seconds, string? Error, string? OutputDirectory)
 {
+    /// <summary>How many glyphs the run drew (all languages).</summary>
+    public int GlyphCount { get; init; }
+
     /// <summary>What the run printed (previews, file list, warnings), shown when the run finishes.</summary>
     public string? LogText { get; init; }
 }
 
 /// <summary>Writes what a finished run made (ASCII preview, images). Gets the config with its output folder and thread count already
-/// set for this run; <c>verbose</c> is true when the batch is a single run, so the full preview and file list are wanted.</summary>
+/// set for this run; <c>verbose</c> (--verbose) asks for the ASCII preview and the full file list.</summary>
 public delegate void BatchOutputWriter(RootConfig config, IReadOnlyDictionary<string, IReadOnlyList<Glyph>> glyphs, bool verbose, TextWriter log);
 
 /// <summary>Plans and runs the batch: which config with which seed, how many at once and with how many threads each.</summary>
@@ -29,12 +32,17 @@ public sealed class BatchRunner
     private readonly TextWriter _console;
     private readonly BatchOutputWriter? _writer;
     private readonly object _consoleLock = new();
+    private readonly TextWriter _live;
+    private readonly bool _interactive;
 
-    public BatchRunner(CliOptions options, TextWriter console, BatchOutputWriter? writer)
+    /// <param name="live">Where the progress line of a single run is rewritten (the real console); null = not shown that way.</param>
+    public BatchRunner(CliOptions options, TextWriter console, BatchOutputWriter? writer, TextWriter? live = null, bool interactive = false)
     {
         _options = options;
         _console = console;
         _writer = writer;
+        _live = live ?? console;
+        _interactive = interactive && live is not null;
     }
 
     /// <summary>The master seed random seeds were drawn from, when there were any.</summary>
@@ -56,9 +64,9 @@ public sealed class BatchRunner
             {
                 var cfg = RootConfigLoader.LoadFromFile(path);
                 loaded[path] = cfg;
-                foreach (var w in cfg.Warnings) _console.WriteLine($"Warning: {Path.GetFileName(path)}: {w}");
+                if (!_options.Quiet) foreach (var w in WarningCollapser.Collapse(cfg.Warnings)) _console.WriteLine(CliStyle.Warn($"Warning: {Path.GetFileName(path)}: {w}"));
             }
-            catch (ConfigValidationException ex) { bad = true; _console.WriteLine($"{Path.GetFileName(path)}: {ex.Message}"); }
+            catch (ConfigValidationException ex) { bad = true; _console.WriteLine(CliStyle.Bad($"{Path.GetFileName(path)}:") + " " + ex.Message); }
             catch (JsonException ex) { bad = true; _console.WriteLine($"{Path.GetFileName(path)}: could not read as JSON: {ex.Message}"); }
             catch (Exception ex) { bad = true; _console.WriteLine($"{Path.GetFileName(path)}: could not load: {ex.Message}"); }
         }
@@ -72,19 +80,22 @@ public sealed class BatchRunner
         var names = ConfigNames(configs);
         var jobs = new List<BatchJob>();
         List<ulong>? shared = _options.Seeds;
+        string sharedSource = "from --seed";
 
         if (shared is null && _options.Runs is { } runs)
         {
             MasterSeed = _options.MasterSeed ?? RandomMaster();
             shared = DrawSeeds(MasterSeed.Value, runs);
+            sharedSource = $"random, from master seed {MasterSeed}";
         }
 
         ulong? lone = null; // one random seed for every config that sets none, so they stay comparable
         foreach (var path in configs)
         {
             List<ulong> seeds;
-            if (shared is not null) seeds = shared;
-            else if (CliOptions.FileHasSeed(path)) seeds = new List<ulong> { loaded[path].RootSeed };
+            string source;
+            if (shared is not null) { seeds = shared; source = sharedSource; }
+            else if (CliOptions.FileHasSeed(path)) { seeds = new List<ulong> { loaded[path].RootSeed }; source = "from the config file"; }
             else
             {
                 if (lone is null)
@@ -93,9 +104,10 @@ public sealed class BatchRunner
                     lone = DrawSeeds(MasterSeed.Value, 1)[0];
                 }
                 seeds = new List<ulong> { lone.Value };
+                source = "random";
             }
 
-            foreach (var seed in seeds) jobs.Add(new BatchJob(jobs.Count, path, names[path], seed));
+            foreach (var seed in seeds) jobs.Add(new BatchJob(jobs.Count, path, names[path], seed, source));
         }
 
         ThreadBudget = _options.Threads is > 0 ? _options.Threads.Value : Math.Max(1, Environment.ProcessorCount);
@@ -108,16 +120,17 @@ public sealed class BatchRunner
     /// <summary>Runs every job, ConcurrentRuns at a time, and prints the summary.</summary>
     public List<BatchResult> Run(IReadOnlyList<BatchJob> jobs)
     {
+        if (jobs.Count == 1) return new List<BatchResult> { RunSingle(jobs[0]) };
+
         var results = new BatchResult[jobs.Count];
         int finished = 0;
         int failed = 0;
-        bool verbose = jobs.Count == 1;
 
         Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = ConcurrentRuns }, job =>
         {
             BatchResult result = _options.FailFast && Volatile.Read(ref failed) > 0
                 ? new BatchResult(job, false, true, 0, null, null)
-                : RunOne(job, verbose);
+                : RunOne(job, null);
 
             results[job.Index] = result;
             if (!result.Ok && !result.Skipped) Interlocked.Increment(ref failed);
@@ -125,16 +138,12 @@ public sealed class BatchRunner
             lock (_consoleLock)
             {
                 string head = $"[{done}/{jobs.Count}] {job.ConfigName} seed {job.Seed}";
-                if (result.Skipped) _console.WriteLine($"{head} skipped (--fail-fast)");
-                else if (verbose)
-                {
-                    _console.Write(result.LogText);
-                    if (!result.Ok) _console.WriteLine($"Generation failed: {result.Error}");
-                }
+                if (result.Skipped) { if (!_options.Quiet) _console.WriteLine($"{head} skipped (--fail-fast)"); }
                 else
                 {
-                    _console.WriteLine(result.Ok ? $"{head} ok ({result.Seconds:0.0} s)" : $"{head} FAILED ({result.Seconds:0.0} s): {FirstLine(result.Error)}");
-                    if (!string.IsNullOrEmpty(result.LogText)) _console.Write(result.LogText);
+                    if (!result.Ok) _console.WriteLine($"{head} {CliStyle.Bad("FAILED")} ({result.Seconds:0.0} s): {ErrorFormatter.Headline(result.Error)}");
+                    else if (!_options.Quiet) _console.WriteLine($"{head} {CliStyle.Ok("ok")} ({result.Seconds:0.0} s)");
+                    if (!string.IsNullOrEmpty(result.LogText) && (!_options.Quiet || !result.Ok)) _console.Write(result.LogText);
                 }
             }
         });
@@ -142,8 +151,38 @@ public sealed class BatchRunner
         return results.ToList();
     }
 
-    private BatchResult RunOne(BatchJob job, bool verbose)
+    /// <summary>One run on its own: says what it is about to do, shows progress while it works, then what came out.</summary>
+    private BatchResult RunSingle(BatchJob job)
     {
+        if (!_options.Quiet)
+        {
+            _console.WriteLine($"{CliStyle.Bold(job.ConfigName)}  seed {job.Seed} ({job.SeedSource})  {ThreadsPerRun} thread(s)");
+            _console.WriteLine(CliStyle.Dim($"config {job.ConfigPath}"));
+        }
+
+        using var reporter = _options.Quiet ? null : new ProgressReporter(_live, _console, _interactive, _options.Verbose);
+        var result = RunOne(job, reporter is null ? null : reporter.OnProgress);
+        reporter?.Dispose();
+
+        if (!string.IsNullOrEmpty(result.LogText) && (!_options.Quiet || !result.Ok)) _console.Write(result.LogText);
+        if (result.Ok)
+        {
+            _console.WriteLine($"{CliStyle.Ok("Done")}: {result.GlyphCount} glyph(s) in {result.Seconds:0.0} s.");
+            if (result.OutputDirectory is { } dir && _writer is not null && !_options.NoRender) _console.WriteLine($"Output: {Path.GetFullPath(dir)}");
+            if (job.SeedSource.StartsWith("random")) _console.WriteLine(CliStyle.Dim($"Repeat this run: GlyphGen.Cli \"{job.ConfigPath}\" --seed {job.Seed}"));
+        }
+        else
+        {
+            _console.WriteLine($"{CliStyle.Bad("FAILED")} after {result.Seconds:0.0} s: {ErrorFormatter.Format(result.Error)}");
+            _console.WriteLine(CliStyle.Dim($"Reproduce this run: GlyphGen.Cli \"{job.ConfigPath}\" --seed {job.Seed}"));
+        }
+
+        return result;
+    }
+
+    private BatchResult RunOne(BatchJob job, Action<GenerationProgress>? progress)
+    {
+        bool verbose = _options.Verbose;
         var sb = new StringWriter();
         var clock = Stopwatch.StartNew();
         string? outDir = null;
@@ -158,8 +197,9 @@ public sealed class BatchRunner
 
             // Every run has its own generator: it keeps per-run state (warnings, redraw counters).
             var orchestrator = new RunOrchestrator(new LanguageGenerator(new GlyphGenerator(new ChainGenerator(), new PlacementResolver(), new CombinationResolver())));
-            var glyphs = orchestrator.Run(cfg);
-            foreach (var w in orchestrator.Warnings.Skip(cfg.Warnings.Count)) sb.WriteLine($"Warning: {job.ConfigName} seed {job.Seed}: {w}");
+            var glyphs = orchestrator.Run(cfg, progress);
+            int glyphCount = glyphs.Values.Sum(l => l.Count);
+            foreach (var w in WarningCollapser.Collapse(orchestrator.Warnings.Skip(cfg.Warnings.Count))) sb.WriteLine(CliStyle.Warn($"Warning: {job.ConfigName} seed {job.Seed}: {w}"));
 
             if (!_options.NoRender && _writer is not null)
             {
@@ -167,7 +207,7 @@ public sealed class BatchRunner
                 catch (Exception ex) { return new BatchResult(job, false, false, clock.Elapsed.TotalSeconds, "rendering failed: " + ex.Message, outDir) { LogText = sb.ToString() }; }
             }
 
-            return new BatchResult(job, true, false, clock.Elapsed.TotalSeconds, null, outDir) { LogText = sb.ToString() };
+            return new BatchResult(job, true, false, clock.Elapsed.TotalSeconds, null, outDir) { LogText = sb.ToString(), GlyphCount = glyphCount };
         }
         catch (GlyphGenerationException ex)
         {
@@ -193,16 +233,22 @@ public sealed class BatchRunner
                 var times = ran.Select(r => r.Seconds).OrderBy(t => t).ToList();
                 string time = times.Count == 0 ? "-" : $"{times[0]:0.0} / {times[times.Count / 2]:0.0} / {times[^1]:0.0} s";
                 string skipped = group.Count(r => r.Skipped) is var s and > 0 ? $", {s} skipped" : "";
-                _console.WriteLine($"  {group.Key}: {ok.Count}/{ran.Count} ok{skipped}, time min/median/max {time}");
+                _console.WriteLine($"  {group.Key}: {(ok.Count == ran.Count ? CliStyle.Ok($"{ok.Count}/{ran.Count} ok") : CliStyle.Bad($"{ok.Count}/{ran.Count} ok"))}{skipped}, time min/median/max {time}");
                 foreach (var bad in ran.Where(r => !r.Ok))
-                    _console.WriteLine($"      seed {bad.Job.Seed}: {FirstLine(bad.Error)}");
+                    _console.WriteLine($"      seed {bad.Job.Seed}: {ErrorFormatter.Headline(bad.Error)}");
             }
         }
 
         if (MasterSeed is { } master && (_options.Runs is not null))
             _console.WriteLine($"Master seed {master} (repeat this batch with --master-seed {master} --runs {_options.Runs}).");
-        else if (MasterSeed is { } lone && results.Count > 0 && _options.Seeds is null)
-            _console.WriteLine($"Random seed drawn from master seed {lone}. Repeat a run with --seed <seed>.");
+
+        if (results.Count > 1 && results.FirstOrDefault(r => !r.Ok && !r.Skipped) is { } firstFailed)
+            _console.WriteLine(CliStyle.Dim($"Reproduce a failed run: GlyphGen.Cli \"{firstFailed.Job.ConfigPath}\" --seed {firstFailed.Job.Seed}"));
+
+        if (results.Count > 1 && _writer is not null && !_options.NoRender
+            && results.FirstOrDefault(r => r.OutputDirectory is not null)?.OutputDirectory is { } first
+            && Path.GetDirectoryName(Path.GetDirectoryName(first)) is { } root)
+            _console.WriteLine($"Output: {Path.GetFullPath(root)}\\<config>\\<seed>".Replace('\\', Path.DirectorySeparatorChar));
 
         if (_options.SummaryJson is { } file)
         {
@@ -255,11 +301,4 @@ public sealed class BatchRunner
     }
 
     private static ulong RandomMaster() => (ulong)Random.Shared.NextInt64(1, uint.MaxValue);
-
-    private static string FirstLine(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return "";
-        string line = text.Split('\n')[0].Trim();
-        return line.Length > 200 ? line[..200] + "..." : line;
-    }
 }

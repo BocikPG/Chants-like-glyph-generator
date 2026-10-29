@@ -3,6 +3,7 @@
 // (PNG output), so both can be reused as referenced DLLs later without dragging along any
 // console-specific code. Batch planning (configs, seeds, threads) is in BatchRunner / CliOptions.
 
+using System.Runtime.InteropServices;
 using GlyphGen.Cli;
 using GlyphGen.Core.Config;
 using GlyphGen.Core.Generation;
@@ -25,55 +26,104 @@ if (args.Length >= 1 && args[0] == "--schema")
 }
 
 var options = CliOptions.Parse(args);
-if (options.Help)
+EnableTerminalColours();
+CliStyle.Enabled = CliStyle.Detect();
+
+StreamWriter? logFile = null;
+if (options.LogFile is { } logPath)
 {
-    Console.WriteLine(CliOptions.Usage);
-    return;
+    try { logFile = new StreamWriter(logPath, append: false) { AutoFlush = true }; }
+    catch (Exception ex) { Console.WriteLine($"Cannot write the log '{logPath}': {ex.Message}"); Environment.ExitCode = 1; return; }
 }
 
-var configs = options.ResolveConfigs(Directory.GetCurrentDirectory(), out string? notice);
-if (options.Errors.Count > 0)
+var console = new TeeWriter(Console.Out, logFile);
+int exitCode = Execute();
+Environment.ExitCode = exitCode;
+logFile?.Dispose();
+
+if (options.Pause ?? StartedByDoubleClick(args))
 {
-    foreach (var e in options.Errors) Console.WriteLine(e);
     Console.WriteLine();
-    Console.WriteLine(CliOptions.Usage);
-    Environment.ExitCode = 1;
-    return;
+    Console.Write("Press Enter to close.");
+    try { Console.ReadLine(); } catch (IOException) { }
 }
 
-if (configs.Count == 0)
-{
-    Console.WriteLine("No GlyphGen config found. Name one, or put them in a 'configs' folder.");
-    Console.WriteLine();
-    Console.WriteLine(CliOptions.Usage);
-    Environment.ExitCode = 1;
-    return;
-}
-
-if (notice is not null) Console.WriteLine(notice);
-
-var runner = new BatchRunner(options, Console.Out, WriteOutput);
-var loaded = runner.LoadAll(configs);
-if (loaded is null)
-{
-    Environment.ExitCode = 1;
-    return;
-}
-
-if (options.ValidateOnly)
-{
-    Console.WriteLine($"{configs.Count} config(s) are valid.");
-    return;
-}
-
-var jobs = runner.Plan(configs, loaded);
-if (jobs.Count > 1)
-    Console.WriteLine($"{jobs.Count} run(s): {configs.Count} config(s), {runner.ConcurrentRuns} at a time, {runner.ThreadsPerRun} thread(s) each (budget {runner.ThreadBudget}).");
-
-var results = runner.Run(jobs);
-runner.Summarize(results);
-if (results.Any(r => !r.Ok)) Environment.ExitCode = 1;
 return;
+
+int Execute()
+{
+    if (options.Help)
+    {
+        console.WriteLine(CliOptions.Usage);
+        return 0;
+    }
+
+    var configs = options.ResolveConfigs(Directory.GetCurrentDirectory(), out string? where);
+    if (options.Errors.Count > 0)
+    {
+        foreach (var e in options.Errors) console.WriteLine(CliStyle.Bad(e));
+        console.WriteLine();
+        console.WriteLine(CliOptions.Usage);
+        return 1;
+    }
+
+    if (configs.Count == 0)
+    {
+        if (options.Inputs.Count == 0)
+            console.WriteLine(CliStyle.Bad("No config found") + " in " + string.Join(" or in ", options.Searched) + ".");
+        else
+            console.WriteLine(CliStyle.Bad("No config found") + " for: " + string.Join(", ", options.Inputs) + ".");
+        console.WriteLine("Put a config (a .json file with a top-level \"languages\" list) in a 'configs' folder next to the program, or name one: GlyphGen.Cli my-config.json");
+        console.WriteLine("All options: GlyphGen.Cli --help");
+        return 1;
+    }
+
+    if (where is not null && !options.Quiet)
+    {
+        var names = configs.Select(Path.GetFileName).ToList();
+        string list = names.Count <= 6 ? string.Join(", ", names) : string.Join(", ", names.Take(6)) + $" and {names.Count - 6} more";
+        console.WriteLine($"Found {configs.Count} config(s) in {where}: {list}");
+    }
+
+    var runner = new BatchRunner(options, console, WriteOutput, Console.Out, !Console.IsOutputRedirected && !options.Verbose);
+    var loaded = runner.LoadAll(configs);
+    if (loaded is null) return 1;
+
+    if (options.ValidateOnly)
+    {
+        console.WriteLine($"{configs.Count} config(s) are valid.");
+        return 0;
+    }
+
+    var jobs = runner.Plan(configs, loaded);
+    if (jobs.Count > 1 && !options.Quiet)
+        console.WriteLine($"{jobs.Count} run(s): {configs.Count} config(s), {runner.ConcurrentRuns} at a time, {runner.ThreadsPerRun} thread(s) each (budget {runner.ThreadBudget}).");
+
+    var results = runner.Run(jobs);
+    runner.Summarize(results);
+    return results.Any(r => !r.Ok) ? 1 : 0;
+}
+
+// Windows: let the old console understand colour codes. Elsewhere terminals already do.
+static void EnableTerminalColours()
+{
+    if (!OperatingSystem.IsWindows() || Console.IsOutputRedirected) return;
+    try
+    {
+        IntPtr handle = NativeMethods.GetStdHandle(-11);
+        if (NativeMethods.GetConsoleMode(handle, out uint mode)) NativeMethods.SetConsoleMode(handle, mode | 0x0004);
+    }
+    catch (Exception) { /* colour just stays off */ }
+}
+
+// True when the program was started by a double-click: no arguments, a console window of its own (nobody else shares it), so the
+// window would vanish with the messages the moment the run ends.
+static bool StartedByDoubleClick(string[] args)
+{
+    if (args.Length > 0 || !OperatingSystem.IsWindows() || Console.IsInputRedirected || Console.IsOutputRedirected) return false;
+    try { return NativeMethods.GetConsoleProcessList(new uint[4], 4) <= 1; }
+    catch (Exception) { return false; }
+}
 
 static void WriteOutput(RootConfig config, IReadOnlyDictionary<string, IReadOnlyList<GlyphGen.Core.Model.Glyph>> results, bool verbose, TextWriter log)
 {
@@ -167,7 +217,6 @@ static void WriteOutput(RootConfig config, IReadOnlyDictionary<string, IReadOnly
         }
     }
 }
-    if (!verbose) log.WriteLine($"      wrote {written} file(s) to {config.OutputDirectory}");
 }
 
 static void WriteContactSheet(string directory, IReadOnlyList<RenderedGlyph> items, int columns, string background, int maxParallelism, bool verbose, TextWriter log, ref int written)
@@ -185,4 +234,12 @@ static string SanitizeFileName(string name)
     foreach (char c in Path.GetInvalidFileNameChars())
         name = name.Replace(c, '_');
     return name;
+}
+
+static class NativeMethods
+{
+    [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int handle);
+    [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr handle, out uint mode);
+    [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr handle, uint mode);
+    [DllImport("kernel32.dll")] public static extern uint GetConsoleProcessList(uint[] list, uint count);
 }

@@ -2357,6 +2357,46 @@ Check("arc: a clockwise half circle from the right end of a horizontal diameter 
     File.WriteAllText(found[0], "{ \"languages\": [ { \"name\": \"x\" } ] }");
     var ffRes = failFast.Run(ffJobs);
     Check("cli: --fail-fast starts no new run after a failure, and a failed run is reported", !ffRes[0].Ok && ffRes.Skip(1).All(r => r.Skipped), string.Join(",", ffRes.Select(r => r.Skipped ? "skip" : r.Ok ? "ok" : "fail")));
+    // ---- CLI messages ----
+    string longError = "[Alchemist] Shape 'x' for glyph 'g' could not be placed within its configured attempt budget. Of 100 attempt(s): 100 ran out of valid moves. The chain keeps running out of moves: try a shorter chain.length, e.g. 3. Retried before giving up: the shape was redrawn 5 time(s).";
+    var errParts = GlyphGen.Cli.ErrorFormatter.Format(longError).Split('\n');
+    Check("cli messages: a long error becomes a headline plus indented detail lines (and 'attempt(s):' / 'e.g.' do not split it)",
+        errParts.Length == 4 && errParts[0].StartsWith("[Alchemist] Shape 'x'") && errParts[1].StartsWith("  Of 100 attempt(s): 100 ran") && errParts[2].Contains("e.g. 3") && errParts[3].StartsWith("  Retried"), string.Join(" | ", errParts));
+    Check("cli messages: the headline is the first sentence only", GlyphGen.Cli.ErrorFormatter.Headline(longError).EndsWith("attempt budget."));
+    var collapsed = GlyphGen.Cli.WarningCollapser.Collapse(new[] { "a", "b", "a", "a" });
+    Check("cli messages: identical warnings are merged with a count, in first-seen order", collapsed.SequenceEqual(new[] { "a (x3)", "b" }), string.Join(",", collapsed));
+    GlyphGen.Cli.CliStyle.Enabled = true;
+    string painted = GlyphGen.Cli.CliStyle.Bad("x");
+    GlyphGen.Cli.CliStyle.Enabled = false;
+    Check("cli messages: colour codes are added when enabled and stripped for the log", painted.Contains("\x1b[") && GlyphGen.Cli.CliStyle.Strip(painted) == "x" && GlyphGen.Cli.CliStyle.Bad("x") == "x");
+
+    var emptyDir = Path.Combine(tmp, "nothing-here"); Directory.CreateDirectory(emptyDir);
+    var noneOpts = GlyphGen.Cli.CliOptions.Parse(Array.Empty<string>());
+    var noneFound = noneOpts.ResolveConfigs(emptyDir, out var noneWhere);
+    Check("cli messages: nothing found says where it looked", noneFound.Count == 0 && noneOpts.Searched.Count == 1 && noneOpts.Searched[0].Contains("current folder") && noneWhere == "the current folder", string.Join(";", noneOpts.Searched));
+    var onlyJunk = Path.Combine(tmp, "junk"); Directory.CreateDirectory(Path.Combine(onlyJunk, "configs")); File.WriteAllText(Path.Combine(onlyJunk, "configs", "x.json"), "[1]");
+    var junkOpts = GlyphGen.Cli.CliOptions.Parse(Array.Empty<string>()); junkOpts.ResolveConfigs(onlyJunk, out _);
+    Check("cli messages: an empty 'configs' folder and the current folder are both reported as searched", junkOpts.Searched.Count == 2 && junkOpts.Searched[0].Contains("'configs' folder"), string.Join(";", junkOpts.Searched));
+    var msgOpts = GlyphGen.Cli.CliOptions.Parse(new[] { "--verbose", "--log", "x.log", "--pause" });
+    Check("cli messages: --verbose, --log and --pause are read; --verbose with --quiet is an error",
+        msgOpts.Verbose && msgOpts.LogFile == "x.log" && msgOpts.Pause == true && GlyphGen.Cli.CliOptions.Parse(new[] { "--verbose", "--quiet" }).Errors.Count == 1);
+
+    var events = new List<GlyphGen.Core.Generation.GenerationProgress>();
+    var progressConfig = LoadCfg(PartnerLang(seed: 3));
+    new RunOrchestrator(new LanguageGenerator(new GlyphGenerator(new ChainGenerator(), new PlacementResolver(), new CombinationResolver())))
+        .Run(progressConfig, e => { lock (events) events.Add(e); });
+    int startedGlyphs = events.Count(e => e.Stage == GlyphGen.Core.Generation.GenerationStage.GlyphStarted), doneGlyphs = events.Count(e => e.Stage == GlyphGen.Core.Generation.GenerationStage.GlyphDone);
+    Check("cli messages: generation reports start, every glyph started and done in turn with the running total, and the end",
+        events.Count > 0 && events[0].Stage == GlyphGen.Core.Generation.GenerationStage.Started && events[^1].Stage == GlyphGen.Core.Generation.GenerationStage.Finished
+        && startedGlyphs == doneGlyphs && doneGlyphs == events[0].Total && events.Where(e => e.Stage == GlyphGen.Core.Generation.GenerationStage.GlyphDone).Select(e => e.Done).SequenceEqual(Enumerable.Range(1, doneGlyphs))
+        && events.Any(e => e.Kind == "composite") && events.Any(e => e.Kind == "base glyph"), $"{events.Count} events");
+
+    var plainOut = new StringWriter();
+    using (var reporter = new GlyphGen.Cli.ProgressReporter(plainOut, plainOut, interactive: false, verbose: true))
+        foreach (var e in events) reporter.OnProgress(e);
+    string reported = plainOut.ToString();
+    Check("cli messages: progress without a terminal prints plain lines (language, each glyph with its kind)", reported.Contains("glyph(s) to draw") && reported.Contains("[1/") && reported.Contains("composite AB"), reported);
+
     try { Directory.Delete(tmp, true); } catch (IOException) { }
 }
 

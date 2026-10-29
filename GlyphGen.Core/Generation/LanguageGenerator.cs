@@ -42,6 +42,22 @@ public sealed class LanguageGenerator : ILanguageGenerator
         _glyphGenerator = glyphGenerator;
     }
 
+    /// <summary>Receives progress reports (see <see cref="GenerationProgress"/>); null = none.</summary>
+    public Action<GenerationProgress>? Progress { get; set; }
+
+    private string _progressLanguage = "";
+    private int _progressDone, _progressTotal;
+    private HashSet<string> _progressComposites = new();
+    private HashSet<string> _progressBases = new();
+
+    private void Report(GenerationStage stage, string? glyph = null, string? detail = null)
+    {
+        var progress = Progress;
+        if (progress is null) return;
+        string? kind = glyph is null ? null : _progressComposites.Contains(glyph) ? "composite" : _progressBases.Contains(glyph) ? "base glyph" : "glyph";
+        progress(new GenerationProgress(_progressLanguage, stage, glyph, kind, _progressDone, _progressTotal, detail));
+    }
+
     public IReadOnlyList<Glyph> GenerateAll(LanguageDefinition language, LatticeGrid grid, ulong languageSeed)
     {
         Warnings.Clear();
@@ -59,6 +75,12 @@ public sealed class LanguageGenerator : ILanguageGenerator
         // source), pulling those in first when they come later in the lists. Without derivations nothing moves.
         var defs = language.BaseGlyphs.Concat(language.Glyphs).GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First());
         var visiting = new HashSet<string>();
+        _progressLanguage = language.Name;
+        _progressDone = 0;
+        _progressTotal = defs.Count;
+        _progressComposites = composites;
+        _progressBases = new HashSet<string>(language.BaseGlyphs.Select(b => b.Name));
+        Report(GenerationStage.Started);
         PrefetchPlainGlyphs(language, grid, languageSeed, defs, composites, generated, usageTracker);
 
         void Ensure(GlyphDefinition glyphDef)
@@ -72,7 +94,10 @@ public sealed class LanguageGenerator : ILanguageGenerator
             foreach (var name in dependencies)
                 if (defs.TryGetValue(name, out var dependency)) Ensure(dependency);
 
+            Report(GenerationStage.GlyphStarted, glyphDef.Name);
             GenerateInto(language, grid, languageSeed, glyphDef, generated, accepted, acceptedComposites, usageTracker, defs);
+            _progressDone++;
+            Report(GenerationStage.GlyphDone, glyphDef.Name);
         }
 
         foreach (var glyphDef in language.BaseGlyphs) Ensure(glyphDef);
@@ -88,6 +113,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
                 Warnings.Add($"[{language.Name}] quality rule '{rule.Id}' never found a stroke matching 'against' (kind {rule.Against.Kind}, shapes {(rule.Against.Shapes is { Count: > 0 } ? string.Join("/", rule.Against.Shapes) : "any")}), so it checked nothing.");
         }
 
+        Report(GenerationStage.Finished);
         return language.BaseGlyphs.Concat(language.Glyphs).Select(g => generated[g.Name]).ToList();
     }
 
@@ -361,6 +387,7 @@ public sealed class LanguageGenerator : ILanguageGenerator
             {
                 var target = targets[partnerRedraws % targets.Count];
                 partnerRedraws++;
+                Report(GenerationStage.PartnerRedraw, glyphDef.Name, $"drawing partner '{target}' again ({partnerRedraws}/{redraw.Max})");
                 prepared.Clear(); // attempts drawn ahead were drawn against the old partner
                 if (RedrawComponent(language, grid, languageSeed, defs[target], generated, accepted, acceptedComposites, usageTracker, defs)) return true;
             }
@@ -371,6 +398,8 @@ public sealed class LanguageGenerator : ILanguageGenerator
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             if (speculate && attempt > 0 && !prepared.ContainsKey(attempt)) Prepare(attempt);
+            if (attempt > 0 && attempt % 10 == 0)
+                Report(GenerationStage.Retry, glyphDef.Name, $"attempt {attempt + 1}/{maxAttempts}" + (rejections.Count > 0 ? $", last rejected because {rejections[^1]}" : ""));
 
             var before = new Dictionary<string, Glyph>(generated);
             Glyph candidate;

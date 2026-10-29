@@ -6,7 +6,17 @@
     <RootNamespace>Chants_like_glyph_generator</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="GlyphGen.RenderCheck\**" />
+    <Compile Remove="GlyphGen.SelfCheck\**" />
+    <EmbeddedResource Remove="GlyphGen.RenderCheck\**" />
+    <EmbeddedResource Remove="GlyphGen.SelfCheck\**" />
+    <None Remove="GlyphGen.RenderCheck\**" />
+    <None Remove="GlyphGen.SelfCheck\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="4.152.1" />

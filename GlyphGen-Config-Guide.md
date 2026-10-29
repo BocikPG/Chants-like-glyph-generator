@@ -23,8 +23,12 @@ GlyphGen.Cli --schema [config.schema.json]
 | `--fail-fast` | Start no new run after one failed (runs already going finish). |
 | `--validate-only` | Load and check the configs, then stop. |
 | `--summary-json FILE` | Write every run's config, seed, status, time and error to FILE. |
+| `--verbose` | Also print the ASCII preview of every glyph, every file written, and each retry as it happens |
+| `--quiet` | Print only failures and the final line |
+| `--log FILE` | Also write everything printed to FILE (without colour codes) |
+| `--pause` / `--no-pause` | Wait for Enter before closing. Default: only when the program was started by a double-click on Windows (no arguments, own console window) |
 
-A single run prints the ASCII preview and every file written; a batch prints one line per run as it finishes and a summary per config (runs ok, min / median / max time, and each failing seed with the first line of its error). The exit code is 1 when any run failed. The output does not depend on the thread count: the same seed gives the same glyphs with 1 or 16 threads. A run's own `run.maxParallelism` is replaced by the command line's thread plan.
+A single run first prints what it is going to do (config, seed and where it came from, threads), then shows progress while it works: `[12/43] drawing base glyph 'seekBase' (3.2 s)`, rewritten in place on a terminal, plain lines every tenth glyph when redirected (and a note when one glyph is slow, with any partner redraw). It ends with the glyph count, the time and the output folder; a failure is printed as a headline with the details indented below it and the command that reproduces the run. When no config is named, the program says where it found them (`Found 3 config(s) in the 'configs' folder: ...`) or where it looked when there are none. Colour is used on a terminal and switched off when output is redirected or `NO_COLOR` is set. A batch prints one line per run as it finishes and a summary per config (runs ok, min / median / max time, and each failing seed with the first line of its error). The exit code is 1 when any run failed. The output does not depend on the thread count: the same seed gives the same glyphs with 1 or 16 threads. A run's own `run.maxParallelism` is replaced by the command line's thread plan.
 
 - Property names are **case-insensitive** (the guide uses camelCase).
 - Enums are written as **strings** (`"Orthogonal"`, `"RandomValid"`, ...).
@@ -1207,7 +1211,7 @@ The CLI always writes an extra `.debug.png` per glyph with node dots and compone
 
 - File and folder names are sanitized (characters invalid in file names become `_`).
 - The contact sheet lists real glyphs in the order of `glyphs`, at each glyph's own pixel size, edge to edge: no margins, gaps or frames, no labels. Columns come from `run.contactSheet.columns`. It uses `render.background` exactly as configured; if that is transparent or translucent, so is the sheet.
-- The console also prints an ASCII preview of every glyph (straight lines only), marking base glyphs.
+- With `--verbose` the console also prints an ASCII preview of every glyph (straight lines only), marking base glyphs.
 - PNGs can differ slightly between platforms and Skia versions because of anti-aliasing; geometry is deterministic, but don't expect byte-identical files.
 
 ---

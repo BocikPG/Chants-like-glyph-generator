@@ -36,6 +36,9 @@ public interface ILanguageGenerator
 
     /// <summary>Threads generation may use (1 = one, 0 = all cores). Set from RootConfig.MaxParallelism before each run.</summary>
     int MaxParallelism { get => 1; set { } }
+
+    /// <summary>Receives progress reports while generating (null = none). May be called from any thread.</summary>
+    Action<GenerationProgress>? Progress { get => null; set { } }
 }
 
 /// <summary>
@@ -54,8 +57,9 @@ public sealed class RunOrchestrator
     /// <summary>Warnings of the whole run (quality rules with onFail Warn), for the host to print.</summary>
     public List<string> Warnings { get; } = new();
 
-    public IReadOnlyDictionary<string, IReadOnlyList<Glyph>> Run(RootConfig config)
+    public IReadOnlyDictionary<string, IReadOnlyList<Glyph>> Run(RootConfig config, Action<GenerationProgress>? progress = null)
     {
+        _languageGenerator.Progress = progress;
         Warnings.Clear();
         Warnings.AddRange(config.Warnings);
         _languageGenerator.MaxParallelism = config.MaxParallelism;

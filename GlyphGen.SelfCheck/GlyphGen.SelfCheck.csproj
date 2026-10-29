@@ -15,6 +15,7 @@
   <ItemGroup>
     <Compile Include="..\GlyphGen.Cli\CliOptions.cs" Link="Cli\CliOptions.cs" />
     <Compile Include="..\GlyphGen.Cli\BatchRunner.cs" Link="Cli\BatchRunner.cs" />
+    <Compile Include="..\GlyphGen.Cli\CliOutput.cs" Link="Cli\CliOutput.cs" />
   </ItemGroup>
 
   <!-- Copied next to the exe so `dotnet run` finds them from any working directory. -->

@@ -1,6 +1,6 @@
-# GlyphGen
+# GlyphGenerator
 
-GlyphGen generates invented writing systems. You describe a "language" in a JSON config: a lattice, the kinds of strokes allowed, how glyphs combine into composites, and what counts as good enough. GlyphGen draws a set of glyphs that obey those rules and renders them to PNG, with a contact sheet.
+GlyphGenerator generates invented writing systems. You describe a "language" in a JSON config: a lattice, the kinds of strokes allowed, how glyphs combine into composites, and what counts as good enough. GlyphGenerator draws a set of glyphs that obey those rules and renders them to PNG, with a contact sheet.
 
 Everything is **deterministic**: one seed drives the whole run, so the same config and seed always give the same glyphs, whatever the thread count.
 
@@ -32,7 +32,7 @@ You do not need to install or build anything to use a release. You download the 
 
 ### What to download
 
-- **The program:** `GlyphGen.Cli.exe` for Windows, or `GlyphGen.Cli` for Linux (link to the releases page to be added).
+- **The program:** `GlyphGenerator.exe` for Windows, or `GlyphGenerator` for Linux (link to the releases page to be added).
 - **Optionally, a configs zip:** ready-made language descriptions to try. Without it you need a config of your own (see [`GlyphGen-Config-Guide.md`](GlyphGen-Config-Guide.md)).
 
 ### Set it up

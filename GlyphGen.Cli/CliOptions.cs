@@ -41,6 +41,19 @@ public sealed class CliOptions
     /// <summary>--summary-json: where to write the machine-readable result.</summary>
     public string? SummaryJson { get; set; }
 
+    /// <summary>--verbose: also the ASCII preview of every glyph, every file written, and the retries as they happen.</summary>
+    public bool Verbose { get; set; }
+
+    /// <summary>--quiet: only failures and the final line.</summary>
+    public bool Quiet { get; set; }
+
+    /// <summary>--log: also write everything printed to this file (without colour codes).</summary>
+    public string? LogFile { get; set; }
+
+    /// <summary>--pause / --no-pause: wait for Enter before closing. Null = decided by the program (only when it was started by a
+    /// double-click, with no arguments, in a console window of its own).</summary>
+    public bool? Pause { get; set; }
+
     public bool Help { get; set; }
 
     public List<string> Errors { get; } = new();
@@ -91,6 +104,11 @@ public sealed class CliOptions
                 case "--render": o.NoRender = false; break;
                 case "--fail-fast": o.FailFast = true; break;
                 case "--validate-only": o.ValidateOnly = true; break;
+                case "--verbose": o.Verbose = true; break;
+                case "--quiet": o.Quiet = true; break;
+                case "--log": o.LogFile = Value(); break;
+                case "--pause": o.Pause = true; break;
+                case "--no-pause": o.Pause = false; break;
                 default:
                     if (a.StartsWith("-") && a.Length > 1) o.Errors.Add($"Unknown option '{a}'. See --help.");
                     else o.Inputs.Add(args[i]);
@@ -98,6 +116,7 @@ public sealed class CliOptions
             }
         }
 
+        if (o.Verbose && o.Quiet) o.Errors.Add("--verbose and --quiet cannot be combined.");
         if (o.Seeds is not null && o.Runs is not null) o.Errors.Add("--seed and --runs cannot be combined: --seed names the seeds, --runs draws random ones.");
         if (o.MasterSeed is not null && o.Seeds is not null) o.Errors.Add("--master-seed only matters for random seeds: leave it out when --seed is given.");
         if (o.ThreadsPerRun is not null && o.Threads is not null && o.Threads > 0 && o.ThreadsPerRun > o.Threads)
@@ -144,6 +163,7 @@ public sealed class CliOptions
     public List<string> ResolveConfigs(string workingDirectory, out string? notice)
     {
         notice = null;
+        Searched.Clear();
         var found = new List<string>();
         var inputs = Inputs.ToList();
 
@@ -152,9 +172,23 @@ public sealed class CliOptions
             foreach (var folder in new[] { "configs", "config" })
             {
                 string dir = Path.Combine(workingDirectory, folder);
-                if (Directory.Exists(dir)) { inputs.Add(dir); notice = $"No config named: using the '{folder}' folder."; break; }
+                if (Directory.Exists(dir))
+                {
+                    inputs.Add(dir);
+                    notice = $"the '{folder}' folder";
+                    Searched.Add($"the '{folder}' folder ({dir})");
+                    break;
+                }
             }
-            if (inputs.Count == 0) { inputs.Add(workingDirectory); notice = "No config named: using the configs in the current folder."; }
+
+            if (inputs.Count == 0 || (inputs.Count == 1 && !ConfigsIn(inputs[0]).Any()))
+            {
+                // No config folder, or nothing valid in it: look in the current folder too.
+                inputs.Clear();
+                inputs.Add(workingDirectory);
+                notice = "the current folder";
+                Searched.Add($"the current folder ({workingDirectory})");
+            }
         }
 
         foreach (var input in inputs)
@@ -172,6 +206,9 @@ public sealed class CliOptions
 
         return found.Distinct().ToList();
     }
+
+    /// <summary>Where <see cref="ResolveConfigs"/> looked when no config was named (for the "nothing found" message).</summary>
+    public List<string> Searched { get; } = new();
 
     /// <summary>The json files of a folder that look like a GlyphGen config (a top-level "languages" list); everything else, like
     /// config.schema.json, is left alone.</summary>
@@ -228,6 +265,10 @@ public sealed class CliOptions
                   --threads-per-run N  threads inside a run (default: budget / parallel runs)
         Output    --out DIR          write to DIR/<config>/<seed>/<language>/ (default: the config's run.outputDirectory)
                   --no-render        generate only, write no images
+        Messages  --verbose          also the ASCII preview of every glyph, every file written and each retry
+                  --quiet            only failures and the final line
+                  --log FILE         also write everything printed to FILE
+                  --pause | --no-pause   wait for Enter before closing (default: only when started by double-click)
         Batches   --fail-fast        start no new run after one failed
                   --validate-only    check the configs and stop
                   --summary-json F   write the result of every run to F
